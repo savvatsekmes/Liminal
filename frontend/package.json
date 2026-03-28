@@ -1,0 +1,36 @@
+{
+  "name": "liminal-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tiptap/core": "^2.5.0",
+    "@tiptap/extension-bold": "^2.5.0",
+    "@tiptap/extension-bullet-list": "^2.5.0",
+    "@tiptap/extension-code": "^2.5.0",
+    "@tiptap/extension-document": "^2.5.0",
+    "@tiptap/extension-hard-break": "^2.5.0",
+    "@tiptap/extension-heading": "^2.5.0",
+    "@tiptap/extension-history": "^2.5.0",
+    "@tiptap/extension-horizontal-rule": "^2.5.0",
+    "@tiptap/extension-italic": "^2.5.0",
+    "@tiptap/extension-list-item": "^2.5.0",
+    "@tiptap/extension-ordered-list": "^2.5.0",
+    "@tiptap/extension-paragraph": "^2.5.0",
+    "@tiptap/extension-placeholder": "^2.5.0",
+    "@tiptap/extension-strike": "^2.5.0",
+    "@tiptap/extension-text": "^2.5.0",
+    "@tiptap/extension-text-align": "^2.5.0",
+    "@tiptap/react": "^2.5.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0"
+  }
+}

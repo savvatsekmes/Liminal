@@ -1,0 +1,260 @@
+/* ── Liminal Design System ───────────────────────────────────────────────────
+   Black and white only. No colour.
+   Palette:
+     --white       #FFFFFF
+     --near-white  #F8F8F8
+     --panel-bg    #EEEEEE
+     --border      #DDDDDD
+     --muted       #999999
+     --body        #555555
+     --strong      #1A1A1A
+─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --white:      #FFFFFF;
+  --near-white: #F8F8F8;
+  --panel-bg:   #EEEEEE;
+  --border:     #DDDDDD;
+  --muted:      #999999;
+  --body:       #555555;
+  --strong:     #1A1A1A;
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --sidebar-width:    48px;
+  --entrylist-width:  196px;
+  --border-style:     0.5px solid var(--border);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--body);
+  background: var(--white);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+
+h1, h2, h3, h4 {
+  color: var(--strong);
+  font-weight: 600;
+}
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+
+button {
+  cursor: pointer;
+  font-family: var(--font);
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+}
+
+button:focus-visible {
+  outline: 1px solid var(--strong);
+  outline-offset: 2px;
+}
+
+/* Primary button */
+.btn-primary {
+  background: var(--strong);
+  color: var(--white);
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 2px;
+  transition: opacity 0.15s;
+}
+.btn-primary:hover { opacity: 0.82; }
+.btn-primary:disabled { opacity: 0.35; cursor: default; }
+
+/* Ghost button */
+.btn-ghost {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 5px 10px;
+  border: var(--border-style);
+  border-radius: 2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-ghost:hover {
+  color: var(--strong);
+  border-color: var(--strong);
+}
+
+/* ── Inputs ─────────────────────────────────────────────────────────────── */
+
+input, textarea, select {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--strong);
+  background: var(--white);
+  border: var(--border-style);
+  border-radius: 2px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--strong);
+}
+
+/* ── Tags ───────────────────────────────────────────────────────────────── */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--body);
+  background: var(--panel-bg);
+  border: var(--border-style);
+  border-radius: 2px;
+  padding: 2px 8px;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+}
+.tag.active {
+  background: var(--strong);
+  color: var(--white);
+  border-color: var(--strong);
+}
+.tag .tag-remove {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 1px;
+}
+.tag .tag-remove:hover { color: var(--strong); }
+
+/* ── Dividers ───────────────────────────────────────────────────────────── */
+
+hr {
+  border: none;
+  border-top: var(--border-style);
+}
+
+/* ── TipTap editor reset ────────────────────────────────────────────────── */
+
+.ProseMirror {
+  outline: none;
+  min-height: 400px;
+  line-height: 1.9;
+  color: var(--strong);
+  caret-color: var(--strong);
+}
+
+.ProseMirror p {
+  margin-bottom: 0.9em;
+}
+
+.ProseMirror h1 { font-size: 22px; margin-bottom: 0.6em; margin-top: 1.2em; }
+.ProseMirror h2 { font-size: 18px; margin-bottom: 0.5em; margin-top: 1em; }
+.ProseMirror h3 { font-size: 15px; margin-bottom: 0.4em; margin-top: 0.9em; }
+
+.ProseMirror h1:first-child,
+.ProseMirror h2:first-child,
+.ProseMirror h3:first-child { margin-top: 0; }
+
+.ProseMirror strong { color: var(--strong); font-weight: 600; }
+.ProseMirror em { font-style: italic; }
+
+.ProseMirror ul, .ProseMirror ol {
+  padding-left: 1.4em;
+  margin-bottom: 0.9em;
+}
+.ProseMirror li { margin-bottom: 0.2em; }
+
+.ProseMirror code {
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  background: var(--panel-bg);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted);
+  pointer-events: none;
+  height: 0;
+}
+
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Note editor type overrides ─────────────────────────────────────────── */
+
+.note-editor-quote .ProseMirror {
+  font-style: italic;
+  font-family: Georgia, serif;
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+.note-editor-dream .ProseMirror {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.note-editor-default .ProseMirror {
+  /* inherits global ProseMirror styles */
+}
+
+@keyframes micPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

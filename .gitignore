@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/build/
+
+# Database & data
+backend/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+backend.log
+frontend.log
+tts_server.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# IDE / Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TTS Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
