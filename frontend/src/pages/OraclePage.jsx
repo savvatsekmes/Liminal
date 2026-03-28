@@ -720,6 +720,21 @@ export default function OraclePage() {
     });
   }
 
+  async function handleDeleteSession(sess) {
+    openConfirm(
+      `Delete "${(sess.first_message || sess.title || 'this conversation').slice(0, 50)}"? This cannot be undone.`,
+      async () => {
+        await apiFetch(`/api/oracle/sessions/${sess.id}`, { method: 'DELETE' });
+        setSessions((prev) => prev.filter((s) => s.id !== sess.id));
+        if (currentSession?.id === sess.id) {
+          setCurrentSession(null);
+          setMessages([]);
+        }
+        setConfirmModal(null);
+      }
+    );
+  }
+
   async function handleSessionTagChange(tag) {
     if (!currentSession) return;
     const newTag = tag || null;
@@ -841,6 +856,7 @@ export default function OraclePage() {
                 sess={sess}
                 active={active}
                 onClick={() => loadSession(sess.id)}
+                onDelete={() => handleDeleteSession(sess)}
               />
             );
           })}
@@ -1240,24 +1256,51 @@ function TagCustomPill({ label, active, onClick, onDelete }) {
 
 // ── Sidebar item ────────────────────────────────────────────────────────────
 
-function SidebarItem({ sess, active, onClick }) {
+function SidebarItem({ sess, active, onClick, onDelete }) {
   const [hover, setHover] = useState(false);
   return (
     <div
       style={{
         ...s.sidebarItem,
         ...(active ? s.sidebarItemActive : hover ? { background: 'var(--panel-bg)' } : {}),
+        position: 'relative',
       }}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <div style={{ ...s.sidebarItemMeta, ...(active ? s.sidebarItemMetaActive : {}) }}>
+      <div style={{ ...s.sidebarItemMeta, ...(active ? s.sidebarItemMetaActive : {}), paddingRight: '18px' }}>
         {sess.archetype} · {formatSessionDate(sess.created_at)}
       </div>
       <div style={{ ...s.sidebarItemTitle, ...(active ? s.sidebarItemTitleActive : {}) }}>
         {(sess.first_message || sess.title || 'New conversation').slice(0, 60)}
       </div>
+      {hover && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="Delete conversation"
+          style={{
+            position: 'absolute',
+            top: '6px',
+            right: '6px',
+            width: '16px',
+            height: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'none',
+            border: 'none',
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            fontSize: '13px',
+            lineHeight: 1,
+            borderRadius: '2px',
+            padding: 0,
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
