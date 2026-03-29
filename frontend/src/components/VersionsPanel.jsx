@@ -11,7 +11,7 @@ function formatVersion(isoStr) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + time;
 }
 
-export default function VersionsPanel({ isOpen, onClose, versions, onRestore, loading, title }) {
+export default function VersionsPanel({ isOpen, onClose, versions, onRestore, onPreview, previewVersionId, loading, title }) {
   if (!isOpen) return null;
 
   return (
@@ -83,7 +83,13 @@ export default function VersionsPanel({ isOpen, onClose, versions, onRestore, lo
             </div>
           ) : (
             versions.map((v) => (
-              <VersionItem key={v.id} version={v} onRestore={onRestore} />
+              <VersionItem
+                key={v.id}
+                version={v}
+                active={previewVersionId === v.id}
+                onRestore={onRestore}
+                onPreview={onPreview}
+              />
             ))
           )}
         </div>
@@ -92,13 +98,14 @@ export default function VersionsPanel({ isOpen, onClose, versions, onRestore, lo
   );
 }
 
-function VersionItem({ version, onRestore }) {
+function VersionItem({ version, active, onRestore, onPreview }) {
   const [hover, setHover] = useState(false);
 
   return (
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onClick={() => onPreview?.(active ? null : version)}
       style={{
         padding: '10px 16px',
         borderBottom: 'var(--border-style)',
@@ -106,12 +113,15 @@ function VersionItem({ version, onRestore }) {
         alignItems: 'flex-start',
         justifyContent: 'space-between',
         gap: '8px',
-        position: 'relative',
+        cursor: 'pointer',
+        background: active ? 'var(--panel-bg)' : 'transparent',
+        transition: 'background 0.1s',
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '12px', color: 'var(--strong)', marginBottom: '3px' }}>
+        <div style={{ fontSize: '12px', color: active ? 'var(--strong)' : 'var(--strong)', marginBottom: '3px', fontWeight: active ? '600' : '400' }}>
           {formatVersion(version.saved_at)}
+          {active && <span style={{ marginLeft: '6px', fontSize: '10px', color: 'var(--muted)', fontWeight: '400' }}>previewing</span>}
         </div>
         <div style={{
           fontSize: '11px',
@@ -127,7 +137,7 @@ function VersionItem({ version, onRestore }) {
       </div>
       {hover && (
         <button
-          onClick={() => onRestore(version)}
+          onClick={(e) => { e.stopPropagation(); onRestore(version); }}
           style={{
             fontSize: '11px',
             color: 'var(--muted)',

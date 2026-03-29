@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import MicButton from '../components/MicButton';
+import { useDictation } from '../hooks/useDictation';
 
 // ── Suggested question pool ────────────────────────────────────────────────
 const QUESTION_POOL = [
@@ -107,7 +109,7 @@ const s = {
     padding: '48px 48px 80px',
   },
   inner: {
-    maxWidth: '680px',
+    maxWidth: '800px',
   },
   greeting: {
     fontSize: '20px',
@@ -182,70 +184,67 @@ const s = {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '8px',
-    marginBottom: '20px',
+    marginBottom: '28px',
   },
   suggestedPill: {
-    fontSize: '11px',
-    color: 'var(--muted)',
+    fontSize: '12px',
+    color: 'var(--body)',
     border: 'var(--border-style)',
     borderRadius: '20px',
-    padding: '5px 12px',
+    padding: '7px 14px',
     cursor: 'pointer',
     background: 'var(--white)',
-    transition: 'color 0.12s, border-color 0.12s',
+    transition: 'color 0.12s, border-color 0.12s, background 0.12s',
     fontFamily: 'var(--font)',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   },
-  inputRow: {
-    display: 'flex',
-    gap: '10px',
+  askCard: {
+    border: 'var(--border-style)',
+    borderRadius: '16px',
+    background: 'var(--white)',
     marginBottom: '14px',
-    alignItems: 'flex-end',
+    overflow: 'hidden',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   },
   textarea: {
-    flex: 1,
+    width: '100%',
     fontSize: '14px',
-    padding: '12px 14px',
-    border: 'var(--border-style)',
-    borderRadius: '3px',
-    background: 'var(--white)',
+    padding: '18px 20px 10px',
+    border: 'none',
+    background: 'transparent',
     color: 'var(--strong)',
     outline: 'none',
     fontFamily: 'var(--font)',
     lineHeight: '1.6',
     resize: 'none',
-    minHeight: '48px',
+    minHeight: '60px',
     maxHeight: '200px',
     overflow: 'hidden',
-    transition: 'border-color 0.15s',
+    boxSizing: 'border-box',
   },
-  askBtn: {
-    padding: '10px 20px',
-    fontSize: '13px',
-    fontWeight: '500',
-    border: 'var(--border-style)',
-    borderRadius: '3px',
-    background: 'var(--strong)',
-    color: 'var(--white)',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    fontFamily: 'var(--font)',
-    flexShrink: 0,
-    transition: 'opacity 0.12s',
+  askCardFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 14px 12px',
+    gap: '8px',
   },
   archetypeRow: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '6px',
+    gap: '5px',
     alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
   },
   archPill: {
     fontSize: '11px',
     color: 'var(--muted)',
     border: 'var(--border-style)',
     borderRadius: '20px',
-    padding: '4px 12px',
+    padding: '3px 10px',
     cursor: 'pointer',
-    background: 'var(--white)',
+    background: 'transparent',
     fontFamily: 'var(--font)',
     transition: 'background 0.12s, color 0.12s',
   },
@@ -256,14 +255,28 @@ const s = {
   },
   customInput: {
     fontSize: '11px',
-    padding: '4px 10px',
+    padding: '3px 10px',
     border: 'var(--border-style)',
     borderRadius: '20px',
     outline: 'none',
     fontFamily: 'var(--font)',
     color: 'var(--strong)',
-    width: '140px',
+    width: '130px',
     background: 'var(--white)',
+  },
+  askBtn: {
+    padding: '7px 16px',
+    fontSize: '12px',
+    fontWeight: '500',
+    border: 'none',
+    borderRadius: '20px',
+    background: 'var(--strong)',
+    color: 'var(--white)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    fontFamily: 'var(--font)',
+    flexShrink: 0,
+    transition: 'opacity 0.12s',
   },
   // Response card
   responseCard: {
@@ -375,7 +388,8 @@ function getGreeting() {
 function formatRelativeDate(dateStr) {
   if (!dateStr) return '—';
   try {
-    const d = new Date(dateStr.includes('T') ? dateStr : dateStr + 'T00:00:00');
+    const normalised = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
+    const d = new Date(normalised.length === 10 ? normalised + 'T00:00:00' : normalised);
     const now = new Date();
     const diffDays = Math.floor((now - d) / 86400000);
     if (diffDays === 0) return 'today';
@@ -397,10 +411,20 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username }) {
+export default function HomePage({ username, onNavigateToEntry, onNavigateToNote, onNavigateToOracle }) {
   // Stats
   const [entryCount, setEntryCount] = useState(null);
   const [lastEntryDate, setLastEntryDate] = useState(null);
+  const [latestEntryTitle, setLatestEntryTitle] = useState(null);
+  const [latestEntryId, setLatestEntryId] = useState(null);
+  const [noteCount, setNoteCount] = useState(null);
+  const [lastNoteDate, setLastNoteDate] = useState(null);
+  const [latestNoteTitle, setLatestNoteTitle] = useState(null);
+  const [latestNoteId, setLatestNoteId] = useState(null);
+  const [oracleCount, setOracleCount] = useState(null);
+  const [lastOracleDate, setLastOracleDate] = useState(null);
+  const [latestOraclePreview, setLatestOraclePreview] = useState(null);
+  const [latestOracleSessionId, setLatestOracleSessionId] = useState(null);
 
   // Quick Ask state
   const [question, setQuestion] = useState('');
@@ -425,6 +449,9 @@ export default function HomePage({ username }) {
   const suggested = useMemo(() => pickRandom(QUESTION_POOL, 4), []);
 
   const textareaRef = useRef(null);
+  const { isRecording: isDictating, isProcessing: isDictatingProcessing, toggle: toggleDictation } = useDictation((text) => {
+    setQuestion((prev) => prev + (prev.trim() ? ' ' : '') + text);
+  });
 
   // Load entry stats + portrait archetypes + TTS status
   useEffect(() => {
@@ -434,6 +461,33 @@ export default function HomePage({ username }) {
         if (data.length > 0) {
           const first = data[0];
           setLastEntryDate(first.date || first.created_at);
+          setLatestEntryTitle(first.title || null);
+          setLatestEntryId(first.id);
+        }
+      }
+    }).catch(() => {});
+
+    apiFetch('/api/notes').then((r) => r.json()).then((data) => {
+      if (Array.isArray(data)) {
+        setNoteCount(data.length);
+        if (data.length > 0) {
+          const note = data[0];
+          setLastNoteDate(note.created_at);
+          setLatestNoteId(note.id);
+          const preview = (note.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          setLatestNoteTitle(preview ? `${note.type ? note.type.charAt(0).toUpperCase() + note.type.slice(1) + ' — ' : ''}${preview.slice(0, 30)}` : null);
+        }
+      }
+    }).catch(() => {});
+
+    apiFetch('/api/oracle/sessions').then((r) => r.json()).then((data) => {
+      if (Array.isArray(data)) {
+        setOracleCount(data.length);
+        if (data.length > 0) {
+          setLastOracleDate(data[0].created_at);
+          setLatestOracleSessionId(data[0].id);
+          const preview = data[0].first_message || data[0].title || null;
+          setLatestOraclePreview(preview ? `${data[0].archetype} — ${preview.slice(0, 30)}` : null);
         }
       }
     }).catch(() => {});
@@ -623,6 +677,7 @@ export default function HomePage({ username }) {
         ); })()}
 
         {/* Insights card */}
+        <div style={s.sectionTitle}>Journal</div>
         <div style={s.insightsCard}>
           <div style={s.insightStat}>
             <span style={s.insightValue}>{entryCount ?? '—'}</span>
@@ -633,10 +688,141 @@ export default function HomePage({ username }) {
             <span style={s.insightValue}>{lastEntryDate ? formatRelativeDate(lastEntryDate) : '—'}</span>
             <span style={s.insightLabel}>last written</span>
           </div>
+          {latestEntryTitle && (
+            <>
+              <div style={s.insightDivider} />
+              <div
+                style={{ ...s.insightStat, cursor: 'pointer' }}
+                onClick={() => onNavigateToEntry?.(latestEntryId)}
+                title="Open in Journal"
+              >
+                <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
+                  {latestEntryTitle.slice(0, 36)}{latestEntryTitle.length > 36 ? '…' : ''}
+                </span>
+                <span style={s.insightLabel}>Latest Entry</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Notes card */}
+        <div style={s.sectionTitle}>Notes</div>
+        <div style={s.insightsCard}>
+          <div style={s.insightStat}>
+            <span style={s.insightValue}>{noteCount ?? '—'}</span>
+            <span style={s.insightLabel}>notes written</span>
+          </div>
+          <div style={s.insightDivider} />
+          <div style={s.insightStat}>
+            <span style={s.insightValue}>{lastNoteDate ? formatRelativeDate(lastNoteDate) : '—'}</span>
+            <span style={s.insightLabel}>last written</span>
+          </div>
+          {latestNoteTitle && (
+            <>
+              <div style={s.insightDivider} />
+              <div
+                style={{ ...s.insightStat, cursor: 'pointer' }}
+                onClick={() => onNavigateToNote?.(latestNoteId)}
+                title="Open in Notes"
+              >
+                <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
+                  {latestNoteTitle.slice(0, 36)}{latestNoteTitle.length > 36 ? '…' : ''}
+                </span>
+                <span style={s.insightLabel}>Latest Note</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Oracle card */}
+        <div style={s.sectionTitle}>Oracle</div>
+        <div style={s.insightsCard}>
+          <div style={s.insightStat}>
+            <span style={s.insightValue}>{oracleCount ?? '—'}</span>
+            <span style={s.insightLabel}>conversations</span>
+          </div>
+          <div style={s.insightDivider} />
+          <div style={s.insightStat}>
+            <span style={s.insightValue}>{lastOracleDate ? formatRelativeDate(lastOracleDate) : '—'}</span>
+            <span style={s.insightLabel}>last conversation</span>
+          </div>
+          {latestOraclePreview && (
+            <>
+              <div style={s.insightDivider} />
+              <div
+                style={{ ...s.insightStat, cursor: 'pointer' }}
+                onClick={() => onNavigateToOracle?.(latestOracleSessionId)}
+                title="Open in Oracle"
+              >
+                <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
+                  {latestOraclePreview.slice(0, 36)}{latestOraclePreview.length > 36 ? '…' : ''}
+                </span>
+                <span style={s.insightLabel}>Latest Conversation</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Quick Ask */}
         <div style={s.sectionTitle}>Quick Ask</div>
+
+        {/* Input card */}
+        <div style={s.askCard}>
+          <textarea
+            ref={textareaRef}
+            style={s.textarea}
+            placeholder="How can I help you today?"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); }
+            }}
+            rows={2}
+          />
+          <div style={s.askCardFooter}>
+            {/* Archetype selector */}
+            <div style={s.archetypeRow}>
+              {allArchetypes.map((a) => (
+                <button
+                  key={a}
+                  style={{ ...s.archPill, ...(archetype === a && !showCustom ? s.archPillActive : {}) }}
+                  onClick={() => { setArchetype(a); setShowCustom(false); }}
+                >
+                  {a}
+                </button>
+              ))}
+              <button
+                style={{ ...s.archPill, ...(showCustom ? s.archPillActive : {}) }}
+                onClick={() => setShowCustom((v) => !v)}
+              >
+                Custom ▾
+              </button>
+              {showCustom && (
+                <input
+                  style={s.customInput}
+                  placeholder="e.g. Alan Watts"
+                  value={customArchetype}
+                  onChange={(e) => setCustomArchetype(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+            {/* Mic + Send */}
+            <MicButton
+              isRecording={isDictating}
+              isProcessing={isDictatingProcessing}
+              onClick={toggleDictation}
+              style={{ width: '32px', height: '32px', flexShrink: 0 }}
+            />
+            <button
+              style={{ ...s.askBtn, opacity: loading || !question.trim() ? 0.4 : 1 }}
+              onClick={handleAsk}
+              disabled={loading || !question.trim()}
+            >
+              Ask ›
+            </button>
+          </div>
+        </div>
 
         {/* Suggested questions */}
         <div style={s.suggestedRow}>
@@ -645,68 +831,12 @@ export default function HomePage({ username }) {
               key={q}
               style={s.suggestedPill}
               onClick={() => setQuestion(q)}
-              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--strong)'; e.currentTarget.style.borderColor = 'var(--strong)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.borderColor = 'var(--strong)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--white)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
             >
               {q}
             </button>
           ))}
-        </div>
-
-        {/* Input */}
-        <div style={s.inputRow}>
-          <textarea
-            ref={textareaRef}
-            style={s.textarea}
-            placeholder="Ask anything..."
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); }
-            }}
-            rows={1}
-          />
-          <button
-            style={{ ...s.askBtn, opacity: loading || !question.trim() ? 0.5 : 1 }}
-            onClick={handleAsk}
-            disabled={loading || !question.trim()}
-          >
-            Ask
-          </button>
-        </div>
-
-        {/* Archetype pills */}
-        <div style={s.archetypeRow}>
-          {allArchetypes.map((a) => (
-            <button
-              key={a}
-              style={{
-                ...s.archPill,
-                ...(archetype === a && !showCustom ? s.archPillActive : {}),
-              }}
-              onClick={() => { setArchetype(a); setShowCustom(false); }}
-            >
-              {a}
-            </button>
-          ))}
-          <button
-            style={{
-              ...s.archPill,
-              ...(showCustom ? s.archPillActive : {}),
-            }}
-            onClick={() => setShowCustom((v) => !v)}
-          >
-            Custom ▾
-          </button>
-          {showCustom && (
-            <input
-              style={s.customInput}
-              placeholder="e.g. Alan Watts"
-              value={customArchetype}
-              onChange={(e) => setCustomArchetype(e.target.value)}
-              autoFocus
-            />
-          )}
         </div>
 
         {/* Loading */}

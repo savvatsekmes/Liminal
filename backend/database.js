@@ -113,6 +113,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_notes_type ON notes(type);
   CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_reflections_entry ON reflections(entry_id, user_id);
+
+  CREATE TABLE IF NOT EXISTS note_reflections (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id    INTEGER NOT NULL,
+    user_id    INTEGER NOT NULL DEFAULT 1,
+    blocks     TEXT NOT NULL DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(note_id, user_id),
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+  );
 `);
 
 // Add new columns if they don't exist yet (migration for existing databases)
@@ -123,6 +134,7 @@ addColumnSafe('portrait', 'chinese_zodiac', 'TEXT');
 addColumnSafe('portrait', 'chinese_element', 'TEXT');
 addColumnSafe('portrait', 'character_description', 'TEXT');
 addColumnSafe('portrait', 'slider_character_influence', 'INTEGER');
+addColumnSafe('portrait', 'slider_candor', 'INTEGER DEFAULT 50');
 addColumnSafe('portrait', 'sex', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
 

@@ -147,6 +147,8 @@ export default function WritingCanvas({
   onNew,
   toggleEntryList,
   entryListOpen,
+  onVersionPreview,
+  previewVersionId,
 }) {
   const saveTimer = useRef(null);
   const savedTimer = useRef(null);
@@ -489,9 +491,11 @@ export default function WritingCanvas({
 
       <VersionsPanel
         isOpen={versionsOpen}
-        onClose={() => setVersionsOpen(false)}
+        onClose={() => { setVersionsOpen(false); onVersionPreview?.(null); }}
         versions={versions}
         onRestore={handleRestoreVersion}
+        onPreview={onVersionPreview}
+        previewVersionId={previewVersionId}
         loading={versionsLoading}
         title="Entry Versions"
       />

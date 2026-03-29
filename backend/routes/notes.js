@@ -125,6 +125,7 @@ router.get('/:id/versions', (req, res) => {
   res.json(versions.map(v => ({
     id: v.id,
     saved_at: v.saved_at,
+    body_text: (v.body || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
     preview: (v.body || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100),
   })));
 });
@@ -218,9 +219,29 @@ Rules:
       blocks = [{ title: 'Reflection', body: raw.trim(), quote: null, archetype: 'Mirror' }];
     }
 
+    // Persist the reflection
+    db.prepare(`
+      INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
+    `).run(note.id, req.userId, JSON.stringify(blocks));
+
     res.json({ blocks });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/notes/:id/reflect ─────────────────────────────────────────────
+// Load a previously saved reflection for a note
+router.get('/:id/reflect', (req, res) => {
+  const row = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?')
+    .get(req.params.id, req.userId);
+  if (!row) return res.json({ blocks: [] });
+  try {
+    res.json({ blocks: JSON.parse(row.blocks) });
+  } catch {
+    res.json({ blocks: [] });
   }
 });
 

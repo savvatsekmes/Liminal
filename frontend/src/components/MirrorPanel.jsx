@@ -4,6 +4,7 @@ import MirrorBlock from './MirrorBlock';
 const s = {
   root: {
     width: '100%',
+    height: '100%',
     minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
@@ -43,38 +44,22 @@ const s = {
   },
   footer: {
     borderTop: 'var(--border-style)',
-    padding: '10px 20px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    padding: '14px 18px',
     flexShrink: 0,
     background: 'var(--white)',
   },
-  footerLeft: {
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-  },
-  footerBtn: {
-    fontSize: '12px',
-    color: 'var(--muted)',
-    padding: '5px 10px',
-    border: 'var(--border-style)',
-    borderRadius: '2px',
-    cursor: 'pointer',
-    transition: 'color 0.12s, border-color 0.12s',
-    background: 'var(--white)',
-  },
   reflectBtn: {
-    fontSize: '13px',
+    width: '100%',
+    fontSize: '12px',
+    padding: '9px 0',
     fontWeight: '500',
     color: 'var(--white)',
     background: 'var(--strong)',
-    padding: '7px 18px',
     borderRadius: '2px',
     cursor: 'pointer',
     transition: 'opacity 0.15s',
     border: 'none',
+    fontFamily: 'var(--font)',
   },
   reflectBtnLoading: {
     opacity: 0.55,
@@ -115,7 +100,33 @@ export default function MirrorPanel({
   ttsOnline,
   onReflect,
   onRegenerateBlock,
+  previewVersion,
+  onClearPreview,
 }) {
+  if (previewVersion) {
+    return (
+      <div style={s.root}>
+        <div style={s.header}>
+          <span style={s.headerLabel}>Version Preview</span>
+          <button
+            onClick={onClearPreview}
+            style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '2px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'var(--font)' }}
+          >
+            ✕ Close
+          </button>
+        </div>
+        <div style={{ ...s.body, padding: '20px 24px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '14px', fontStyle: 'italic' }}>
+            {formatVersionDate(previewVersion.saved_at)}
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: '1.85', whiteSpace: 'pre-wrap' }}>
+            {previewVersion.body_text || '—'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={s.root}>
       {/* Header */}
@@ -144,15 +155,6 @@ export default function MirrorPanel({
 
       {/* Footer */}
       <div style={s.footer}>
-        <div style={s.footerLeft}>
-          <button style={s.footerBtn} title="Archetypes (coming in Phase 4)">
-            Archetypes
-          </button>
-          <button style={s.footerBtn} title="Sliders (coming in Phase 4)">
-            Sliders
-          </button>
-        </div>
-
         <button
           style={{ ...s.reflectBtn, ...(loading ? s.reflectBtnLoading : {}) }}
           onClick={onReflect}
@@ -163,6 +165,16 @@ export default function MirrorPanel({
       </div>
     </div>
   );
+}
+
+function formatVersionDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const now = new Date();
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return `Today, ${time}`;
+  if (d.toDateString() === new Date(now - 86400000).toDateString()) return `Yesterday, ${time}`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + time;
 }
 
 function EmptyState() {

@@ -54,7 +54,7 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
 }
 
-export default function NotesPage() {
+export default function NotesPage({ initialNoteId, onNoteSelected }) {
   const {
     notes,
     activeNote,
@@ -70,12 +70,19 @@ export default function NotesPage() {
     refreshCustomTags,
   } = useNotes();
 
+  useEffect(() => {
+    if (!initialNoteId || !notes.length) return;
+    const target = notes.find((n) => n.id === initialNoteId);
+    if (target) { selectNote(target); onNoteSelected?.(); }
+  }, [initialNoteId, notes]);
+
   const [newTagInput, setNewTagInput] = useState('');
   const [showNewTagInput, setShowNewTagInput] = useState(false);
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
   const [reflectBlocks, setReflectBlocks] = useState([]);
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState(null);
+  const [previewVersion, setPreviewVersion] = useState(null);
   const newTagRef = useRef(null);
 
   const [noteListWidth, startNoteListDrag] = useResizable(210, { min: 140, max: 380 });
@@ -84,10 +91,16 @@ export default function NotesPage() {
     { min: 180, max: window.innerWidth - 48 - 76 - 210 - 200 },
   );
 
-  // Clear reflection when note changes
+  // Load saved reflection when note changes
   useEffect(() => {
     setReflectBlocks([]);
     setReflectError(null);
+    setPreviewVersion(null);
+    if (!activeNote?.id) return;
+    apiFetch(`/api/notes/${activeNote.id}/reflect`)
+      .then((r) => r.json())
+      .then((data) => { if (data.blocks?.length) setReflectBlocks(data.blocks); })
+      .catch(() => {});
   }, [activeNote?.id]);
 
   async function handleReflect() {
@@ -277,6 +290,8 @@ export default function NotesPage() {
             note={activeNote}
             onChange={scheduleUpdate}
             customTags={customTags}
+            onVersionPreview={setPreviewVersion}
+            previewVersionId={previewVersion?.id}
           />
         ) : (
           <div style={{
@@ -306,6 +321,8 @@ export default function NotesPage() {
           loading={reflecting}
           error={reflectError}
           onReflect={handleReflect}
+          previewVersion={previewVersion}
+          onClearPreview={() => setPreviewVersion(null)}
         />
       </div>
 
@@ -619,8 +636,14 @@ function TypeSelector({ note, customTags, onChange }) {
 
 // ── NoteToolbar ───────────────────────────────────────────────────────────────
 
+function noteWordCount(text) {
+  if (!text) return 0;
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
 function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, saveStatus, onVersionsOpen }) {
   if (!editor) return null;
+  const words = noteWordCount(editor.getText());
 
   const btnStyle = {
     width: '26px',
@@ -676,17 +699,20 @@ function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, sav
       {btn('Ordered list',  editor.isActive('orderedList'),  () => editor.chain().focus().toggleOrderedList().run(),  '#')}
       <div style={divider} />
       {btn('Horizontal rule', false, () => editor.chain().focus().setHorizontalRule().run(), '—')}
+      <div style={{ flex: 1 }} />
       <button
-        style={{ ...btnStyle, fontSize: '14px' }}
+        style={{ ...btnStyle, fontSize: '14px', marginRight: '2px' }}
         title="Version history"
         onClick={onVersionsOpen}
         type="button"
       >
         ◷
       </button>
-      <div style={{ flex: 1 }} />
+      <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
+        {words} words
+      </span>
       {saveStatus !== 'idle' && (
-        <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0 }}>
+        <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
           {saveStatus === 'saving' ? 'Saving…' : '✓ Saved'}
         </span>
       )}
@@ -708,7 +734,7 @@ const NOTE_PLACEHOLDERS = {
   none:       'Write…',
 };
 
-function NoteEditor({ note, onChange, customTags }) {
+function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersionId }) {
   const noteRef = useRef(note);
   noteRef.current = note;
 
@@ -856,9 +882,11 @@ function NoteEditor({ note, onChange, customTags }) {
 
       <VersionsPanel
         isOpen={versionsOpen}
-        onClose={() => setVersionsOpen(false)}
+        onClose={() => { setVersionsOpen(false); onVersionPreview?.(null); }}
         versions={versions}
         onRestore={handleRestoreVersion}
+        onPreview={onVersionPreview}
+        previewVersionId={previewVersionId}
         loading={versionsLoading}
         title="Note Versions"
       />
@@ -950,24 +978,66 @@ function GoalEditor({ note, onChange, editor }) {
 
 // ── NoteMirrorPanel ───────────────────────────────────────────────────────────
 
-function NoteMirrorPanel({ note, blocks, loading, error, onReflect }) {
+function formatVersionDate(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const now = new Date();
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return `Today, ${time}`;
+  if (d.toDateString() === new Date(now - 86400000).toDateString()) return `Yesterday, ${time}`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + time;
+}
+
+function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersion, onClearPreview }) {
   const hasContent = note?.body?.trim();
+  const panelStyle = {
+    width: '100%',
+    height: '100%',
+    background: 'var(--near-white)',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  };
+  const headerStyle = {
+    padding: '0 18px',
+    height: '40px',
+    borderBottom: 'var(--border-style)',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  };
+
+  if (previewVersion) {
+    return (
+      <div style={panelStyle}>
+        <div style={headerStyle}>
+          <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+            Version Preview
+          </div>
+          <button
+            onClick={onClearPreview}
+            style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '2px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'var(--font)' }}
+          >
+            ✕ Close
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '12px', fontStyle: 'italic' }}>
+            {formatVersionDate(previewVersion.saved_at)}
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: '1.85', whiteSpace: 'pre-wrap' }}>
+            {previewVersion.body_text || '—'}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{
-      width: '100%',
-      height: '100%',
-      background: 'var(--near-white)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
+    <div style={panelStyle}>
       {/* Header */}
-      <div style={{
-        padding: '14px 18px 12px',
-        borderBottom: 'var(--border-style)',
-        flexShrink: 0,
-      }}>
+      <div style={headerStyle}>
         <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
           Mirror
         </div>
@@ -994,8 +1064,14 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect }) {
         )}
 
         {!loading && blocks.length === 0 && !error && (
-          <div style={{ padding: '16px 18px', fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.6' }}>
-            {note ? 'Press Reflect to generate a response to this note.' : 'Select a note to reflect on it.'}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', textAlign: 'center' }}>
+            <div style={{ fontSize: '20px', marginBottom: '12px', color: 'var(--border)' }}>◎</div>
+            <div style={{ fontSize: '12px', color: 'var(--body)', lineHeight: '1.8', marginBottom: '4px' }}>
+              {note ? 'Select a note, then press Reflect.' : 'Select a note to reflect on it.'}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.7' }}>
+              The Mirror reads your whole story.
+            </div>
           </div>
         )}
 

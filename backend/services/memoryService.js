@@ -137,7 +137,11 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     sections.push(`## RELEVANT PAST ENTRIES\nThese past entries are most relevant to what was just written:\n\n${pastContext}`);
   }
 
-  // 6. Mirror instructions
+  // 6. Candor instruction (injected before mirror instructions so it shapes the whole response)
+  const candor = buildCandorInstruction(portrait);
+  if (candor) sections.push(candor);
+
+  // 7. Mirror instructions
   sections.push(buildMirrorInstructions(portrait));
 
   return sections.join('\n\n');
@@ -244,15 +248,36 @@ function buildSliderDescription(portrait) {
     [portrait.slider_encouraging_challenging, 'Encouraging', 'Challenging'],
   ];
 
-  return axes
+  const lines = axes
     .map(([val, low, high]) => {
       const v = val ?? 50;
       if (v < 35) return `Lean ${low}`;
       if (v > 65) return `Lean ${high}`;
       return null;
     })
-    .filter(Boolean)
-    .join(', ');
+    .filter(Boolean);
+
+  return lines.join(', ');
+}
+
+function buildCandorInstruction(portrait) {
+  const v = portrait?.slider_candor ?? 50;
+  if (v > 65) {
+    return `## CANDOR MODE: HIGH
+The user has explicitly asked for truth over comfort. This is their most important setting.
+- Do NOT simply validate. Actively look for where they may be wrong, in denial, or avoiding something.
+- Name the uncomfortable thing directly. Be the voice they are not giving themselves.
+- Ask the question they are not asking. Surface the pattern they may not want to see.
+- Devil's advocate is not cruelty — it is respect. Treat them as capable of handling truth.
+- Challenge is the gift. Comfort is the last resort, not the first.`;
+  }
+  if (v < 35) {
+    return `## CANDOR MODE: LOW
+The user needs emotional support right now. Prioritise warmth and validation over challenge.
+- Meet them where they are. Don't push or reframe unless they explicitly ask.
+- Comfort first.`;
+  }
+  return null;
 }
 
 function buildMirrorInstructions(portrait) {
@@ -304,6 +329,9 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
 
+  const candorAsk = buildCandorInstruction(portrait);
+  if (candorAsk) sections.push(candorAsk);
+
   sections.push(
     `You are ${archetype}. This person has asked you a direct question. ` +
     `Draw on everything you know about them. Answer warmly, personally, and directly ` +
@@ -325,6 +353,9 @@ function buildOracleSystemPrompt(userId, archetype = 'Zen') {
   if (summary) sections.push(`## WHAT I KNOW ABOUT YOU\n${summary}`);
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
+
+  const candorOracle = buildCandorInstruction(portrait);
+  if (candorOracle) sections.push(candorOracle);
 
   sections.push(
     `You are ${archetype}. You are in an ongoing conversation with this person. ` +

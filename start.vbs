@@ -11,7 +11,7 @@ ttsLog      = baseDir & "\tts_server.log"
 
 ' ── Kill any stale processes before starting ─────────────────────────────────
 shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
-shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
+shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
 shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 8500 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
 
 ' ── Start TTS server (hidden) ────────────────────────────────────────────────
@@ -33,5 +33,29 @@ shell.Run fCmd, 0, False
 
 WScript.Sleep 5000
 
-' ── Open browser ─────────────────────────────────────────────────────────────
-shell.Run "http://localhost:5173"
+' ── Read actual URL from Vite log and open browser ───────────────────────────
+Dim url, waited, logFile, line
+url = ""
+waited = 0
+
+Do While url = "" And waited < 20
+  WScript.Sleep 500
+  waited = waited + 1
+  If fso.FileExists(frontendLog) Then
+    Set logFile = fso.OpenTextFile(frontendLog, 1)
+    Do While Not logFile.AtEndOfStream
+      line = logFile.ReadLine()
+      If InStr(line, "Local:") > 0 And InStr(line, "http://127.0.0.1") > 0 Then
+        Dim parts
+        parts = Split(line, "http://127.0.0.1:")
+        If UBound(parts) >= 1 Then
+          url = "http://127.0.0.1:" & Trim(parts(1))
+        End If
+      End If
+    Loop
+    logFile.Close
+  End If
+Loop
+
+If url = "" Then url = "http://127.0.0.1:3000"
+shell.Run url

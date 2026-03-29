@@ -131,6 +131,7 @@ const SLIDER_AXES = [
   { key: 'slider_light_deep',              low: 'Light touch',    high: 'Deep dive' },
   { key: 'slider_conversational_poetic',   low: 'Conversational', high: 'Poetic' },
   { key: 'slider_encouraging_challenging', low: 'Encouraging',    high: 'Challenging' },
+  { key: 'slider_candor',                  low: 'Agreeable',      high: 'Candid', hint: 'High: truth over comfort. The mirror will name what you\'re avoiding, challenge your assumptions, and ask the question you won\'t ask yourself.' },
   { key: 'slider_character_influence',     low: 'Subtle',         high: 'Full character' },
 ];
 
@@ -142,7 +143,10 @@ export default function PortraitPage() {
   const [generating, setGenerating] = useState(false);
   const [editingPortrait, setEditingPortrait] = useState(false);
   const astroTimer = useRef(null);
-  const [portraitPanelWidth, startPortraitPanelDrag] = useResizable(320, { min: 220, max: 560 });
+  const [portraitPanelWidth, startPortraitPanelDrag] = useResizable(
+    Math.floor((window.innerWidth - 48) / 2),
+    { min: 280, max: window.innerWidth - 48 - 280 }
+  );
 
   useEffect(() => {
     apiFetch('/api/portrait')
@@ -359,18 +363,25 @@ export default function PortraitPage() {
       {/* Response sliders */}
       <div style={s.section}>
         <div style={s.sectionTitle}>Default Response Style</div>
-        {SLIDER_AXES.map(({ key, low, high }) => (
-          <div key={key} style={s.sliderRow}>
-            <span style={s.sliderLabel}>{low}</span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              style={s.slider}
-              value={portrait[key] ?? 50}
-              onChange={(e) => set(key, Number(e.target.value))}
-            />
-            <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{high}</span>
+        {SLIDER_AXES.map(({ key, low, high, hint }) => (
+          <div key={key}>
+            <div style={s.sliderRow}>
+              <span style={s.sliderLabel}>{low}</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                style={s.slider}
+                value={portrait[key] ?? 50}
+                onChange={(e) => set(key, Number(e.target.value))}
+              />
+              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{high}</span>
+            </div>
+            {hint && (portrait[key] ?? 50) > 65 && (
+              <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '-6px', marginBottom: '8px', paddingLeft: '2px', lineHeight: 1.4 }}>
+                {hint}
+              </div>
+            )}
           </div>
         ))}
       </div>

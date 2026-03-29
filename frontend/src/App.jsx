@@ -18,6 +18,9 @@ import { isAuthenticated, getStoredUsername, clearStoredToken } from './utils/ap
 
 function AuthenticatedApp({ username, onLogout }) {
   const [activeView, setActiveView] = useState('home');
+  const [previewVersion, setPreviewVersion] = useState(null);
+  const [pendingNoteId, setPendingNoteId] = useState(null);
+  const [pendingSessionId, setPendingSessionId] = useState(null);
 
   const {
     entries,
@@ -79,9 +82,16 @@ function AuthenticatedApp({ username, onLogout }) {
         ),
 
         canvas: ({ toggleEntryList, entryListOpen }) => {
-          if (activeView === 'home') return <HomePage username={username} />;
-          if (activeView === 'oracle') return <OraclePage />;
-          if (activeView === 'notes') return <NotesPage />;
+          if (activeView === 'home') return (
+            <HomePage
+              username={username}
+              onNavigateToEntry={(id) => { selectEntry({ id }); setActiveView('journal'); }}
+              onNavigateToNote={(id) => { setPendingNoteId(id); setActiveView('notes'); }}
+              onNavigateToOracle={(id) => { setPendingSessionId(id); setActiveView('oracle'); }}
+            />
+          );
+          if (activeView === 'oracle') return <OraclePage initialSessionId={pendingSessionId} onSessionSelected={() => setPendingSessionId(null)} />;
+          if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} />;
           if (activeView === 'portrait') return <PortraitPage />;
 if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} />;
 
@@ -92,6 +102,8 @@ if (activeView === 'settings') return <SettingsPage username={username} onLogout
               onNew={handleNew}
               toggleEntryList={toggleEntryList}
               entryListOpen={entryListOpen}
+              onVersionPreview={setPreviewVersion}
+              previewVersionId={previewVersion?.id}
             />
           );
         },
@@ -105,6 +117,8 @@ if (activeView === 'settings') return <SettingsPage username={username} onLogout
             ttsOnline={ttsOnline}
             onReflect={handleReflect}
             onRegenerateBlock={regenerateBlock}
+            previewVersion={previewVersion}
+            onClearPreview={() => setPreviewVersion(null)}
           />
         ) : (
           <div style={{ display: 'none' }} />

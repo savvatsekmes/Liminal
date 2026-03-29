@@ -156,6 +156,7 @@ router.get('/:id/versions', (req, res) => {
     id: v.id,
     saved_at: v.saved_at,
     title: v.title,
+    body_text: v.body_text || '',
     preview: (v.body_text || '').replace(/\s+/g, ' ').trim().slice(0, 100),
   })));
 });

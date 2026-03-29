@@ -499,7 +499,7 @@ function formatSessionDate(dateStr) {
   } catch { return ''; }
 }
 
-export default function OraclePage() {
+export default function OraclePage({ initialSessionId, onSessionSelected }) {
   const [sessions, setSessions] = useState([]);
   const [currentSession, setCurrentSession] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -543,8 +543,10 @@ export default function OraclePage() {
     ]).then(([sessionsData, portrait, ttsData, tagsData]) => {
       if (Array.isArray(sessionsData)) {
         setSessions(sessionsData);
-        if (sessionsData.length > 0) {
-          loadSession(sessionsData[0].id);
+        const targetId = initialSessionId || (sessionsData.length > 0 ? sessionsData[0].id : null);
+        if (targetId) {
+          loadSession(targetId);
+          if (initialSessionId) onSessionSelected?.();
         }
       }
       if (portrait) {

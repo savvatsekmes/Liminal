@@ -6,7 +6,7 @@ powershell -NoProfile -Command "$p = Get-NetTCPConnection -LocalPort 8500 -Error
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":3001 "') do (
   taskkill /f /pid %%a >nul 2>&1
 )
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":5173 "') do (
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":3000 "') do (
   taskkill /f /pid %%a >nul 2>&1
 )
 

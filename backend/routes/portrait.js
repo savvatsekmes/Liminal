@@ -33,6 +33,7 @@ router.put('/', (req, res) => {
     slider_conversational_poetic,
     slider_encouraging_challenging,
     slider_character_influence,
+    slider_candor,
     archetypes,
     active_archetypes,
     language,
@@ -62,6 +63,7 @@ router.put('/', (req, res) => {
     slider_conversational_poetic,
     slider_encouraging_challenging,
     slider_character_influence,
+    slider_candor,
   };
 
   for (const [key, val] of Object.entries(stringFields)) {
