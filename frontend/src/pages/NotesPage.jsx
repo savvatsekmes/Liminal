@@ -13,6 +13,7 @@ import OrderedList from '@tiptap/extension-ordered-list';
 import ListItem from '@tiptap/extension-list-item';
 import HardBreak from '@tiptap/extension-hard-break';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import Blockquote from '../extensions/Blockquote';
 import History from '@tiptap/extension-history';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useNotes } from '../hooks/useNotes';
@@ -657,7 +658,7 @@ function noteWordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, saveStatus, onVersionsOpen }) {
+function NoteToolbar({ editor, saveStatus, onVersionsOpen }) {
   const { t } = useLanguage();
   if (!editor) return null;
   const words = noteWordCount(editor.getText());
@@ -714,6 +715,7 @@ function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, sav
       <div style={divider} />
       {btn('Bullet list',   editor.isActive('bulletList'),   () => editor.chain().focus().toggleBulletList().run(),   '≡')}
       {btn('Ordered list',  editor.isActive('orderedList'),  () => editor.chain().focus().toggleOrderedList().run(),  '#')}
+      {btn('Quote',         editor.isActive('blockquote'),   () => editor.chain().focus().toggleBlockquote().run(),   '"')}
       <div style={divider} />
       {btn('Horizontal rule', false, () => editor.chain().focus().setHorizontalRule().run(), '—')}
       <div style={{ flex: 1 }} />
@@ -733,7 +735,6 @@ function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, sav
           {saveStatus === 'saving' ? t('common.saving') : '✓ ' + t('common.saved')}
         </span>
       )}
-      <MicButton isRecording={isRecording} isProcessing={isProcessing} onClick={onToggleDictation} />
     </div>
   );
 }
@@ -765,6 +766,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [reading, setReading] = useState(false);
+  const ttsAudioRef = useRef(null);
 
   useEffect(() => { setSaveStatus('idle'); }, [note.id]);
 
@@ -793,6 +796,46 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       console.error('Polish failed:', err);
     } finally {
       setPolishing(false);
+    }
+  }
+
+  async function handleReadAloud() {
+    if (reading) {
+      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setReading(false);
+      return;
+    }
+    const ed = editorRef.current;
+    const text = ed?.getText();
+    if (!text?.trim()) return;
+
+    try {
+      setReading(true);
+      const res = await fetch('/api/tts/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, exaggeration: 0.5 }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        ttsAudioRef.current = audio;
+        audio.onended = () => { setReading(false); URL.revokeObjectURL(url); };
+        audio.onerror = () => { setReading(false); };
+        await audio.play();
+        return;
+      }
+    } catch {}
+
+    if (window.speechSynthesis) {
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.onend = () => setReading(false);
+      utt.onerror = () => setReading(false);
+      window.speechSynthesis.speak(utt);
+    } else {
+      setReading(false);
     }
   }
 
@@ -833,7 +876,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       Document, Paragraph, Text, Bold, Italic, Strike, Code,
       Heading.configure({ levels: [1, 2, 3] }),
       BulletList, OrderedList, ListItem,
-      HardBreak, HorizontalRule, History,
+      HardBreak, HorizontalRule, Blockquote, History,
       YoutubeEmbed,
       ImageEmbed,
       Placeholder.configure({
@@ -873,14 +916,13 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
     editorRef.current?.chain().focus().insertContent(text + ' ').run();
   });
 
+  const hasText = editor && editor.getText().trim().length > 0;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Formatting toolbar (with mic on right) */}
       <NoteToolbar
         editor={editor}
-        isRecording={isRecording}
-        isProcessing={isProcessing}
-        onToggleDictation={toggleDictation}
         saveStatus={saveStatus}
         onVersionsOpen={() => { setVersionsOpen(true); fetchVersions(); }}
       />
@@ -927,31 +969,61 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         />
       </div>
 
-      {/* Polish button — fixed footer */}
-      {editor && editor.getText().trim().length > 0 && (
-        <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)' }}>
-          <button
-            style={{
-              width: '100%',
-              fontSize: '12px',
-              padding: '9px 0',
-              fontWeight: '500',
-              color: 'var(--white)',
-              background: 'var(--strong)',
-              borderRadius: '2px',
-              cursor: polishing ? 'default' : 'pointer',
-              transition: 'opacity 0.15s',
-              border: 'none',
-              fontFamily: 'var(--font)',
-              opacity: polishing ? 0.55 : 1,
-            }}
-            onClick={handlePolish}
-            disabled={polishing}
-          >
-            {polishing ? t('notes.polishing') : t('notes.polish')}
-          </button>
-        </div>
-      )}
+      {/* Polish + Mic — fixed footer */}
+      <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)', display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <button
+          style={{
+            flex: 1,
+            fontSize: '12px',
+            padding: '9px 0',
+            fontWeight: '500',
+            color: 'var(--white)',
+            background: 'var(--strong)',
+            borderRadius: '20px',
+            cursor: (polishing || !hasText) ? 'default' : 'pointer',
+            transition: 'opacity 0.15s',
+            border: 'none',
+            fontFamily: 'var(--font)',
+            opacity: (polishing || !hasText) ? 0.35 : 1,
+            boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
+          }}
+          onClick={handlePolish}
+          disabled={polishing || !hasText}
+        >
+          {polishing ? t('notes.polishing') : t('notes.polish')}
+        </button>
+        <MicButton
+          isRecording={isRecording}
+          isProcessing={isProcessing}
+          onClick={toggleDictation}
+        />
+        <button
+          onClick={handleReadAloud}
+          title={reading ? t('common.stop') : t('common.readAloud')}
+          type="button"
+          disabled={!hasText && !reading}
+          style={{
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '20px',
+            border: 'none',
+            background: reading ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+            color: reading ? 'var(--strong)' : 'var(--muted)',
+            cursor: (!hasText && !reading) ? 'default' : 'pointer',
+            transition: 'color 0.15s, background 0.15s',
+            flexShrink: 0,
+            opacity: (!hasText && !reading) ? 0.35 : 1,
+            boxShadow: reading
+              ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+              : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+          }}
+        >
+          <WaveformIcon playing={reading} />
+        </button>
+      </div>
 
       <VersionsPanel
         isOpen={versionsOpen}
@@ -1066,6 +1138,61 @@ function formatVersionDate(isoStr) {
 function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersion, onClearPreview }) {
   const { t } = useLanguage();
   const hasContent = note?.body?.trim();
+  const [readingAll, setReadingAll] = useState(false);
+  const ttsAudioRef = useRef(null);
+  const readingCancelledRef = useRef(false);
+
+  useEffect(() => () => {
+    readingCancelledRef.current = true;
+    if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }, []);
+
+  async function handleReadAll() {
+    if (readingAll) {
+      readingCancelledRef.current = true;
+      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setReadingAll(false);
+      return;
+    }
+    if (!blocks.length) return;
+
+    const fullText = blocks.map(b => b.body).filter(Boolean).join('\n\n');
+    if (!fullText.trim()) return;
+
+    readingCancelledRef.current = false;
+    setReadingAll(true);
+
+    try {
+      const res = await fetch('/api/tts/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: fullText, exaggeration: 0.5 }),
+      });
+      if (res.ok && !readingCancelledRef.current) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        ttsAudioRef.current = audio;
+        audio.onended = () => { setReadingAll(false); URL.revokeObjectURL(url); };
+        audio.onerror = () => { setReadingAll(false); };
+        await audio.play();
+        return;
+      }
+    } catch {}
+
+    if (readingCancelledRef.current) return;
+
+    if (window.speechSynthesis) {
+      const utt = new SpeechSynthesisUtterance(fullText);
+      utt.onend = () => setReadingAll(false);
+      utt.onerror = () => setReadingAll(false);
+      window.speechSynthesis.speak(utt);
+    } else {
+      setReadingAll(false);
+    }
+  }
   const panelStyle = {
     width: '100%',
     height: '100%',
@@ -1160,14 +1287,43 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         padding: '14px 18px',
         borderTop: 'var(--border-style)',
         flexShrink: 0,
+        display: 'flex',
+        gap: '10px',
+        alignItems: 'center',
       }}>
         <button
           className="btn-primary"
-          style={{ width: '100%', fontSize: '12px', padding: '9px 0', opacity: (!hasContent || loading) ? 0.45 : 1 }}
+          style={{ flex: 1, fontSize: '12px', padding: '9px 0', borderRadius: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)', opacity: (!hasContent || loading) ? 0.45 : 1 }}
           onClick={onReflect}
           disabled={!hasContent || loading}
         >
           {loading ? t('notes.reflecting') : t('notes.reflect')}
+        </button>
+        <button
+          onClick={handleReadAll}
+          title={readingAll ? t('common.stop') : t('common.readAloud')}
+          type="button"
+          disabled={blocks.length === 0 && !readingAll}
+          style={{
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '20px',
+            border: 'none',
+            background: readingAll ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+            color: readingAll ? 'var(--strong)' : 'var(--muted)',
+            cursor: (blocks.length === 0 && !readingAll) ? 'default' : 'pointer',
+            transition: 'color 0.15s, background 0.15s',
+            flexShrink: 0,
+            opacity: (blocks.length === 0 && !readingAll) ? 0.35 : 1,
+            boxShadow: readingAll
+              ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+              : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+          }}
+        >
+          <WaveformIcon playing={readingAll} />
         </button>
       </div>
     </div>
@@ -1182,5 +1338,24 @@ function DefaultEditor({ note, editor }) {
     <div className={className} style={{ fontSize: '15px', lineHeight: '1.8' }}>
       <EditorContent editor={editor} />
     </div>
+  );
+}
+
+function WaveformIcon({ playing }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y={playing ? 2 : 4} width="2" height={playing ? 10 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="4.5" y={playing ? 0 : 2} width="2" height={playing ? 14 : 10} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="8" y={playing ? 3 : 4} width="2" height={playing ? 8 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+      </rect>
+    </svg>
   );
 }

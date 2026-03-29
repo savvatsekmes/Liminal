@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import MirrorBlock from './MirrorBlock';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -56,11 +56,12 @@ const s = {
     fontWeight: '500',
     color: 'var(--white)',
     background: 'var(--strong)',
-    borderRadius: '2px',
+    borderRadius: '20px',
     cursor: 'pointer',
     transition: 'opacity 0.15s',
     border: 'none',
     fontFamily: 'var(--font)',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
   },
   reflectBtnLoading: {
     opacity: 0.55,
@@ -114,6 +115,64 @@ export default function MirrorPanel({
   onClearPreview,
 }) {
   const { t } = useLanguage();
+  const [readingAll, setReadingAll] = useState(false);
+  const ttsAudioRef = useRef(null);
+  const readingCancelledRef = useRef(false);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    readingCancelledRef.current = true;
+    if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }, []);
+
+  async function handleReadAll() {
+    if (readingAll) {
+      readingCancelledRef.current = true;
+      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setReadingAll(false);
+      return;
+    }
+    if (!blocks.length) return;
+
+    const fullText = [opening, ...blocks.map(b => b.body)].filter(Boolean).join('\n\n');
+    if (!fullText.trim()) return;
+
+    readingCancelledRef.current = false;
+    setReadingAll(true);
+
+    // Try custom TTS
+    try {
+      const res = await fetch('/api/tts/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: fullText, exaggeration: 0.5 }),
+      });
+      if (res.ok && !readingCancelledRef.current) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        ttsAudioRef.current = audio;
+        audio.onended = () => { setReadingAll(false); URL.revokeObjectURL(url); };
+        audio.onerror = () => { setReadingAll(false); };
+        await audio.play();
+        return;
+      }
+    } catch {}
+
+    if (readingCancelledRef.current) return;
+
+    // Fallback to browser TTS
+    if (window.speechSynthesis) {
+      const utt = new SpeechSynthesisUtterance(fullText);
+      utt.onend = () => setReadingAll(false);
+      utt.onerror = () => setReadingAll(false);
+      window.speechSynthesis.speak(utt);
+    } else {
+      setReadingAll(false);
+    }
+  }
 
   if (previewVersion) {
     return (
@@ -169,13 +228,39 @@ export default function MirrorPanel({
       </div>
 
       {/* Footer */}
-      <div style={s.footer}>
+      <div style={{ ...s.footer, display: 'flex', gap: '10px', alignItems: 'center' }}>
         <button
-          style={{ ...s.reflectBtn, ...(loading ? s.reflectBtnLoading : {}) }}
+          style={{ ...s.reflectBtn, flex: 1, ...(loading ? s.reflectBtnLoading : {}) }}
           onClick={onReflect}
           disabled={loading}
         >
           {loading ? t('mirror.reflecting') : t('mirror.reflect')}
+        </button>
+        <button
+          onClick={handleReadAll}
+          title={readingAll ? t('common.stop') : t('common.readAloud')}
+          type="button"
+          disabled={blocks.length === 0 && !readingAll}
+          style={{
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '20px',
+            border: 'none',
+            background: readingAll ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+            color: readingAll ? 'var(--strong)' : 'var(--muted)',
+            cursor: (blocks.length === 0 && !readingAll) ? 'default' : 'pointer',
+            transition: 'color 0.15s, background 0.15s',
+            flexShrink: 0,
+            opacity: (blocks.length === 0 && !readingAll) ? 0.35 : 1,
+            boxShadow: readingAll
+              ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+              : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+          }}
+        >
+          <WaveformIcon playing={readingAll} />
         </button>
       </div>
     </div>
@@ -212,5 +297,24 @@ function LoadingState() {
       <div style={s.loadingDots}>· · ·</div>
       <div style={s.loadingText}>{t('mirror.loading')}</div>
     </div>
+  );
+}
+
+function WaveformIcon({ playing }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y={playing ? 2 : 4} width="2" height={playing ? 10 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="4.5" y={playing ? 0 : 2} width="2" height={playing ? 14 : 10} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="8" y={playing ? 3 : 4} width="2" height={playing ? 8 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+      </rect>
+    </svg>
   );
 }

@@ -19,6 +19,7 @@ import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import History from '@tiptap/extension-history';
 import Placeholder from '@tiptap/extension-placeholder';
 import Code from '@tiptap/extension-code';
+import Blockquote from '../extensions/Blockquote';
 import TagBar from './TagBar';
 import VersionsPanel from './VersionsPanel';
 import { apiFetch } from '../utils/api';
@@ -164,6 +165,8 @@ export default function WritingCanvas({
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [reading, setReading] = useState(false);
+  const ttsAudioRef = useRef(null);
 
   const editorRef = useRef(null);
   const { isRecording, isProcessing, toggle: toggleDictation } = useDictation((text) => {
@@ -171,27 +174,27 @@ export default function WritingCanvas({
     if (ed) ed.chain().focus().insertContent(text + ' ').run();
   });
 
-  const handleMouseUp = useCallback(() => {
+  const handleContextMenu = useCallback((e) => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.toString().trim()) {
       setContextPopup(null);
       return;
     }
     const text = sel.toString().trim();
-    // Only show if the selection is inside the editor wrapper
     if (editorWrapRef.current && sel.rangeCount > 0) {
       const range = sel.getRangeAt(0);
       if (!editorWrapRef.current.contains(range.commonAncestorContainer)) {
         setContextPopup(null);
         return;
       }
-      const rect = range.getBoundingClientRect();
+      // Don't prevent default — let the native context menu show too
       const rootEl = editorWrapRef.current.closest('[data-canvas-root]');
       const rootRect = rootEl ? rootEl.getBoundingClientRect() : { left: 0, top: 0 };
       setContextSaved(false);
       setContextPopup({
-        x: rect.left + rect.width / 2 - rootRect.left,
-        y: rect.top - rootRect.top,
+        x: e.clientX - rootRect.left,
+        y: e.clientY - rootRect.top,
+        below: e.clientY > window.innerHeight * 0.6,
         text,
       });
     }
@@ -250,6 +253,47 @@ export default function WritingCanvas({
     }
   }
 
+  async function handleReadAloud() {
+    if (reading) {
+      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setReading(false);
+      return;
+    }
+    const text = editor?.getText();
+    if (!text?.trim()) return;
+
+    // Try custom TTS first
+    try {
+      setReading(true);
+      const res = await fetch('/api/tts/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, exaggeration: 0.5 }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        ttsAudioRef.current = audio;
+        audio.onended = () => { setReading(false); URL.revokeObjectURL(url); };
+        audio.onerror = () => { setReading(false); };
+        await audio.play();
+        return;
+      }
+    } catch {}
+
+    // Fallback to browser TTS
+    if (window.speechSynthesis) {
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.onend = () => setReading(false);
+      utt.onerror = () => setReading(false);
+      window.speechSynthesis.speak(utt);
+    } else {
+      setReading(false);
+    }
+  }
+
   async function saveToLifeContext() {
     if (!contextPopup) return;
     await apiFetch('/api/memories', {
@@ -278,6 +322,7 @@ export default function WritingCanvas({
       ListItem,
       HardBreak,
       HorizontalRule,
+      Blockquote,
       History,
       YoutubeEmbed,
       ImageEmbed,
@@ -341,7 +386,7 @@ export default function WritingCanvas({
   const words = wordCount(editor?.getText() || '');
 
   return (
-    <div style={s.root} data-canvas-root onMouseUp={handleMouseUp}>
+    <div style={s.root} data-canvas-root onContextMenu={handleContextMenu} onClick={() => contextPopup && setContextPopup(null)}>
       {/* Toolbar */}
       <div style={s.toolbar}>
         <button
@@ -410,6 +455,14 @@ export default function WritingCanvas({
           #
         </ToolbarButton>
 
+        <ToolbarButton
+          label="Quote"
+          active={editor?.isActive('blockquote')}
+          onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+        >
+          "
+        </ToolbarButton>
+
         <div style={s.toolbarDivider} />
 
         <ToolbarButton
@@ -437,12 +490,6 @@ export default function WritingCanvas({
         </button>
 
         <span style={s.wordCount}>{t('common.words', { count: words })}</span>
-
-        <MicButton
-          isRecording={isRecording}
-          isProcessing={isProcessing}
-          onClick={toggleDictation}
-        />
 
         <button
           style={{ ...s.toolbarBtn, fontSize: '12px', width: 'auto', padding: '0 10px' }}
@@ -498,28 +545,60 @@ export default function WritingCanvas({
         )}
       </div>
 
-      {/* Polish button — fixed footer */}
-      {entry && words > 0 && (
-        <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)' }}>
+      {/* Polish + Mic — fixed footer */}
+      {entry && (
+        <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)', display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
             style={{
-              width: '100%',
+              flex: 1,
               fontSize: '12px',
               padding: '9px 0',
               fontWeight: '500',
               color: 'var(--white)',
               background: 'var(--strong)',
-              borderRadius: '2px',
-              cursor: polishing ? 'default' : 'pointer',
+              borderRadius: '20px',
+              cursor: (polishing || words === 0) ? 'default' : 'pointer',
               transition: 'opacity 0.15s',
               border: 'none',
               fontFamily: 'var(--font)',
-              opacity: polishing ? 0.55 : 1,
+              opacity: (polishing || words === 0) ? 0.35 : 1,
+              boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
             }}
             onClick={handlePolish}
-            disabled={polishing}
+            disabled={polishing || words === 0}
           >
             {polishing ? t('journal.polishing') : t('journal.polish')}
+          </button>
+          <MicButton
+            isRecording={isRecording}
+            isProcessing={isProcessing}
+            onClick={toggleDictation}
+          />
+          <button
+            onClick={handleReadAloud}
+            title={reading ? t('common.stop') : t('common.readAloud')}
+            type="button"
+            disabled={words === 0 && !reading}
+            style={{
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '20px',
+              border: 'none',
+              background: reading ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+              color: reading ? 'var(--strong)' : 'var(--muted)',
+              cursor: (words === 0 && !reading) ? 'default' : 'pointer',
+              transition: 'color 0.15s, background 0.15s',
+              flexShrink: 0,
+              opacity: (words === 0 && !reading) ? 0.35 : 1,
+              boxShadow: reading
+                ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+            }}
+          >
+            <WaveformIcon playing={reading} />
           </button>
         </div>
       )}
@@ -529,22 +608,79 @@ export default function WritingCanvas({
         <div style={{
           position: 'absolute',
           left: `${contextPopup.x}px`,
-          top: `${contextPopup.y}px`,
-          transform: 'translate(-50%, -100%)',
-          background: 'var(--strong)',
-          color: 'var(--white)',
-          fontSize: '11px',
-          borderRadius: '3px',
-          padding: '5px 10px',
-          whiteSpace: 'nowrap',
-          cursor: 'pointer',
+          top: contextPopup.below ? `${contextPopup.y + 11}px` : `${contextPopup.y - 11}px`,
+          transform: contextPopup.below ? 'translate(0, 0)' : 'translate(0, -100%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '2px',
           zIndex: 100,
           userSelect: 'none',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-        }}
-          onClick={saveToLifeContext}
-        >
-          {contextSaved ? t('journal.savedToMemory') : t('journal.saveToMemory')}
+          background: 'var(--white)',
+          borderRadius: '20px',
+          padding: '3px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
+        }}>
+          <div style={{
+            color: 'var(--body)',
+            fontSize: '11px',
+            fontWeight: '500',
+            borderRadius: '16px',
+            padding: '5px 12px',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+            fontFamily: 'var(--font)',
+            transition: 'background 0.12s',
+          }}
+            onClick={saveToLifeContext}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            {contextSaved ? t('journal.savedToMemory') : t('journal.saveToMemory')}
+          </div>
+          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
+          <div style={{
+            color: 'var(--body)',
+            fontSize: '11px',
+            fontWeight: '500',
+            borderRadius: '16px',
+            padding: '5px 12px',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+            fontFamily: 'var(--font)',
+            transition: 'background 0.12s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+          }}
+            onClick={() => {
+              const text = contextPopup.text;
+              setContextPopup(null);
+              (async () => {
+                try {
+                  const res = await fetch('/api/tts/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, exaggeration: 0.5 }),
+                  });
+                  if (res.ok) {
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const audio = new Audio(url);
+                    audio.onended = () => URL.revokeObjectURL(url);
+                    await audio.play();
+                    return;
+                  }
+                } catch {}
+                if (window.speechSynthesis) {
+                  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+                }
+              })();
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <WaveformIcon playing={false} /> {t('common.readAloud')}
+          </div>
         </div>
       )}
 
@@ -559,5 +695,24 @@ export default function WritingCanvas({
         title="Entry Versions"
       />
     </div>
+  );
+}
+
+function WaveformIcon({ playing }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y={playing ? 2 : 4} width="2" height={playing ? 10 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="4.5" y={playing ? 0 : 2} width="2" height={playing ? 14 : 10} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="8" y={playing ? 3 : 4} width="2" height={playing ? 8 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+      </rect>
+    </svg>
   );
 }

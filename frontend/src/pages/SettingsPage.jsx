@@ -129,7 +129,7 @@ const s = {
     fontSize: '12px',
     fontWeight: '500',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '20px',
     background: 'var(--white)',
     color: 'var(--body)',
     cursor: 'pointer',
@@ -141,6 +141,7 @@ const s = {
     background: 'var(--strong)',
     color: 'var(--white)',
     border: 'none',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
   },
   btnDanger: {
     color: '#c0392b',

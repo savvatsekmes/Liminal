@@ -89,8 +89,9 @@ button:focus-visible {
   padding: 8px 18px;
   font-size: 13px;
   font-weight: 500;
-  border-radius: 2px;
+  border-radius: 20px;
   transition: opacity 0.15s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 .btn-primary:hover { opacity: 0.82; }
 .btn-primary:disabled { opacity: 0.35; cursor: default; }
@@ -101,12 +102,21 @@ button:focus-visible {
   font-size: 12px;
   padding: 5px 10px;
   border: var(--border-style);
-  border-radius: 2px;
+  border-radius: 20px;
   transition: color 0.15s, border-color 0.15s;
 }
 .btn-ghost:hover {
   color: var(--strong);
   border-color: var(--strong);
+}
+
+/* Blockquote */
+blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 14px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-style: italic;
 }
 
 /* ── Inputs ─────────────────────────────────────────────────────────────── */

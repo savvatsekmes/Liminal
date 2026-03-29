@@ -8,18 +8,21 @@ import { useLanguage } from '../i18n/LanguageContext';
 export default function MicButton({ isRecording, isProcessing, onClick, style = {} }) {
   const { t } = useLanguage();
   const baseStyle = {
-    width: '28px',
-    height: '28px',
+    width: '36px',
+    height: '36px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: '3px',
+    borderRadius: '20px',
     border: 'none',
-    background: isRecording ? 'rgba(180,0,0,0.08)' : 'none',
+    background: isRecording ? 'rgba(180,0,0,0.08)' : 'var(--near-white)',
     color: isRecording ? '#b00000' : 'var(--muted)',
     cursor: isProcessing ? 'default' : 'pointer',
-    transition: 'color 0.15s, background 0.15s',
+    transition: 'color 0.15s, background 0.15s, box-shadow 0.15s',
     flexShrink: 0,
+    boxShadow: isRecording
+      ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+      : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
     ...style,
   };
 

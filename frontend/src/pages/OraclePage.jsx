@@ -481,14 +481,15 @@ const s = {
     padding: '9px 18px',
     fontSize: '12px',
     fontWeight: '500',
-    border: 'var(--border-style)',
-    borderRadius: '3px',
+    border: 'none',
+    borderRadius: '20px',
     background: 'var(--strong)',
     color: 'var(--white)',
     cursor: 'pointer',
     fontFamily: 'var(--font)',
     flexShrink: 0,
     transition: 'opacity 0.12s',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
   },
 };
 

@@ -20,6 +20,8 @@ export default {
   'common.add': 'Add',
   'common.adding': 'Adding\u2026',
   'common.loading': 'Loading\u2026',
+  'common.readAloud': 'Read aloud',
+  'common.stop': 'Stop',
   'common.search': 'Search\u2026',
   'common.back': '\u2190 Back',
   'common.words': '{count} words',

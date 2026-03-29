@@ -59,10 +59,11 @@ const s = {
     background: 'var(--strong)',
     color: 'var(--white)',
     border: 'none',
-    borderRadius: '2px',
+    borderRadius: '20px',
     cursor: 'pointer',
     transition: 'opacity 0.15s',
     fontFamily: 'var(--font)',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
   },
   memoryItem: {
     display: 'flex',
@@ -373,7 +374,7 @@ export default function MemoryPage() {
               {t('context.clearAll')}
             </button>
             <button
-              style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '2px', padding: '6px 14px', cursor: 'pointer', fontFamily: 'var(--font)' }}
+              style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '20px', padding: '6px 14px', cursor: 'pointer', fontFamily: 'var(--font)' }}
               onClick={resetClear}
             >
               {t('common.cancel')}
@@ -406,7 +407,7 @@ export default function MemoryPage() {
               {t('common.delete')}
             </button>
             <button
-              style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '2px', padding: '6px 14px', cursor: 'pointer', fontFamily: 'var(--font)' }}
+              style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '20px', padding: '6px 14px', cursor: 'pointer', fontFamily: 'var(--font)' }}
               onClick={resetClear}
             >
               {t('common.cancel')}
