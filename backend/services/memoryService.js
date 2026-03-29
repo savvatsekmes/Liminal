@@ -102,7 +102,7 @@ async function retrieveSimilarEntries(currentEntryText, currentEntryId, k = 5) {
  * @param {number|null} currentEntryId
  * @param {number} userId
  */
-async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntryId = null, userId = 1) {
+async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntryId = null, userId = 1, username = null) {
   const [summary, similarEntries] = await Promise.all([
     Promise.resolve(getSummary(userId)),
     retrieveSimilarEntries(currentEntryText, currentEntryId),
@@ -137,12 +137,8 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     sections.push(`## RELEVANT PAST ENTRIES\nThese past entries are most relevant to what was just written:\n\n${pastContext}`);
   }
 
-  // 6. Candor instruction (injected before mirror instructions so it shapes the whole response)
-  const candor = buildCandorInstruction(portrait);
-  if (candor) sections.push(candor);
-
-  // 7. Mirror instructions
-  sections.push(buildMirrorInstructions(portrait));
+  // 6. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
+  sections.push(buildMirrorInstructions(portrait, username));
 
   return sections.join('\n\n');
 }
@@ -194,6 +190,31 @@ function buildNotesDigest(userId = 1) {
   }
 }
 
+const TAROT_DESCRIPTIONS = {
+  'The Fool':           'New beginnings, leaping into the unknown, pure potential',
+  'The Magician':       'Will, skill, manifestation, turning intention into action',
+  'The High Priestess': 'Intuition, mystery, inner knowing, what lies beneath',
+  'The Empress':        'Abundance, nurturing, creativity, connection to nature',
+  'The Emperor':        'Structure, authority, stability, building foundations',
+  'The Hierophant':     'Tradition, guidance, seeking a teacher or system',
+  'The Lovers':         'Choice, values, alignment, deep connection',
+  'The Chariot':        'Willpower, direction, moving forward through opposition',
+  'Strength':           'Inner courage, patience, taming what is wild within',
+  'The Hermit':         'Solitude, inner light, withdrawal to find truth',
+  'Wheel of Fortune':   'Change, cycles, turning points, what rises and falls',
+  'Justice':            'Truth, cause and effect, accountability, balance',
+  'The Hanged Man':     'Surrender, new perspective, pause before the next move',
+  'Death':              'Transformation, endings that make way, release',
+  'Temperance':         'Integration, patience, the middle path, alchemy',
+  'The Devil':          'Chains of your own making, shadow, what binds you',
+  'The Tower':          'Sudden upheaval, what must fall, breakthrough through collapse',
+  'The Star':           'Hope, healing, trust after darkness, restoration',
+  'The Moon':           'Illusion, anxiety, what hides in the subconscious',
+  'The Sun':            'Clarity, joy, vitality, things coming into the light',
+  'Judgement':          'Awakening, hearing the call, rising to a new version',
+  'The World':          'Completion, integration, the end of a cycle, wholeness',
+};
+
 function buildPortraitSection(portrait) {
   if (!portrait) return '';
 
@@ -212,6 +233,31 @@ function buildPortraitSection(portrait) {
     lines.push(czLine);
   }
   if (portrait.birth_date) lines.push(`Birth: ${portrait.birth_date}${portrait.birth_time ? ' ' + portrait.birth_time : ''}${portrait.birth_location ? ', ' + portrait.birth_location : ''}`);
+
+  // Tarot
+  const tarotLines = [];
+  if (portrait.soul_card) {
+    const cardName = portrait.soul_card.replace(/ [IVXLCDM0]+$/, '');
+    const desc = TAROT_DESCRIPTIONS[cardName];
+    tarotLines.push(`- Soul Card (Sun Sign): ${portrait.soul_card}${desc ? ' — ' + desc : ''}`);
+  }
+  if (portrait.life_path_card) {
+    const cardName = portrait.life_path_card.replace(/ [IVXLCDM0]+$/, '');
+    const desc = TAROT_DESCRIPTIONS[cardName];
+    tarotLines.push(`- Life Path Card (Life Path ${portrait.life_path_number || '?'}): ${portrait.life_path_card}${desc ? ' — ' + desc : ''}`);
+  }
+  if (portrait.working_tarot_card) {
+    const desc = TAROT_DESCRIPTIONS[portrait.working_tarot_card];
+    tarotLines.push(`- Working Card (current): ${portrait.working_tarot_card}${desc ? ' — ' + desc : ''}`);
+  }
+  if (tarotLines.length) lines.push(`\nTarot:\n${tarotLines.join('\n')}`);
+
+  // Current chapter
+  const currentLines = [];
+  if (portrait.season_of_life) currentLines.push(`- Season of life: ${portrait.season_of_life}`);
+  if (portrait.current_intention) currentLines.push(`- Intention: ${portrait.current_intention}`);
+  if (currentLines.length) lines.push(`\nCurrent chapter:\n${currentLines.join('\n')}`);
+
   if (portrait.context_note) lines.push(`\nCurrent context:\n${portrait.context_note}`);
 
   // Character portrait — scaled by influence slider
@@ -260,6 +306,91 @@ function buildSliderDescription(portrait) {
   return lines.join(', ');
 }
 
+/**
+ * Translate portrait slider values into rich natural-language voice instructions
+ * for the aggregate journal reflect prompt.
+ */
+function translateSlidersToVoice(portrait) {
+  const instructions = [];
+  const v = (key) => portrait?.[key] ?? 50;
+
+  // rational_spiritual
+  const rs = v('slider_rational_spiritual');
+  if (rs < 30) {
+    instructions.push('Stay grounded and rational — focus on what\'s practical and concrete.');
+  } else if (rs > 70) {
+    instructions.push('Lean into the spiritual and symbolic — explore the deeper meaning, metaphors, and soul-level significance of events.');
+  } else {
+    instructions.push('Balance the rational and spiritual — acknowledge both the practical reality and the deeper meaning.');
+  }
+
+  // gentle_direct
+  const gd = v('slider_gentle_direct');
+  if (gd < 30) {
+    instructions.push('Be gentle and tender — hold the person carefully, especially around difficult themes.');
+  } else if (gd > 70) {
+    instructions.push('Be direct and plain-spoken — name things clearly, don\'t soften the truth.');
+  } else {
+    instructions.push('Be warm but willing to say things plainly when it matters.');
+  }
+
+  // reflective_action
+  const ra = v('slider_reflective_action');
+  if (ra < 30) {
+    instructions.push('Stay reflective and contemplative — invite deeper looking, not doing.');
+  } else if (ra > 70) {
+    instructions.push('Lean toward action and next steps — what can be done, decided, moved on.');
+  } else {
+    instructions.push('Balance reflection with occasional practical direction.');
+  }
+
+  // light_deep
+  const ld = v('slider_light_deep');
+  if (ld < 30) {
+    instructions.push('Keep it light — don\'t overwhelm, touch gently.');
+  } else if (ld > 70) {
+    instructions.push('Go deep — explore the psychological layers, the shadow, the unconscious patterns.');
+  } else {
+    instructions.push('Go to a moderate depth — meaningful but not overwhelming.');
+  }
+
+  // conversational_poetic
+  const cp = v('slider_conversational_poetic');
+  if (cp < 30) {
+    instructions.push('Write conversationally — like a thoughtful friend speaking directly.');
+  } else if (cp > 70) {
+    instructions.push('Write with poetic quality — use imagery, metaphor, and lyrical prose.');
+  } else {
+    instructions.push('Write clearly with occasional moments of poetic language.');
+  }
+
+  // encouraging_challenging
+  const ec = v('slider_encouraging_challenging');
+  if (ec < 30) {
+    instructions.push('Lead with encouragement and affirmation.');
+  } else if (ec > 70) {
+    instructions.push('Be willing to challenge — ask hard questions, name difficult patterns, don\'t just validate.');
+  } else {
+    instructions.push('Encourage where warranted but also show the other side — both/and not either/or.');
+  }
+
+  // candor
+  const candor = v('slider_candor');
+  if (candor > 65) {
+    instructions.push('Be candid — say what you actually see, even if it\'s uncomfortable. Name avoidance. Play devil\'s advocate. Truth over comfort.');
+  } else if (candor < 35) {
+    instructions.push('Prioritise emotional safety and validation. Meet them where they are.');
+  }
+
+  // character influence
+  const ci = v('slider_character_influence');
+  if (ci > 65) {
+    instructions.push('Bring full presence and personality — don\'t be generic or bland.');
+  }
+
+  return instructions.join('\n');
+}
+
 function buildCandorInstruction(portrait) {
   const v = portrait?.slider_candor ?? 50;
   if (v > 65) {
@@ -280,38 +411,60 @@ The user needs emotional support right now. Prioritise warmth and validation ove
   return null;
 }
 
-function buildMirrorInstructions(portrait) {
+function buildMirrorInstructions(portrait, username = null) {
   let activeArchetypes = ['Zen', 'Jungian', 'Stoic', 'Direct Friend'];
   try {
     activeArchetypes = JSON.parse(portrait?.active_archetypes || '[]');
   } catch {}
 
+  const voiceInstructions = translateSlidersToVoice(portrait);
+
+  const nameInstruction = username
+    ? `The person's name is ${username}. Use it naturally in the opening — like a friend would.`
+    : `You don't know their name. Address them warmly but without a name.`;
+
   return `## MIRROR RESPONSE INSTRUCTIONS
 
-You are Liminal's Mirror — an AI reflection system that responds to journal entries.
+You are responding to a personal journal entry as an integrated, wise voice that draws on multiple wisdom traditions simultaneously. You are not one archetype — you are a blend of: ${activeArchetypes.join(', ')}.
 
+You are not a therapist, not a coach, not an AI. You are a deeply perceptive friend — someone who happens to carry the wisdom of these traditions but speaks like a real person. Warm, honest, sometimes funny, never clinical.
+
+Your voice is shaped by these qualities:
+${voiceInstructions}
+
+${nameInstruction}
+
+RESPONSE FORMAT:
 Your response must be structured as JSON with this exact shape:
 {
+  "opening": "A personal, visceral 1-3 sentence opening that addresses the person by name and captures the emotional essence of the whole entry. This should feel like a friend who just read something real — not a summary, but a felt response. e.g. 'Savva… this reads like someone who just walked out of a furnace and is still checking if their eyebrows are intact.' Be real. Be vivid. Match the energy of what they wrote.",
   "blocks": [
     {
       "title": "A Named Theme",
       "body": "Prose reflection...",
       "quote": "Optional short quote or null",
-      "archetype": "Name of the lens used"
+      "archetype": "Auto"
     }
   ]
 }
 
 Rules:
-- Each block is a named reflection from a different lens: ${activeArchetypes.join(', ')}
+- The opening comes BEFORE the themed blocks. It is personal, direct, and captures the whole entry in one visceral moment. It should feel like a friend reacting — not an AI summarising.
+- Read the full journal entry and identify the real emotional and psychological themes present.
+- Write one named paragraph per theme (4-7 themes typically). Never fewer than 3, rarely more than 8.
+- Each paragraph has a short title that names the theme (e.g. "A Softer Nervous System", "The Timing Irony"), NOT the archetype.
+- Write each paragraph in your blended voice — draw on whichever wisdom tradition is most relevant to that specific theme naturally, without labelling which one you are using.
 - Write in prose paragraphs. No bullet points ever. No lists.
 - Bold sparingly — at most 1-2 key phrases per block using **bold**. Not whole sentences.
-- Titles name the theme, not the voice (e.g. "A Softer Nervous System", not "Zen Response")
-- Be warm and direct. Show both sides of what the person wrote. Do not just validate.
-- Challenge gently when the entry calls for it. Offer perspective shifts.
-- Quote can be a short line from a philosopher, poet, tradition — or null if nothing fits naturally.
+- After some paragraphs (not all), include a short relevant quote from any wisdom tradition. Never force a quote — use null if nothing fits naturally.
+- Write a closing paragraph with a final integrating thought.
+- End with one open question for the person to sit with.
+- Do not be falsely positive or bypassy — show both sides of every theme.
+- Do NOT label which archetype you are drawing from — the blend is invisible.
 - Do NOT reference the user's MBTI, astrology, or portrait data explicitly. Let it inform tone only.
-- Speak directly to the person (use "you").
+- Speak directly to the person (use "you"). Talk like a friend, not an assistant.
+- The response should feel like it comes from one coherent, wise, caring presence — not a committee.
+- Set archetype to "Auto" on every block.
 - Return ONLY the JSON object. No preamble, no explanation outside the JSON.`;
 }
 
@@ -375,4 +528,5 @@ module.exports = {
   buildReflectSystemPrompt,
   buildAskSystemPrompt,
   buildOracleSystemPrompt,
+  translateSlidersToVoice,
 };

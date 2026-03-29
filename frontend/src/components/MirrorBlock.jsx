@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 
-const ARCHETYPES = ['Zen', 'Jungian', 'Stoic', 'Somatic', 'Taoist', 'Direct Friend'];
+const ARCHETYPES = ['Auto', 'Zen', 'Jungian', 'Stoic', 'Somatic', 'Taoist', 'Direct Friend'];
 
 const s = {
   block: {
@@ -79,7 +79,7 @@ const s = {
 export default function MirrorBlock({ block, entryText, onRegenerate, ttsOnline }) {
   const [playing, setPlaying] = useState(false);
   const [regenerating, setRegen] = useState(false);
-  const [selectedArchetype, setSelectedArchetype] = useState(block.archetype || '');
+  const [selectedArchetype, setSelectedArchetype] = useState(block.archetype || 'Auto');
   const audioRef = useRef(null);
 
   async function handleListen() {
@@ -136,7 +136,7 @@ export default function MirrorBlock({ block, entryText, onRegenerate, ttsOnline 
     if (!onRegenerate || regenerating) return;
     setRegen(true);
     try {
-      await onRegenerate(block, selectedArchetype || block.archetype);
+      await onRegenerate(block, selectedArchetype || 'Auto');
     } finally {
       setRegen(false);
     }
@@ -194,7 +194,6 @@ export default function MirrorBlock({ block, entryText, onRegenerate, ttsOnline 
           title="Choose archetype for regeneration"
           aria-label="Archetype"
         >
-          <option value="">Archetype</option>
           {ARCHETYPES.map((a) => (
             <option key={a} value={a}>{a}</option>
           ))}
@@ -236,11 +235,17 @@ function WaveformIcon({ playing }) {
 
 function RegenIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
       <path
-        d="M11 6.5A4.5 4.5 0 1 1 6.5 2M6.5 2L9 4.5M6.5 2L4 4.5"
+        d="M13.5 8A5.5 5.5 0 1 1 8 2.5"
         stroke="currentColor"
-        strokeWidth="1.2"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8 0.5L10.5 2.5L8 4.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

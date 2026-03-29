@@ -113,6 +113,98 @@ const s = {
   },
 };
 
+// ── Tarot mappings ────────────────────────────────────────────────────────────
+
+const SUN_SIGN_TO_TAROT = {
+  'Aries':       { card: 'The Emperor',      number: 'IV'    },
+  'Taurus':      { card: 'The Hierophant',   number: 'V'     },
+  'Gemini':      { card: 'The Lovers',       number: 'VI'    },
+  'Cancer':      { card: 'The Chariot',      number: 'VII'   },
+  'Leo':         { card: 'Strength',         number: 'VIII'  },
+  'Virgo':       { card: 'The Hermit',       number: 'IX'    },
+  'Libra':       { card: 'Justice',          number: 'XI'    },
+  'Scorpio':     { card: 'Death',            number: 'XIII'  },
+  'Sagittarius': { card: 'Temperance',       number: 'XIV'   },
+  'Capricorn':   { card: 'The Devil',        number: 'XV'    },
+  'Aquarius':    { card: 'The Star',         number: 'XVII'  },
+  'Pisces':      { card: 'The Moon',         number: 'XVIII' },
+};
+
+const LIFE_PATH_TO_TAROT = {
+  1:  { card: 'The Magician',       number: 'I'    },
+  2:  { card: 'The High Priestess', number: 'II'   },
+  3:  { card: 'The Empress',        number: 'III'  },
+  4:  { card: 'The Emperor',        number: 'IV'   },
+  5:  { card: 'The Hierophant',     number: 'V'    },
+  6:  { card: 'The Lovers',         number: 'VI'   },
+  7:  { card: 'The Chariot',        number: 'VII'  },
+  8:  { card: 'Strength',           number: 'VIII' },
+  9:  { card: 'The Hermit',         number: 'IX'   },
+  11: { card: 'Justice',            number: 'XI'   },
+  22: { card: 'The Fool',           number: '0'    },
+  33: { card: 'The World',          number: 'XXI'  },
+};
+
+const MAJOR_ARCANA = [
+  { number: '0',     name: 'The Fool' },
+  { number: 'I',     name: 'The Magician' },
+  { number: 'II',    name: 'The High Priestess' },
+  { number: 'III',   name: 'The Empress' },
+  { number: 'IV',    name: 'The Emperor' },
+  { number: 'V',     name: 'The Hierophant' },
+  { number: 'VI',    name: 'The Lovers' },
+  { number: 'VII',   name: 'The Chariot' },
+  { number: 'VIII',  name: 'Strength' },
+  { number: 'IX',    name: 'The Hermit' },
+  { number: 'X',     name: 'Wheel of Fortune' },
+  { number: 'XI',    name: 'Justice' },
+  { number: 'XII',   name: 'The Hanged Man' },
+  { number: 'XIII',  name: 'Death' },
+  { number: 'XIV',   name: 'Temperance' },
+  { number: 'XV',    name: 'The Devil' },
+  { number: 'XVI',   name: 'The Tower' },
+  { number: 'XVII',  name: 'The Star' },
+  { number: 'XVIII', name: 'The Moon' },
+  { number: 'XIX',   name: 'The Sun' },
+  { number: 'XX',    name: 'Judgement' },
+  { number: 'XXI',   name: 'The World' },
+];
+
+const TAROT_DESCRIPTIONS = {
+  'The Fool':           'New beginnings, leaping into the unknown, pure potential',
+  'The Magician':       'Will, skill, manifestation, turning intention into action',
+  'The High Priestess': 'Intuition, mystery, inner knowing, what lies beneath',
+  'The Empress':        'Abundance, nurturing, creativity, connection to nature',
+  'The Emperor':        'Structure, authority, stability, building foundations',
+  'The Hierophant':     'Tradition, guidance, seeking a teacher or system',
+  'The Lovers':         'Choice, values, alignment, deep connection',
+  'The Chariot':        'Willpower, direction, moving forward through opposition',
+  'Strength':           'Inner courage, patience, taming what is wild within',
+  'The Hermit':         'Solitude, inner light, withdrawal to find truth',
+  'Wheel of Fortune':   'Change, cycles, turning points, what rises and falls',
+  'Justice':            'Truth, cause and effect, accountability, balance',
+  'The Hanged Man':     'Surrender, new perspective, pause before the next move',
+  'Death':              'Transformation, endings that make way, release',
+  'Temperance':         'Integration, patience, the middle path, alchemy',
+  'The Devil':          'Chains of your own making, shadow, what binds you',
+  'The Tower':          'Sudden upheaval, what must fall, breakthrough through collapse',
+  'The Star':           'Hope, healing, trust after darkness, restoration',
+  'The Moon':           'Illusion, anxiety, what hides in the subconscious',
+  'The Sun':            'Clarity, joy, vitality, things coming into the light',
+  'Judgement':          'Awakening, hearing the call, rising to a new version',
+  'The World':          'Completion, integration, the end of a cycle, wholeness',
+};
+
+function calculateLifePath(birthDate) {
+  if (!birthDate) return null;
+  const digits = birthDate.replace(/-/g, '').split('').map(Number);
+  let sum = digits.reduce((a, b) => a + b, 0);
+  while (sum > 9 && sum !== 11 && sum !== 22 && sum !== 33) {
+    sum = sum.toString().split('').map(Number).reduce((a, b) => a + b, 0);
+  }
+  return sum;
+}
+
 function AstroField({ label, value, missing }) {
   return (
     <div>
@@ -151,7 +243,21 @@ export default function PortraitPage() {
   useEffect(() => {
     apiFetch('/api/portrait')
       .then((r) => r.json())
-      .then(setPortrait)
+      .then((p) => {
+        // Derive tarot from existing data if not already stored
+        if (p.birth_date && !p.life_path_number) {
+          p.life_path_number = calculateLifePath(p.birth_date);
+        }
+        if (p.sun_sign && !p.soul_card) {
+          const t = SUN_SIGN_TO_TAROT[p.sun_sign];
+          if (t) p.soul_card = `${t.card} ${t.number}`;
+        }
+        if (p.life_path_number && !p.life_path_card) {
+          const t = LIFE_PATH_TO_TAROT[p.life_path_number];
+          if (t) p.life_path_card = `${t.card} ${t.number}`;
+        }
+        setPortrait(p);
+      })
       .catch(() => {});
   }, []);
 
@@ -183,6 +289,11 @@ export default function PortraitPage() {
         }),
       });
       const data = await res.json();
+      const sunSign = data.sun_sign || p.sun_sign;
+      const lifePath = calculateLifePath(p.birth_date);
+      const soulTarot = sunSign ? SUN_SIGN_TO_TAROT[sunSign] : null;
+      const lifePathTarot = lifePath ? LIFE_PATH_TO_TAROT[lifePath] : null;
+
       setPortrait((prev) => ({
         ...prev,
         ...(data.sun_sign     ? { sun_sign: data.sun_sign }     : {}),
@@ -190,6 +301,9 @@ export default function PortraitPage() {
         ...(data.rising_sign  ? { rising_sign: data.rising_sign } : {}),
         ...(data.chinese_zodiac   ? { chinese_zodiac: data.chinese_zodiac }   : {}),
         ...(data.chinese_element  ? { chinese_element: data.chinese_element } : {}),
+        life_path_number: lifePath,
+        soul_card: soulTarot ? `${soulTarot.card} ${soulTarot.number}` : prev.soul_card,
+        life_path_card: lifePathTarot ? `${lifePathTarot.card} ${lifePathTarot.number}` : prev.life_path_card,
       }));
     } catch {}
     finally { setAstroCalcing(false); }
@@ -205,6 +319,18 @@ export default function PortraitPage() {
         body: JSON.stringify(portrait),
       });
       const updated = await res.json();
+      // Re-derive tarot fields that may not come back from server
+      if (updated.birth_date && !updated.life_path_number) {
+        updated.life_path_number = calculateLifePath(updated.birth_date);
+      }
+      if (updated.sun_sign && !updated.soul_card) {
+        const t = SUN_SIGN_TO_TAROT[updated.sun_sign];
+        if (t) updated.soul_card = `${t.card} ${t.number}`;
+      }
+      if (updated.life_path_number && !updated.life_path_card) {
+        const t = LIFE_PATH_TO_TAROT[updated.life_path_number];
+        if (t) updated.life_path_card = `${t.card} ${t.number}`;
+      }
       setPortrait(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -239,6 +365,10 @@ export default function PortraitPage() {
       <div style={s.section}>
         <div style={s.sectionTitle}>Personality</div>
         <div style={s.grid}>
+          <div style={s.field}>
+            <label style={s.label}>Preferred Name</label>
+            <input style={s.input} value={portrait.preferred_name || ''} onChange={(e) => set('preferred_name', e.target.value)} placeholder="What should the Mirror call you?" />
+          </div>
           <div style={s.field}>
             <label style={s.label}>Sex</label>
             <select style={s.input} value={portrait.sex || ''} onChange={(e) => set('sex', e.target.value)}>
@@ -309,6 +439,9 @@ export default function PortraitPage() {
               <AstroField label="Moon sign" value={portrait.moon_sign} missing={!portrait.birth_time ? 'Enter birth time' : null} />
               <AstroField label="Rising" value={portrait.rising_sign} missing={!portrait.birth_time ? 'Enter birth time' : !portrait.birth_location ? 'Enter birth location' : null} />
               <AstroField label="Chinese zodiac" value={portrait.chinese_zodiac && portrait.chinese_element ? `${portrait.chinese_element} ${portrait.chinese_zodiac}` : portrait.chinese_zodiac} />
+              <AstroField label="Life Path Number" value={portrait.life_path_number != null ? String(portrait.life_path_number) : null} />
+              <AstroField label="Soul Card" value={portrait.soul_card} missing={!portrait.sun_sign ? 'Needs sun sign' : null} />
+              <AstroField label="Life Path Card" value={portrait.life_path_card ? `${portrait.life_path_card}  (Life Path ${portrait.life_path_number})` : null} />
             </div>
           </div>
         )}
@@ -417,11 +550,63 @@ export default function PortraitPage() {
 
 function CharacterPortraitPanel({ description, generating, editing, onGenerate, onEdit, onEditDone, onEditCancel, width = 320 }) {
   const [editText, setEditText] = useState(description);
+  const [playing, setPlaying] = useState(false);
+  const [ttsOnline, setTtsOnline] = useState(false);
+  const audioRef = useRef(null);
 
   // Keep editText in sync when description changes externally
   useEffect(() => {
     if (!editing) setEditText(description);
   }, [description, editing]);
+
+  // Check TTS status on mount
+  useEffect(() => {
+    fetch('/api/tts/status')
+      .then((r) => r.json())
+      .then((d) => setTtsOnline(d.online))
+      .catch(() => setTtsOnline(false));
+  }, []);
+
+  async function handleListen() {
+    if (playing) {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setPlaying(false);
+      return;
+    }
+    if (!description) return;
+
+    if (ttsOnline) {
+      try {
+        setPlaying(true);
+        const res = await fetch('/api/tts/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: description, exaggeration: 0.5 }),
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audioRef.current = audio;
+          audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); };
+          audio.onerror = () => { setPlaying(false); fallbackTTS(description); };
+          await audio.play();
+          return;
+        }
+      } catch {}
+    }
+    fallbackTTS(description);
+  }
+
+  function fallbackTTS(text) {
+    if (!window.speechSynthesis) { setPlaying(false); return; }
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.onend = () => setPlaying(false);
+    utt.onerror = () => setPlaying(false);
+    window.speechSynthesis.speak(utt);
+    setPlaying(true);
+  }
 
   return (
     <div style={{
@@ -438,8 +623,25 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
         borderBottom: 'var(--border-style)',
         flexShrink: 0,
       }}>
-        <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '2px' }}>
-          Character Portrait
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+          <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+            Character Portrait
+          </div>
+          {description && !editing && !generating && (
+            <button
+              onClick={handleListen}
+              title={playing ? 'Stop' : ttsOnline ? 'Listen (Chatterbox)' : 'Listen (Web Speech)'}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: '26px', height: '26px', borderRadius: '3px',
+                color: playing ? 'var(--strong)' : 'var(--muted)',
+                background: playing ? 'var(--panel-bg)' : 'none',
+                cursor: 'pointer', border: 'none', transition: 'color 0.12s',
+              }}
+            >
+              <WaveformIcon playing={playing} />
+            </button>
+          )}
         </div>
         <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
           AI synthesis of your portrait data
@@ -540,6 +742,106 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
         </div>
       </div>
     </div>
+  );
+}
+
+function TarotCardSelect({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered = MAJOR_ARCANA.filter(c =>
+    !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.number.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selected = MAJOR_ARCANA.find(c => c.name === value);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div
+        onClick={() => setOpen(!open)}
+        style={{
+          ...s.input,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: value ? 'var(--strong)' : 'var(--muted)',
+          background: 'var(--white)',
+          border: 'var(--border-style)',
+          borderRadius: '2px',
+        }}
+      >
+        <span>{selected ? `${selected.number} — ${selected.name}` : '— Select a card —'}</span>
+        <span style={{ fontSize: '10px', color: 'var(--muted)' }}>▾</span>
+      </div>
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          background: 'var(--white)',
+          border: 'var(--border-style)',
+          borderRadius: '2px',
+          maxHeight: '240px',
+          overflowY: 'auto',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+        }}>
+          <input
+            autoFocus
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ ...s.input, width: '100%', borderBottom: 'var(--border-style)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderRadius: 0, fontSize: '12px' }}
+          />
+          {filtered.map(c => (
+            <div
+              key={c.name}
+              onClick={() => { onChange(c.name); setOpen(false); setSearch(''); }}
+              style={{
+                padding: '7px 10px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                background: c.name === value ? 'var(--panel-bg)' : 'transparent',
+                color: 'var(--body)',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--panel-bg)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = c.name === value ? 'var(--panel-bg)' : 'transparent'}
+            >
+              <span style={{ color: 'var(--muted)', marginRight: '8px', fontSize: '11px', display: 'inline-block', width: '32px' }}>{c.number}</span>
+              {c.name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WaveformIcon({ playing }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y={playing ? 2 : 4} width="2" height={playing ? 10 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="4.5" y={playing ? 0 : 2} width="2" height={playing ? 14 : 10} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="8" y={playing ? 3 : 4} width="2" height={playing ? 8 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+      </rect>
+      <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+      </rect>
+    </svg>
   );
 }
 

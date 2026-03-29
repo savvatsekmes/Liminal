@@ -80,6 +80,14 @@ const s = {
     color: 'var(--muted)',
     marginTop: '12px',
   },
+  opening: {
+    padding: '22px 24px 18px',
+    fontSize: '13px',
+    fontStyle: 'italic',
+    color: 'var(--strong)',
+    lineHeight: '1.75',
+    borderBottom: 'var(--border-style)',
+  },
   error: {
     margin: '16px 24px',
     padding: '12px 16px',
@@ -94,6 +102,7 @@ const s = {
 
 export default function MirrorPanel({
   blocks,
+  opening,
   loading,
   error,
   entryText,
@@ -142,13 +151,16 @@ export default function MirrorPanel({
         {loading && <LoadingState />}
         {!loading && error && <div style={s.error}>{error}</div>}
         {!loading && !error && blocks.length === 0 && <EmptyState />}
+        {!loading && !error && opening && (
+          <div style={s.opening}>{opening}</div>
+        )}
         {!loading && !error && blocks.map((block, i) => (
           <MirrorBlock
             key={i}
             block={block}
             entryText={entryText}
             ttsOnline={ttsOnline}
-            onRegenerate={(blk, archetype) => onRegenerateBlock(blk, archetype, i)}
+            onRegenerate={(blk, archetype) => onRegenerateBlock(blk, archetype, i, entryText)}
           />
         ))}
       </div>

@@ -6,6 +6,7 @@ const memory = require('../services/memoryService');
 const { indexEntry } = require('../services/embeddingService');
 const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
+const { buildImageContext } = require('./images');
 
 router.use(requireAuth);
 
@@ -27,19 +28,26 @@ router.post('/', async (req, res) => {
 
   try {
     // 1. Embed current entry and kick off retrieval + system prompt assembly
-    const systemPrompt = await memory.buildReflectSystemPrompt(portrait, text, entryId || null, req.userId);
+    const preferredName = portrait?.preferred_name?.trim() || null;
+    const systemPrompt = await memory.buildReflectSystemPrompt(portrait, text, entryId || null, req.userId, preferredName);
 
-    // 2. LLM call
-    const ytContext = buildYoutubeContext(req.userId, entryBody || '');
+    // 2. LLM call — read HTML body from DB to avoid sending huge base64 over HTTP
+    const entryRow = entryId ? db.prepare('SELECT body FROM entries WHERE id = ? AND user_id = ?').get(entryId, req.userId) : null;
+    const htmlBody = entryRow?.body || entryBody || '';
+    const ytContext = buildYoutubeContext(req.userId, htmlBody);
+    const imgContext = buildImageContext(req.userId, htmlBody);
     const userMessage = `Here is today's journal entry:\n\n${text}`
-      + (ytContext ? `\n\n---\nVIDEOS EMBEDDED IN THIS ENTRY:\n${ytContext}` : '');
+      + (ytContext ? `\n\n---\nVIDEOS EMBEDDED IN THIS ENTRY:\n${ytContext}` : '')
+      + (imgContext ? `\n\n---\nIMAGES IN THIS ENTRY:\n${imgContext}` : '');
     const rawResponse = await llm.call(systemPrompt, userMessage, { maxTokens: 2500 });
 
     // 3. Parse Mirror blocks from JSON response
     let blocks = [];
+    let opening = null;
     try {
       const parsed = JSON.parse(rawResponse.trim());
       blocks = parsed.blocks || [];
+      opening = parsed.opening || null;
     } catch {
       // LLM wrapped JSON in markdown — strip it
       const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
@@ -47,22 +55,24 @@ router.post('/', async (req, res) => {
         try {
           const parsed = JSON.parse(jsonMatch[1]);
           blocks = parsed.blocks || [];
+          opening = parsed.opening || null;
         } catch {}
       }
       // Final fallback: treat the whole response as a single prose block
       if (!blocks.length) {
-        blocks = [{ title: 'Reflection', body: rawResponse, quote: null, archetype: 'Mirror' }];
+        blocks = [{ title: 'Reflection', body: rawResponse, quote: null, archetype: 'Auto' }];
       }
     }
 
-    // 4. Save blocks and return response
+    // 4. Save blocks (with opening) and return response
+    const savedData = { opening, blocks };
     console.log(`[reflect] Saving ${blocks.length} blocks for entryId=${entryId}`);
     if (entryId) {
       try {
         db.prepare(
           `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
            VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-        ).run(entryId, req.userId, JSON.stringify(blocks));
+        ).run(entryId, req.userId, JSON.stringify(savedData));
         console.log(`[reflect] Saved OK`);
       } catch (e) {
         console.error('[reflect] Failed to save reflections:', e.message);
@@ -70,7 +80,7 @@ router.post('/', async (req, res) => {
     } else {
       console.log(`[reflect] Skipped save — no entryId`);
     }
-    res.json({ blocks });
+    res.json({ opening, blocks });
 
     // 5. Background: index entry, update rolling summary, auto-tag
     const userId = req.userId;
@@ -115,34 +125,73 @@ router.get('/:entryId', (req, res) => {
     'SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?'
   ).get(req.params.entryId, req.userId);
   console.log(`[reflect] GET entryId=${req.params.entryId} userId=${req.userId} found=${!!row}`);
-  res.json({ blocks: row ? JSON.parse(row.blocks) : [] });
+  if (!row) return res.json({ opening: null, blocks: [] });
+  const saved = JSON.parse(row.blocks);
+  // Support old format (plain array) and new format ({ opening, blocks })
+  if (Array.isArray(saved)) {
+    res.json({ opening: null, blocks: saved });
+  } else {
+    res.json({ opening: saved.opening || null, blocks: saved.blocks || [] });
+  }
 });
 
 // ── POST /api/reflect/block ──────────────────────────────────────────────────
 // Regenerate a single Mirror block with an optional archetype override.
-// Body: { entryText, archetype }
+// Body: { entryText, archetype, blockTitle }
+// archetype = "Auto" → blended aggregate voice using sliders
+// archetype = "Zen" etc → single archetype voice
 router.post('/block', async (req, res) => {
-  const { entryText, archetype } = req.body;
+  const { entryText, archetype, blockTitle } = req.body;
   if (!entryText) return res.status(400).json({ error: 'entryText is required' });
 
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
   const summary = memory.getSummary(req.userId);
+  const isAuto = !archetype || archetype === 'Auto';
 
-  const systemPrompt = `You are the ${archetype || 'Mirror'} voice in Liminal's reflection system.
+  let systemPrompt;
+  if (isAuto) {
+    // Blended aggregate voice using slider settings
+    let activeArchetypes = ['Zen', 'Jungian', 'Stoic', 'Direct Friend'];
+    try { activeArchetypes = JSON.parse(portrait?.active_archetypes || '[]'); } catch {}
+
+    const voiceInstructions = memory.translateSlidersToVoice(portrait);
+    systemPrompt = `You are an integrated, wise voice blending: ${activeArchetypes.join(', ')}.
+
+Your voice is shaped by these qualities:
+${voiceInstructions}
+
 ${summary ? `Context about this person:\n${summary}\n` : ''}
 
-Respond to the journal entry below as the ${archetype || 'Mirror'} archetype — one block only.
+Respond to the journal entry below with ONE reflection block focused on the theme: "${blockTitle || 'this entry'}".
 
 Return JSON with this shape:
 {
   "title": "A Named Theme",
   "body": "Prose reflection...",
   "quote": "Optional quote or null",
-  "archetype": "${archetype || 'Mirror'}"
+  "archetype": "Auto"
+}
+
+Rules: prose only, no bullets, bold sparingly (1-2 phrases max). Speak as one coherent voice — do not label which archetype you draw from. Show both sides. Speak directly using "you".
+Return ONLY the JSON object.`;
+  } else {
+    // Single archetype voice
+    systemPrompt = `You are the ${archetype} voice in Liminal's reflection system.
+${summary ? `Context about this person:\n${summary}\n` : ''}
+
+Respond to the journal entry below as the ${archetype} archetype — one block only, focused on the theme: "${blockTitle || 'this entry'}".
+
+Return JSON with this shape:
+{
+  "title": "A Named Theme",
+  "body": "Prose reflection...",
+  "quote": "Optional quote or null",
+  "archetype": "${archetype}"
 }
 
 Rules: prose only, no bullets, bold sparingly (1-2 phrases max), warm and direct, show both sides.
 Return ONLY the JSON object.`;
+  }
 
   try {
     const raw = await llm.call(systemPrompt, `Journal entry:\n\n${entryText}`, { maxTokens: 600 });
@@ -152,7 +201,7 @@ Return ONLY the JSON object.`;
     } catch {
       const m = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
       if (m) block = JSON.parse(m[1]);
-      else block = { title: 'Reflection', body: raw, quote: null, archetype: archetype || 'Mirror' };
+      else block = { title: blockTitle || 'Reflection', body: raw, quote: null, archetype: isAuto ? 'Auto' : archetype };
     }
     res.json(block);
   } catch (err) {

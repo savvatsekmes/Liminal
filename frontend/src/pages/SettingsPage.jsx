@@ -664,6 +664,26 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             )}
           </Field>
 
+          <Field label="Vision Model (for image analysis)" hint="Used to describe images pasted into entries. Requires a vision-capable model like llama3.2-vision.">
+            {ollamaData?.online && ollamaData.models?.length > 0 ? (
+              <select
+                style={s.select}
+                value={cfg.vision_model || 'llama3.2-vision'}
+                onChange={e => { set('vision_model', e.target.value); save({ vision_model: e.target.value }); }}
+              >
+                <option value="llama3.2-vision">llama3.2-vision (default)</option>
+                {ollamaData.models
+                  .filter(m => !m.name.includes('llama3.2-vision'))
+                  .map(m => (
+                    <option key={m.name} value={m.name}>{m.name}</option>
+                  ))
+                }
+              </select>
+            ) : (
+              <input style={s.input} value={cfg.vision_model || 'llama3.2-vision'} onChange={e => set('vision_model', e.target.value)} onBlur={() => save({ vision_model: cfg.vision_model })} placeholder="llama3.2-vision" />
+            )}
+          </Field>
+
           <OllamaModelBrowser
             installedNames={new Set((ollamaData?.models || []).map(m => m.name))}
             ollamaOnline={ollamaData?.online ?? false}

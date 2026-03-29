@@ -3,6 +3,7 @@ import { apiFetch } from '../utils/api';
 
 export function useReflect() {
   const [blocks, setBlocks] = useState([]);
+  const [opening, setOpening] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [ttsOnline, setTtsOnline] = useState(false);
@@ -21,13 +22,15 @@ export function useReflect() {
     setError(null);
 
     try {
+      // Strip inline base64 image data from HTML before sending — backend reads from DB instead
+      const strippedBody = (entry.body || '').replace(/data-src="data:image\/[^"]*"/g, 'data-src=""');
       const res = await apiFetch('/api/reflect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           entryId: entry.id,
           entryText: entry.body_text || '',
-          entryBody: entry.body || '',
+          entryBody: strippedBody,
         }),
       });
 
@@ -37,6 +40,7 @@ export function useReflect() {
       }
 
       const data = await res.json();
+      setOpening(data.opening || null);
       setBlocks(data.blocks || []);
     } catch (err) {
       setError(err.message);
@@ -45,14 +49,18 @@ export function useReflect() {
     }
   }
 
-  async function regenerateBlock(block, archetype, index) {
+  async function regenerateBlock(block, archetype, index, entryText) {
     if (!archetype) return;
 
     try {
       const res = await apiFetch('/api/reflect/block', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryText: block.entryText || '', archetype }),
+        body: JSON.stringify({
+          entryText: entryText || block.entryText || '',
+          archetype,
+          blockTitle: block.title || '',
+        }),
       });
 
       if (!res.ok) throw new Error('Regeneration failed.');
@@ -66,12 +74,14 @@ export function useReflect() {
 
   async function loadReflections(entryId) {
     setBlocks([]);
+    setOpening(null);
     setError(null);
     if (!entryId) return;
     try {
       const res = await apiFetch(`/api/reflect/${entryId}`);
       if (res.ok) {
         const data = await res.json();
+        setOpening(data.opening || null);
         setBlocks(data.blocks || []);
       }
     } catch {}
@@ -79,8 +89,9 @@ export function useReflect() {
 
   function clearBlocks() {
     setBlocks([]);
+    setOpening(null);
     setError(null);
   }
 
-  return { blocks, loading, error, ttsOnline, reflect, regenerateBlock, clearBlocks, loadReflections };
+  return { blocks, opening, loading, error, ttsOnline, reflect, regenerateBlock, clearBlocks, loadReflections };
 }

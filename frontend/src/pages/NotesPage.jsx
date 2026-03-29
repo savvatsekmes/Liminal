@@ -1046,14 +1046,9 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
       {/* Blocks */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
         {loading && (
-          <div style={{ padding: '20px 18px', display: 'flex', gap: '3px', alignItems: 'center' }}>
-            {[0,1,2].map(i => (
-              <div key={i} style={{
-                width: '5px', height: '5px', borderRadius: '50%',
-                background: 'var(--muted)',
-                animation: `bounce 1s ease-in-out ${i * 0.15}s infinite`,
-              }} />
-            ))}
+          <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px', color: 'var(--muted)', letterSpacing: '4px', animation: 'pulse 1.4s ease-in-out infinite' }}>· · ·</div>
+            <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '12px' }}>Reading your note…</div>
           </div>
         )}
 

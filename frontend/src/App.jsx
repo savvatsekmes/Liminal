@@ -34,6 +34,7 @@ function AuthenticatedApp({ username, onLogout }) {
 
   const {
     blocks,
+    opening,
     loading: reflectLoading,
     error: reflectError,
     ttsOnline,
@@ -111,6 +112,7 @@ if (activeView === 'settings') return <SettingsPage username={username} onLogout
         mirror: activeView === 'journal' ? (
           <MirrorPanel
             blocks={blocks}
+            opening={opening}
             loading={reflectLoading}
             error={reflectError}
             entryText={activeEntry?.body_text || ''}

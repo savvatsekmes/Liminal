@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
+const { buildImageContext } = require('./images');
 
 router.use(requireAuth);
 
@@ -204,8 +205,13 @@ Rules:
 - Return ONLY the JSON`;
 
   const ytContext = buildYoutubeContext(req.userId, note.body || '');
-  const userMessage = `${note.type === 'quote' ? `"${note.body}"${note.attribution ? '\n— ' + note.attribution : ''}` : note.body}`
-    + (ytContext ? `\n\n---\nVIDEOS EMBEDDED IN THIS NOTE:\n${ytContext}` : '');
+  const imgContext = buildImageContext(req.userId, note.body || '');
+  // Strip inline base64 image data from body before sending to LLM — descriptions are injected via imgContext
+  const cleanBody = (note.body || '').replace(/data-src="data:image\/[^"]*"/g, 'data-src=""');
+  const noteText = note.type === 'quote' ? `"${cleanBody}"${note.attribution ? '\n— ' + note.attribution : ''}` : cleanBody;
+  const userMessage = noteText
+    + (ytContext ? `\n\n---\nVIDEOS EMBEDDED IN THIS NOTE:\n${ytContext}` : '')
+    + (imgContext ? `\n\n---\nIMAGES IN THIS NOTE:\n${imgContext}` : '');
 
   try {
     const raw = await llm.call(systemPrompt, userMessage, { maxTokens: 1000 });

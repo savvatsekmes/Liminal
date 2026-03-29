@@ -114,6 +114,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_reflections_entry ON reflections(entry_id, user_id);
 
+  CREATE TABLE IF NOT EXISTS image_descriptions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_hash  TEXT NOT NULL,
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(image_hash, user_id)
+  );
+
   CREATE TABLE IF NOT EXISTS note_reflections (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     note_id    INTEGER NOT NULL,
@@ -135,6 +144,13 @@ addColumnSafe('portrait', 'chinese_element', 'TEXT');
 addColumnSafe('portrait', 'character_description', 'TEXT');
 addColumnSafe('portrait', 'slider_character_influence', 'INTEGER');
 addColumnSafe('portrait', 'slider_candor', 'INTEGER DEFAULT 50');
+addColumnSafe('portrait', 'preferred_name', "TEXT DEFAULT ''");
+addColumnSafe('portrait', 'life_path_number', 'INTEGER');
+addColumnSafe('portrait', 'soul_card', 'TEXT');
+addColumnSafe('portrait', 'life_path_card', 'TEXT');
+addColumnSafe('portrait', 'working_tarot_card', 'TEXT');
+addColumnSafe('portrait', 'season_of_life', 'TEXT');
+addColumnSafe('portrait', 'current_intention', 'TEXT');
 addColumnSafe('portrait', 'sex', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
 

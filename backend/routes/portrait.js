@@ -39,7 +39,9 @@ router.put('/', (req, res) => {
     language,
     chinese_zodiac, chinese_element,
     character_description,
-    sex, pronouns,
+    sex, pronouns, preferred_name,
+    life_path_number, soul_card, life_path_card,
+    working_tarot_card, season_of_life, current_intention,
   } = req.body;
 
   const fields = [];
@@ -52,7 +54,9 @@ router.put('/', (req, res) => {
     context_note, language,
     chinese_zodiac, chinese_element,
     character_description,
-    sex, pronouns,
+    sex, pronouns, preferred_name,
+    soul_card, life_path_card,
+    working_tarot_card, season_of_life, current_intention,
   };
 
   const intFields = {
@@ -64,6 +68,7 @@ router.put('/', (req, res) => {
     slider_encouraging_challenging,
     slider_character_influence,
     slider_candor,
+    life_path_number,
   };
 
   for (const [key, val] of Object.entries(stringFields)) {

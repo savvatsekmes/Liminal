@@ -1,7 +1,18 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { Plugin } from '@tiptap/pm/state';
+import { apiFetch } from '../utils/api';
+
+// ── Helper: send image to vision model for analysis ─────────────────────────
+
+function analyzeImage(src) {
+  return apiFetch('/api/images/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageData: src }),
+  }).then((r) => r.json());
+}
 
 // ── TipTap Node ──────────────────────────────────────────────────────────────
 
@@ -13,9 +24,11 @@ export const ImageEmbed = Node.create({
 
   addAttributes() {
     return {
-      src:   { default: null },
-      alt:   { default: '' },
-      width: { default: '100%' },
+      src:       { default: null },
+      alt:       { default: '' },
+      width:     { default: '100%' },
+      analyzed:  { default: false },
+      imageHash: { default: null },
     };
   },
 
@@ -23,9 +36,11 @@ export const ImageEmbed = Node.create({
     return [{
       tag: 'div[data-image-embed]',
       getAttrs: (dom) => ({
-        src:   dom.getAttribute('data-src') || null,
-        alt:   dom.getAttribute('data-alt') || '',
-        width: dom.getAttribute('data-width') || '100%',
+        src:       dom.getAttribute('data-src') || null,
+        alt:       dom.getAttribute('data-alt') || '',
+        width:     dom.getAttribute('data-width') || '100%',
+        analyzed:  dom.getAttribute('data-analyzed') === 'true',
+        imageHash: dom.getAttribute('data-image-hash') || null,
       }),
     }];
   },
@@ -33,9 +48,11 @@ export const ImageEmbed = Node.create({
   renderHTML({ node }) {
     return ['div', mergeAttributes({
       'data-image-embed': '',
-      'data-src':   node.attrs.src || '',
-      'data-alt':   node.attrs.alt || '',
-      'data-width': node.attrs.width || '100%',
+      'data-src':        node.attrs.src || '',
+      'data-alt':        node.attrs.alt || '',
+      'data-width':      node.attrs.width || '100%',
+      'data-analyzed':   node.attrs.analyzed ? 'true' : 'false',
+      'data-image-hash': node.attrs.imageHash || '',
     })];
   },
 
@@ -63,6 +80,7 @@ export const ImageEmbed = Node.create({
                 src,
                 alt: file.name || '',
                 width: '100%',
+                analyzed: false,
               });
               const tr = view.state.tr.replaceSelectionWith(node);
               view.dispatch(tr);
@@ -71,16 +89,14 @@ export const ImageEmbed = Node.create({
             return true;
           },
 
-          // handleDOMEvents fires at the raw DOM level — catches desktop/OS file drops
-          // reliably, unlike handleDrop which ProseMirror may consume first.
           handleDOMEvents: {
             dragover(view, event) {
               const hasImage = Array.from(event.dataTransfer?.items || [])
                 .some((i) => i.kind === 'file' && i.type.startsWith('image/'));
               if (hasImage) {
-                event.preventDefault(); // allow drop
+                event.preventDefault();
               }
-              return false; // let PM still show drop cursor
+              return false;
             },
 
             drop(view, event) {
@@ -102,6 +118,7 @@ export const ImageEmbed = Node.create({
                   src,
                   alt: imageFile.name || '',
                   width: '100%',
+                  analyzed: false,
                 });
                 const tr = view.state.tr.insert(pos, node);
                 view.dispatch(tr);
@@ -119,9 +136,46 @@ export const ImageEmbed = Node.create({
 // ── React NodeView ───────────────────────────────────────────────────────────
 
 function ImageEmbedView({ node, updateAttributes, deleteNode }) {
-  const { src, alt, width } = node.attrs;
+  const { src, alt, width, analyzed } = node.attrs;
   const outerRef = useRef(null);
+  const analyzedRef = useRef(analyzed);
   const [hovered, setHovered] = useState(false);
+  const [status, setStatus] = useState(analyzed ? 'done' : 'idle');
+
+  // Auto-analyze once when first inserted — use ref to avoid re-triggering on attr updates
+  useEffect(() => {
+    if (!src || analyzedRef.current || status === 'analyzing' || status === 'done') return;
+    analyzedRef.current = true;
+    setStatus('analyzing');
+    analyzeImage(src)
+      .then((data) => {
+        if (data.description) {
+          updateAttributes({ analyzed: true, imageHash: data.hash || null });
+          setStatus('done');
+        } else if (data.error) {
+          setStatus('error');
+          analyzedRef.current = false;
+        }
+      })
+      .catch(() => { setStatus('error'); analyzedRef.current = false; });
+  }, [src]);
+
+  function handleRetry() {
+    if (!src || status === 'analyzing') return;
+    analyzedRef.current = true;
+    setStatus('analyzing');
+    analyzeImage(src)
+      .then((data) => {
+        if (data.description) {
+          updateAttributes({ analyzed: true, imageHash: data.hash || null });
+          setStatus('done');
+        } else if (data.error) {
+          setStatus('error');
+          analyzedRef.current = false;
+        }
+      })
+      .catch(() => { setStatus('error'); analyzedRef.current = false; });
+  }
 
   const handleResizeStart = useCallback((e) => {
     e.preventDefault();
@@ -164,57 +218,33 @@ function ImageEmbedView({ node, updateAttributes, deleteNode }) {
           verticalAlign: 'top',
         }}
       >
-        {/* Drag handle — top-left overlay, visible on hover */}
+        {/* Drag handle */}
         <div
           data-drag-handle
           title="Drag to reorder"
           style={{
-            position: 'absolute',
-            top: '6px',
-            left: '6px',
-            zIndex: 10,
-            cursor: 'grab',
-            background: 'rgba(0,0,0,0.45)',
-            color: '#fff',
-            borderRadius: '3px',
-            width: '22px',
-            height: '22px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '13px',
-            opacity: hovered ? 1 : 0,
-            transition: 'opacity 0.15s',
+            position: 'absolute', top: '6px', left: '6px', zIndex: 10,
+            cursor: 'grab', background: 'rgba(0,0,0,0.45)', color: '#fff',
+            borderRadius: '3px', width: '22px', height: '22px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '13px', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s',
             userSelect: 'none',
           }}
         >
           ⠿
         </div>
 
-        {/* Delete button — top-right overlay, visible on hover */}
+        {/* Delete button */}
         <button
           onClick={() => deleteNode()}
           title="Remove"
           style={{
-            position: 'absolute',
-            top: '6px',
-            right: '6px',
-            zIndex: 10,
-            background: 'rgba(0,0,0,0.45)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '3px',
-            width: '22px',
-            height: '22px',
-            cursor: 'pointer',
-            fontSize: '16px',
-            lineHeight: '1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: hovered ? 1 : 0,
-            transition: 'opacity 0.15s',
-            padding: 0,
+            position: 'absolute', top: '6px', right: '6px', zIndex: 10,
+            background: 'rgba(0,0,0,0.45)', color: '#fff', border: 'none',
+            borderRadius: '3px', width: '22px', height: '22px', cursor: 'pointer',
+            fontSize: '16px', lineHeight: '1',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: hovered ? 1 : 0, transition: 'opacity 0.15s', padding: 0,
           }}
         >
           ×
@@ -226,31 +256,57 @@ function ImageEmbedView({ node, updateAttributes, deleteNode }) {
           alt={alt || ''}
           draggable={false}
           style={{
-            display: 'block',
-            width: '100%',
-            height: 'auto',
-            borderRadius: '4px',
-            border: 'var(--border-style)',
+            display: 'block', width: '100%', height: 'auto',
+            borderRadius: '4px', border: 'var(--border-style)',
           }}
         />
 
-        {/* Resize handle — bottom-right corner */}
+        {/* Vision analysis status bar */}
+        <div style={{
+          position: 'absolute', bottom: '6px', left: '6px',
+          display: 'flex', alignItems: 'center', gap: '6px',
+          opacity: hovered || status === 'analyzing' ? 1 : 0,
+          transition: 'opacity 0.15s',
+        }}>
+          {status === 'analyzing' && (
+            <span style={{
+              fontSize: '10px', color: '#fff', background: 'rgba(0,0,0,0.55)',
+              borderRadius: '3px', padding: '2px 8px',
+            }}>
+              Analyzing…
+            </span>
+          )}
+          {status === 'done' && (
+            <span style={{
+              fontSize: '10px', color: '#fff', background: 'rgba(0,0,0,0.45)',
+              borderRadius: '3px', padding: '2px 8px',
+            }}>
+              ✓ Analyzed
+            </span>
+          )}
+          {status === 'error' && (
+            <button
+              onClick={handleRetry}
+              style={{
+                fontSize: '10px', color: '#fff', background: 'rgba(180,60,60,0.8)',
+                borderRadius: '3px', padding: '2px 8px', border: 'none',
+                cursor: 'pointer', fontFamily: 'var(--font)',
+              }}
+            >
+              ✕ Retry
+            </button>
+          )}
+        </div>
+
+        {/* Resize handle */}
         <div
           onMouseDown={handleResizeStart}
           title="Drag to resize"
           style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            width: '18px',
-            height: '18px',
-            cursor: 'nwse-resize',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'flex-end',
-            padding: '3px',
-            opacity: hovered ? 1 : 0,
-            transition: 'opacity 0.15s',
+            position: 'absolute', bottom: 0, right: 0,
+            width: '18px', height: '18px', cursor: 'nwse-resize',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end',
+            padding: '3px', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s',
           }}
         >
           <svg width="9" height="9" viewBox="0 0 8 8" fill="none">
