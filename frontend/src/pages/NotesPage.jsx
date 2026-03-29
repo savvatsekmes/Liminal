@@ -25,16 +25,17 @@ import MicButton from '../components/MicButton';
 import VersionsPanel from '../components/VersionsPanel';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from '../components/ResizeDivider';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const BUILT_IN_TYPES = [
-  { type: 'all',        label: 'All' },
-  { type: 'idea',       label: 'Idea' },
-  { type: 'quote',      label: 'Quote' },
-  { type: 'goal',       label: 'Goal' },
-  { type: 'reflection', label: 'Reflection' },
-  { type: 'dream',      label: 'Dream' },
-  { type: 'gratitude',  label: 'Gratitude' },
-  { type: 'none',       label: 'None' },
+  { type: 'all',        labelKey: 'notes.typeAll' },
+  { type: 'idea',       labelKey: 'notes.typeIdea' },
+  { type: 'quote',      labelKey: 'notes.typeQuote' },
+  { type: 'goal',       labelKey: 'notes.typeGoal' },
+  { type: 'reflection', labelKey: 'notes.typeReflection' },
+  { type: 'dream',      labelKey: 'notes.typeDream' },
+  { type: 'gratitude',  labelKey: 'notes.typeGratitude' },
+  { type: 'none',       labelKey: 'notes.typeNone' },
 ];
 
 // Type-specific display config
@@ -55,6 +56,7 @@ function formatDate(iso) {
 }
 
 export default function NotesPage({ initialNoteId, onNoteSelected }) {
+  const { t } = useLanguage();
   const {
     notes,
     activeNote,
@@ -168,11 +170,11 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--strong)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
             {filterType === 'custom' && filterCustomTag
               ? filterCustomTag
-              : filterType === 'all' ? 'Notes' : filterType.charAt(0).toUpperCase() + filterType.slice(1) + 's'}
+              : filterType === 'all' ? t('notes.title') : filterType.charAt(0).toUpperCase() + filterType.slice(1) + 's'}
           </span>
           <button
             onClick={handleCreateNote}
-            title="New note"
+            title={t('notes.newNote')}
             style={{ fontSize: '18px', color: 'var(--muted)', lineHeight: 1 }}
           >
             +
@@ -183,7 +185,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {notes.length === 0 && (
             <div style={{ padding: '24px 14px', fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>
-              No notes yet.
+              {t('notes.noNotes')}
             </div>
           )}
           {notes.map((note) => (
@@ -192,7 +194,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
               note={note}
               active={activeNote?.id === note.id}
               onClick={() => selectNote(note)}
-              onDelete={() => openConfirm('Are you sure you want to delete this note?', () => deleteNote(note.id))}
+              onDelete={() => openConfirm(t('notes.deleteConfirm'), () => deleteNote(note.id))}
             />
           ))}
         </div>
@@ -211,10 +213,10 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
         gap: '4px',
         overflowY: 'auto',
       }}>
-        {BUILT_IN_TYPES.map(({ type, label }) => (
+        {BUILT_IN_TYPES.map(({ type, labelKey }) => (
           <TypePill
             key={type}
-            label={label}
+            label={t(labelKey)}
             active={filterType === type && !activeIsCustom}
             onClick={() => changeFilter(type)}
           />
@@ -231,7 +233,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
             active={filterType === 'custom' && filterCustomTag === tag}
             onClick={() => changeFilter('custom', tag)}
             onDelete={() => openConfirm(
-              `Delete "${tag}"? Its notes will be moved to None.`,
+              t('notes.deleteTagConfirm', { tag }),
               () => deleteCustomTag(tag)
             )}
           />
@@ -245,7 +247,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
             onChange={(e) => setNewTagInput(e.target.value)}
             onKeyDown={handleNewCustomTag}
             onBlur={() => { setNewTagInput(''); setShowNewTagInput(false); }}
-            placeholder="Tag name"
+            placeholder={t('notes.tagPlaceholder')}
             style={{
               width: '62px',
               padding: '4px 6px',
@@ -260,7 +262,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
         ) : (
           <button
             onClick={() => setShowNewTagInput(true)}
-            title="New custom tag"
+            title={t('notes.newCustomTag')}
             style={{
               width: '62px',
               padding: '4px 0',
@@ -304,9 +306,9 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
             color: 'var(--muted)',
           }}>
             <div style={{ fontSize: '28px', opacity: 0.3 }}>◈</div>
-            <div style={{ fontSize: '13px' }}>Select a note or create one</div>
+            <div style={{ fontSize: '13px' }}>{t('notes.selectNote')}</div>
             <button className="btn-ghost" onClick={handleCreateNote} style={{ marginTop: '4px' }}>
-              New note
+              {t('notes.newNote')}
             </button>
           </div>
         )}
@@ -341,6 +343,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
 // ── ConfirmModal ──────────────────────────────────────────────────────────────
 
 function ConfirmModal({ message, onConfirm, onCancel }) {
+  const { t } = useLanguage();
   return (
     <div
       style={{
@@ -383,7 +386,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
               fontFamily: 'var(--font)',
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={onConfirm}
@@ -398,7 +401,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
               fontFamily: 'var(--font)',
             }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
       </div>
@@ -436,6 +439,7 @@ function TypePill({ label, active, onClick }) {
 // ── CustomTagPill ─────────────────────────────────────────────────────────────
 
 function CustomTagPill({ label, active, onClick, onDelete }) {
+  const { t } = useLanguage();
   const [hover, setHover] = useState(false);
 
   return (
@@ -480,7 +484,7 @@ function CustomTagPill({ label, active, onClick, onDelete }) {
       {hover && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="Delete tag"
+          title={t('notes.deleteTag')}
           style={{
             padding: '5px 5px 5px 2px',
             fontSize: '9px',
@@ -502,6 +506,7 @@ function CustomTagPill({ label, active, onClick, onDelete }) {
 // ── NoteListItem ──────────────────────────────────────────────────────────────
 
 function NoteListItem({ note, active, onClick, onDelete }) {
+  const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   const meta = TYPE_META[note.type] || TYPE_META.idea;
   const preview = note.body
@@ -546,7 +551,7 @@ function NoteListItem({ note, active, onClick, onDelete }) {
       {hover && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="Delete note"
+          title={t('notes.deleteNote')}
           style={{
             position: 'absolute',
             right: '10px',
@@ -573,7 +578,18 @@ function NoteListItem({ note, active, onClick, onDelete }) {
 
 const BUILT_IN_NOTE_TYPES = ['idea', 'quote', 'goal', 'reflection', 'dream', 'gratitude', 'none'];
 
+const TYPE_LABEL_KEYS = {
+  idea: 'notes.typeIdea',
+  quote: 'notes.typeQuote',
+  goal: 'notes.typeGoal',
+  reflection: 'notes.typeReflection',
+  dream: 'notes.typeDream',
+  gratitude: 'notes.typeGratitude',
+  none: 'notes.typeNone',
+};
+
 function TypeSelector({ note, customTags, onChange }) {
+  const { t } = useLanguage();
   function selectType(type, customTag = null) {
     onChange(note.id, { type, custom_tag: customTag });
   }
@@ -601,15 +617,15 @@ function TypeSelector({ note, customTags, onChange }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', flex: 1, marginRight: '16px' }}>
-      {BUILT_IN_NOTE_TYPES.map((t) => {
-        const active = note.type === t;
+      {BUILT_IN_NOTE_TYPES.map((typ) => {
+        const active = note.type === typ;
         return (
           <button
-            key={t}
+            key={typ}
             style={{ ...pillBase, ...(active ? pillActive : {}) }}
-            onClick={() => selectType(t)}
+            onClick={() => selectType(typ)}
           >
-            {t}
+            {t(TYPE_LABEL_KEYS[typ])}
           </button>
         );
       })}
@@ -642,6 +658,7 @@ function noteWordCount(text) {
 }
 
 function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, saveStatus, onVersionsOpen }) {
+  const { t } = useLanguage();
   if (!editor) return null;
   const words = noteWordCount(editor.getText());
 
@@ -702,18 +719,18 @@ function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, sav
       <div style={{ flex: 1 }} />
       <button
         style={{ ...btnStyle, fontSize: '14px', marginRight: '2px' }}
-        title="Version history"
+        title={t('notes.versionHistory')}
         onClick={onVersionsOpen}
         type="button"
       >
         ◷
       </button>
       <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
-        {words} words
+        {t('common.words', { count: words })}
       </span>
       {saveStatus !== 'idle' && (
         <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
-          {saveStatus === 'saving' ? 'Saving…' : '✓ Saved'}
+          {saveStatus === 'saving' ? t('common.saving') : '✓ ' + t('common.saved')}
         </span>
       )}
       <MicButton isRecording={isRecording} isProcessing={isProcessing} onClick={onToggleDictation} />
@@ -723,18 +740,19 @@ function NoteToolbar({ editor, isRecording, isProcessing, onToggleDictation, sav
 
 // ── NoteEditor ────────────────────────────────────────────────────────────────
 
-const NOTE_PLACEHOLDERS = {
-  idea:       'Capture the idea…',
-  quote:      'Enter the quote…',
-  goal:       'What are you working toward?',
-  reflection: 'Write…',
-  dream:      'Describe the dream…',
-  gratitude:  'What are you grateful for?',
-  custom:     'Write…',
-  none:       'Write…',
+const NOTE_PLACEHOLDER_KEYS = {
+  idea:       'notes.placeholderIdea',
+  quote:      'notes.placeholderQuote',
+  goal:       'notes.placeholderGoal',
+  reflection: 'notes.placeholderReflection',
+  dream:      'notes.placeholderDream',
+  gratitude:  'notes.placeholderGratitude',
+  custom:     'notes.placeholderCustom',
+  none:       'notes.placeholderNone',
 };
 
 function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersionId }) {
+  const { t } = useLanguage();
   const noteRef = useRef(note);
   noteRef.current = note;
 
@@ -746,8 +764,37 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [polishing, setPolishing] = useState(false);
 
   useEffect(() => { setSaveStatus('idle'); }, [note.id]);
+
+  async function handlePolish() {
+    const ed = editorRef.current;
+    if (!ed || !note?.id || polishing) return;
+    const html = ed.getHTML();
+    if (!html || html === '<p></p>') return;
+    setPolishing(true);
+    try {
+      await apiFetch(`/api/notes/${note.id}/snapshot`, { method: 'POST' }).catch(() => {});
+      const res = await apiFetch('/api/reflect/polish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: html, format: 'html' }),
+      });
+      const data = await res.json();
+      if (data.polished) {
+        ed.commands.setContent(data.polished, false);
+        onChange(note.id, { body: data.polished });
+        setSaveStatus('saved');
+        clearTimeout(savedTimer.current);
+        savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      }
+    } catch (err) {
+      console.error('Polish failed:', err);
+    } finally {
+      setPolishing(false);
+    }
+  }
 
   async function fetchVersions() {
     setVersionsLoading(true);
@@ -790,7 +837,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       YoutubeEmbed,
       ImageEmbed,
       Placeholder.configure({
-        placeholder: NOTE_PLACEHOLDERS[note.type] || 'Write…',
+        placeholder: t(NOTE_PLACEHOLDER_KEYS[note.type] || 'notes.placeholderReflection'),
         emptyEditorClass: 'is-editor-empty',
       }),
     ],
@@ -880,6 +927,32 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         />
       </div>
 
+      {/* Polish button — fixed footer */}
+      {editor && editor.getText().trim().length > 0 && (
+        <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)' }}>
+          <button
+            style={{
+              width: '100%',
+              fontSize: '12px',
+              padding: '9px 0',
+              fontWeight: '500',
+              color: 'var(--white)',
+              background: 'var(--strong)',
+              borderRadius: '2px',
+              cursor: polishing ? 'default' : 'pointer',
+              transition: 'opacity 0.15s',
+              border: 'none',
+              fontFamily: 'var(--font)',
+              opacity: polishing ? 0.55 : 1,
+            }}
+            onClick={handlePolish}
+            disabled={polishing}
+          >
+            {polishing ? t('notes.polishing') : t('notes.polish')}
+          </button>
+        </div>
+      )}
+
       <VersionsPanel
         isOpen={versionsOpen}
         onClose={() => { setVersionsOpen(false); onVersionPreview?.(null); }}
@@ -888,7 +961,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         onPreview={onVersionPreview}
         previewVersionId={previewVersionId}
         loading={versionsLoading}
-        title="Note Versions"
+        title={t('notes.noteVersions')}
       />
     </div>
   );
@@ -897,6 +970,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
 // ── QuoteEditor ───────────────────────────────────────────────────────────────
 
 function QuoteEditor({ note, onChange, editor }) {
+  const { t } = useLanguage();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ position: 'relative' }}>
@@ -924,7 +998,7 @@ function QuoteEditor({ note, onChange, editor }) {
           type="text"
           value={note.attribution || ''}
           onChange={(e) => onChange(note.id, { attribution: e.target.value })}
-          placeholder="Attribution (e.g. Alan Watts)"
+          placeholder={t('notes.attributionPlaceholder')}
           style={{
             flex: 1,
             fontSize: '13px',
@@ -944,6 +1018,7 @@ function QuoteEditor({ note, onChange, editor }) {
 // ── GoalEditor ────────────────────────────────────────────────────────────────
 
 function GoalEditor({ note, onChange, editor }) {
+  const { t } = useLanguage();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -957,14 +1032,14 @@ function GoalEditor({ note, onChange, editor }) {
             marginTop: '4px',
             background: 'transparent',
           }}
-          title="Mark complete (coming soon)"
+          title={t('notes.markComplete')}
         />
         <div className="note-editor-default" style={{ flex: 1, fontSize: '15px', lineHeight: '1.7' }}>
           <EditorContent editor={editor} />
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Target date</span>
+        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('notes.targetDate')}</span>
         <input
           type="date"
           value={note.target_date || ''}
@@ -989,6 +1064,7 @@ function formatVersionDate(isoStr) {
 }
 
 function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersion, onClearPreview }) {
+  const { t } = useLanguage();
   const hasContent = note?.body?.trim();
   const panelStyle = {
     width: '100%',
@@ -1013,13 +1089,13 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
       <div style={panelStyle}>
         <div style={headerStyle}>
           <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-            Version Preview
+            {t('notes.versionPreview')}
           </div>
           <button
             onClick={onClearPreview}
             style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '2px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'var(--font)' }}
           >
-            ✕ Close
+            {t('notes.closePreview')}
           </button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
@@ -1039,7 +1115,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
       {/* Header */}
       <div style={headerStyle}>
         <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-          Mirror
+          {t('notes.mirror')}
         </div>
       </div>
 
@@ -1048,7 +1124,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         {loading && (
           <div style={{ padding: '40px 24px', textAlign: 'center' }}>
             <div style={{ fontSize: '24px', color: 'var(--muted)', letterSpacing: '4px', animation: 'pulse 1.4s ease-in-out infinite' }}>· · ·</div>
-            <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '12px' }}>Reading your note…</div>
+            <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '12px' }}>{t('notes.readingNote')}</div>
           </div>
         )}
 
@@ -1062,10 +1138,10 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', textAlign: 'center' }}>
             <div style={{ fontSize: '20px', marginBottom: '12px', color: 'var(--border)' }}>◎</div>
             <div style={{ fontSize: '12px', color: 'var(--body)', lineHeight: '1.8', marginBottom: '4px' }}>
-              {note ? 'Select a note, then press Reflect.' : 'Select a note to reflect on it.'}
+              {note ? t('notes.reflectEmpty') : t('notes.reflectNoNote')}
             </div>
             <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.7' }}>
-              The Mirror reads your whole story.
+              {t('notes.mirrorTagline')}
             </div>
           </div>
         )}
@@ -1091,7 +1167,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
           onClick={onReflect}
           disabled={!hasContent || loading}
         >
-          {loading ? 'Reflecting…' : '✦ Reflect'}
+          {loading ? t('notes.reflecting') : t('notes.reflect')}
         </button>
       </div>
     </div>

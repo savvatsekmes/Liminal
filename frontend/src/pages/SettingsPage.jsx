@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'llm',     label: 'Language Model' },
-  { id: 'tts',     label: 'Voice' },
-  { id: 'context', label: 'Life Context' },
-  { id: 'memory',  label: 'Memory' },
-  { id: 'account', label: 'Account' },
-  { id: 'import',  label: 'Import' },
-  { id: 'data',    label: 'Data' },
+  { id: 'account', labelKey: 'settings.tabAccount' },
+  { id: 'llm',     labelKey: 'settings.tabLLM' },
+  { id: 'tts',     labelKey: 'settings.tabVoice' },
+  { id: 'data',    labelKey: 'settings.tabData' },
 ];
 
 const s = {
@@ -272,9 +270,10 @@ function StatusIndicator({ ok, message }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function SettingsPage({ username, onLogout }) {
+export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarChange }) {
+  const { t } = useLanguage();
   const [cfg, setCfg] = useState(null);
-  const [activeTab, setActiveTab] = useState('llm');
+  const [activeTab, setActiveTab] = useState('account');
   const { toast, show: showToast } = useToast();
   const [saving, setSaving] = useState(false);
 
@@ -292,8 +291,8 @@ export default function SettingsPage({ username, onLogout }) {
       });
       const updated = await res.json();
       setCfg(updated);
-      showToast('Saved');
-    } catch { showToast('Save failed'); }
+      showToast(t('common.saved'));
+    } catch { showToast(t('settings.saveFailed')); }
     finally { setSaving(false); }
   }
 
@@ -302,21 +301,21 @@ export default function SettingsPage({ username, onLogout }) {
   }
 
   if (!cfg) {
-    return <div style={{ padding: '40px 48px', color: 'var(--muted)', fontSize: '13px' }}>Loading…</div>;
+    return <div style={{ padding: '40px 48px', color: 'var(--muted)', fontSize: '13px' }}>{t('common.loading')}</div>;
   }
 
   return (
     <div style={s.root}>
       {/* Left tab strip */}
       <div style={s.tabStrip}>
-        <div style={s.tabStripTitle}>Settings</div>
+        <div style={s.tabStripTitle}>{t('settings.title')}</div>
         {TABS.map(tab => (
           <button
             key={tab.id}
             style={{ ...s.tabItem, ...(activeTab === tab.id ? s.tabItemActive : {}) }}
             onClick={() => setActiveTab(tab.id)}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
@@ -325,10 +324,7 @@ export default function SettingsPage({ username, onLogout }) {
       <div style={s.tabContent}>
         {activeTab === 'llm'     && <LLMSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
         {activeTab === 'tts'     && <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
-        {activeTab === 'context' && <LifeContextSection showToast={showToast} />}
-        {activeTab === 'memory'  && <MemorySection showToast={showToast} />}
-        {activeTab === 'account' && <AccountSection cfg={cfg} set={set} save={save} showToast={showToast} username={username} onLogout={onLogout} />}
-        {activeTab === 'import'  && <NotionImportSection />}
+        {activeTab === 'account' && <AccountSection cfg={cfg} set={set} save={save} showToast={showToast} username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />}
         {activeTab === 'data'    && <DataSection showToast={showToast} />}
       </div>
 
@@ -348,6 +344,7 @@ const RECOMMENDED_MODELS = [
 ];
 
 function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
+  const { t } = useLanguage();
   const [pulling, setPulling] = useState({});
   const [selected, setSelected] = useState('');
 
@@ -401,7 +398,7 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
   return (
     <div style={{ marginTop: '8px' }}>
       <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '8px' }}>
-        Recommended models
+        {t('settings.recommendedModels')}
       </div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <select
@@ -409,22 +406,22 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
           onChange={e => setSelected(e.target.value)}
           style={{ flex: 1, fontSize: '12px', padding: '6px 8px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--white)', color: 'var(--strong)', outline: 'none', fontFamily: 'var(--font)' }}
         >
-          <option value=''>Select a model…</option>
+          <option value=''>{t('settings.selectModel')}</option>
           {RECOMMENDED_MODELS.map(x => (
             <option key={x.name} value={x.name}>{x.name} — {x.desc}</option>
           ))}
         </select>
         {m && (
           installed ? (
-            <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', flexShrink: 0 }}>Installed</span>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', flexShrink: 0 }}>{t('settings.installed')}</span>
           ) : pull ? (
-            <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0 }}>Downloading…</span>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0 }}>{t('settings.downloading')}</span>
           ) : (
             <button
               onClick={() => downloadModel(m.name)}
               style={{ fontSize: '11px', color: 'var(--body)', padding: '5px 12px', border: 'var(--border-style)', borderRadius: '2px', flexShrink: 0, background: 'var(--white)', cursor: 'pointer', fontFamily: 'var(--font)' }}
             >
-              Download
+              {t('settings.download')}
             </button>
           )
         )}
@@ -445,6 +442,7 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
 
 // ── LLM Section ───────────────────────────────────────────────────────────────
 function LLMSection({ cfg, set, save, saving, showToast }) {
+  const { t } = useLanguage();
   const provider = cfg.llm_provider || 'claude';
   const [testStatus, setTestStatus] = useState(null);
   const [testing, setTesting] = useState(false);
@@ -510,8 +508,8 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
   }
 
   return (
-    <Section title="Language Model">
-      <Field label="Provider">
+    <Section title={t('settings.tabLLM')}>
+      <Field label={t('settings.llmProvider')}>
         <div style={s.segmented}>
           {['claude', 'openai', 'ollama'].map((p, i, arr) => (
             <button
@@ -523,7 +521,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               }}
               onClick={() => { set('llm_provider', p); save({ llm_provider: p }); }}
             >
-              {p === 'claude' ? 'Claude' : p === 'openai' ? 'OpenAI' : 'Ollama (local)'}
+              {p === 'claude' ? 'Claude' : p === 'openai' ? 'OpenAI' : t('settings.ollamaLocal')}
             </button>
           ))}
         </div>
@@ -532,8 +530,8 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
       {provider === 'claude' && (
         <>
         <Field
-          label="Anthropic API key"
-          hint={cfg.has_anthropic_key ? '✓ Key is set' : 'Required — get one at console.anthropic.com'}
+          label={t('settings.anthropicApiKey')}
+          hint={cfg.has_anthropic_key ? t('settings.keyIsSet') : t('settings.anthropicKeyHint')}
         >
           <div style={s.row}>
             <input
@@ -544,10 +542,10 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               onChange={e => setAnthropicKey(e.target.value)}
               autoComplete="off"
             />
-            <Btn primary onClick={saveKeys} disabled={saving}>Save</Btn>
+            <Btn primary onClick={saveKeys} disabled={saving}>{t('common.save')}</Btn>
           </div>
         </Field>
-        <Field label="Model">
+        <Field label={t('settings.model')}>
           <select
             style={s.select}
             value={cfg.claude_model || 'claude-opus-4-6'}
@@ -573,8 +571,8 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
       {provider === 'openai' && (
         <>
           <Field
-            label="OpenAI API key"
-            hint={cfg.has_openai_key ? '✓ Key is set' : 'Required — get one at platform.openai.com'}
+            label={t('settings.openaiApiKey')}
+            hint={cfg.has_openai_key ? t('settings.keyIsSet') : t('settings.openaiKeyHint')}
           >
             <div style={s.row}>
               <input
@@ -585,10 +583,10 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
                 onChange={e => setOpenaiKey(e.target.value)}
                 autoComplete="off"
               />
-              <Btn primary onClick={saveKeys} disabled={saving}>Save</Btn>
+              <Btn primary onClick={saveKeys} disabled={saving}>{t('common.save')}</Btn>
             </div>
           </Field>
-          <Field label="Model">
+          <Field label={t('settings.model')}>
             <select
               style={s.select}
               value={cfg.openai_model || 'gpt-4.1'}
@@ -627,7 +625,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
 
       {provider === 'ollama' && (
         <>
-          <Field label="Ollama URL" hint="Default: http://localhost:11434">
+          <Field label={t('settings.ollamaUrl')} hint={t('settings.ollamaUrlHint')}>
             <input
               style={s.input}
               value={cfg.ollama_url || 'http://localhost:11434'}
@@ -637,13 +635,13 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             />
           </Field>
 
-          <Field label="Active model">
+          <Field label={t('settings.activeModel')}>
             {!ollamaData && (
-              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Checking Ollama…</div>
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('settings.checkingOllama')}</div>
             )}
             {ollamaData && !ollamaData.online && (
               <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
-                Ollama is not running. Start Ollama to see installed models.
+                {t('settings.ollamaOffline')}
               </div>
             )}
             {ollamaData?.online && ollamaData.models?.length > 0 && (
@@ -659,12 +657,12 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             )}
             {ollamaData?.online && ollamaData.models?.length === 0 && (
               <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
-                No models installed. Download one below.
+                {t('settings.noModelsInstalled')}
               </div>
             )}
           </Field>
 
-          <Field label="Vision Model (for image analysis)" hint="Used to describe images pasted into entries. Requires a vision-capable model like llama3.2-vision.">
+          <Field label={t('settings.visionModel')} hint={t('settings.visionModelHint')}>
             {ollamaData?.online && ollamaData.models?.length > 0 ? (
               <select
                 style={s.select}
@@ -699,7 +697,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
           />
 
           {gpus?.cuda && (
-            <Field label="GPU for Ollama" hint="Set CUDA_VISIBLE_DEVICES before starting Ollama to restrict it to a specific GPU.">
+            <Field label={t('settings.gpuForOllama')} hint={t('settings.gpuForOllamaHint')}>
               <select
                 style={s.select}
                 value={cfg.llm_device || 'auto'}
@@ -724,7 +722,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
         <Btn onClick={testConnection} disabled={testing}>
-          {testing ? 'Testing…' : 'Test connection'}
+          {testing ? t('settings.testing') : t('settings.testConnection')}
         </Btn>
         {testStatus && (
           <StatusIndicator
@@ -739,6 +737,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
 
 // ── TTS Section ───────────────────────────────────────────────────────────────
 function TTSSection({ cfg, set, save, saving, showToast }) {
+  const { t } = useLanguage();
   const mode = cfg.tts_mode || 'chatterbox';
   const [voices, setVoices] = useState([]);
   const [ttsStatus, setTtsStatus] = useState(null);
@@ -772,7 +771,7 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
       audioRef.current = audio;
       audio.play();
     } catch (err) {
-      showToast('Chatterbox not reachable');
+      showToast(t('settings.chatterboxNotReachable'));
     } finally {
       setTesting(false);
     }
@@ -787,12 +786,12 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
       const res = await apiFetch('/api/tts/voices', { method: 'POST', body: form });
       const data = await res.json();
       if (data.success) {
-        showToast(`Voice "${data.filename}" uploaded`);
+        showToast(t('settings.voiceUploaded', { name: data.filename }));
         const updated = await apiFetch('/api/tts/voices').then(r => r.json());
         setVoices(updated);
         save({ chatterbox_voice: data.filename });
       }
-    } catch { showToast('Upload failed'); }
+    } catch { showToast(t('settings.uploadFailed')); }
     finally { setUploading(false); }
   }
 
@@ -801,16 +800,16 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
     await apiFetch(`/api/tts/voices/${encodeURIComponent(filename)}`, { method: 'DELETE' });
     setVoices(prev => prev.filter(v => v.filename !== filename));
     if (cfg.chatterbox_voice === filename) save({ chatterbox_voice: '' });
-    showToast(`Voice "${filename}" deleted`);
+    showToast(t('settings.voiceDeleted', { name: filename }));
   }
 
   const selectedVoice = cfg.chatterbox_voice || 'Abigail.wav';
 
   return (
-    <Section title="Voice & Text-to-Speech">
-      <Field label="Provider">
+    <Section title={t('settings.voiceAndTts')}>
+      <Field label={t('settings.llmProvider')}>
         <div style={s.segmented}>
-          {[['chatterbox', 'Chatterbox (local)'], ['openai', 'OpenAI TTS'], ['webspeech', 'Browser built-in']].map(([val, label], i, arr) => (
+          {[['chatterbox', t('settings.chatterboxLocal')], ['openai', t('settings.openaiTts')], ['webspeech', t('settings.browserBuiltIn')]].map(([val, label], i, arr) => (
             <button
               key={val}
               style={{
@@ -831,11 +830,11 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
           <div style={{ ...s.row, alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
             <div style={{ ...s.statusDot, background: ttsStatus?.online ? '#2ecc71' : '#e0e0e0' }} />
             <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-              {ttsStatus?.online ? 'Chatterbox server online' : 'Chatterbox server offline — start it to enable voice'}
+              {ttsStatus?.online ? t('settings.chatterboxOnline') : t('settings.chatterboxOffline')}
             </span>
           </div>
 
-          <Field label="Server URL">
+          <Field label={t('settings.serverUrl')}>
             <input
               style={s.input}
               value={cfg.chatterbox_url || 'http://localhost:8500'}
@@ -846,7 +845,7 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
           </Field>
 
           {gpus && (
-            <Field label="GPU for TTS" hint="Which device Chatterbox runs on. Restart TTS server after changing.">
+            <Field label={t('settings.gpuForTts')} hint={t('settings.gpuForTtsHint')}>
               <select
                 style={s.select}
                 value={cfg.tts_device || 'auto'}
@@ -863,14 +862,14 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
             </Field>
           )}
 
-          <Field label="Voice">
+          <Field label={t('settings.voice')}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <select
                 style={{ ...s.input, flex: 1 }}
                 value={selectedVoice}
                 onChange={e => { set('chatterbox_voice', e.target.value); save({ chatterbox_voice: e.target.value }); }}
               >
-                {voices.length === 0 && <option value="">No voices found</option>}
+                {voices.length === 0 && <option value="">{t('settings.noVoicesFound')}</option>}
                 {voices.map(v => (
                   <option key={v.filename} value={v.filename}>{v.name || v.filename}</option>
                 ))}
@@ -880,15 +879,15 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
               >
-                {uploading ? '…' : '+ Upload'}
+                {uploading ? '…' : t('settings.uploadVoice')}
               </button>
               {selectedVoice && voices.find(v => v.filename === selectedVoice)?.local && (
                 <button
                   style={{ ...s.saveBtn, background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)' }}
                   onClick={() => deleteVoice(selectedVoice, { stopPropagation: () => {} })}
-                  title="Delete selected voice"
+                  title={t('settings.deleteVoice')}
                 >
-                  Delete
+                  {t('common.delete')}
                 </button>
               )}
             </div>
@@ -900,11 +899,11 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
               onChange={e => e.target.files[0] && uploadVoice(e.target.files[0])}
             />
             <div style={{ ...s.sublabel, marginTop: '6px' }}>
-              .wav or .mp3 — uploaded to the voices folder Chatterbox reads from
+              {t('settings.voiceFileHint')}
             </div>
           </Field>
 
-          <Field label="Voices folder path" hint="Where Chatterbox looks for voice files. Leave blank to use Liminal's built-in folder.">
+          <Field label={t('settings.voicesFolderPath')} hint={t('settings.voicesFolderHint')}>
             <input
               style={s.input}
               value={cfg.voices_path || ''}
@@ -916,24 +915,24 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
 
           <div style={s.divider} />
 
-          <Field label="Emotion / Expression">
+          <Field label={t('settings.emotionExpression')}>
             <TtsSlider
-              label="Exaggeration"
-              hint="0 = flat, 0.6 = natural, 2.0 = very expressive"
+              label={t('settings.exaggeration')}
+              hint={t('settings.exaggerationHint')}
               min={0} max={2} step={0.05}
               value={parseFloat(cfg.chatterbox_exaggeration ?? 0.6)}
               onChange={v => { set('chatterbox_exaggeration', v); save({ chatterbox_exaggeration: v }); }}
             />
             <TtsSlider
-              label="Voice fidelity (cfg weight)"
-              hint="Higher = closer to reference voice"
+              label={t('settings.voiceFidelity')}
+              hint={t('settings.voiceFidelityHint')}
               min={0} max={1} step={0.05}
               value={parseFloat(cfg.chatterbox_cfg_weight ?? 0.9)}
               onChange={v => { set('chatterbox_cfg_weight', v); save({ chatterbox_cfg_weight: v }); }}
             />
             <TtsSlider
-              label="Variation (temperature)"
-              hint="Higher = more natural variation. Above 2.0 can cause issues."
+              label={t('settings.variation')}
+              hint={t('settings.variationHint')}
               min={0} max={2} step={0.05}
               value={parseFloat(cfg.chatterbox_temperature ?? 1.3)}
               onChange={v => { set('chatterbox_temperature', v); save({ chatterbox_temperature: v }); }}
@@ -942,10 +941,10 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Btn onClick={testTts} disabled={testing}>
-              {testing ? 'Speaking…' : '▶ Test voice'}
+              {testing ? t('settings.speaking') : t('settings.testVoice')}
             </Btn>
             <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-              Speaks "Liminal is listening." with current settings
+              {t('settings.testVoiceHint')}
             </span>
           </div>
         </>
@@ -957,7 +956,7 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
 
       {mode === 'webspeech' && (
         <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: '1.7', padding: '12px 0' }}>
-          Using the browser's built-in speech synthesis. No setup required, but voice quality varies by browser and OS.
+          {t('settings.webspeechDesc')}
         </div>
       )}
     </Section>
@@ -966,6 +965,7 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
 
 // ── OpenAI TTS sub-section ────────────────────────────────────────────────────
 function OpenAITtsSection({ cfg, set, save, saving, showToast }) {
+  const { t } = useLanguage();
   const [testing, setTesting] = useState(false);
 
   async function testOpenAITts() {
@@ -983,22 +983,22 @@ function OpenAITtsSection({ cfg, set, save, saving, showToast }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       new Audio(URL.createObjectURL(blob)).play();
-    } catch { showToast('OpenAI TTS failed — check your API key'); }
+    } catch { showToast(t('settings.openaiTtsFailed')); }
     finally { setTesting(false); }
   }
 
   return (
     <>
       <Field
-        label="OpenAI API key"
-        hint={cfg.has_openai_key ? '✓ Key is set — also used for the LLM section' : 'Required'}
+        label={t('settings.openaiApiKey')}
+        hint={cfg.has_openai_key ? t('settings.openaiKeySetShared') : t('settings.required')}
       >
         <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>
-          Uses the same OpenAI key as the LLM section. Set it there if not already saved.
+          {t('settings.openaiKeySharedHint')}
         </div>
       </Field>
 
-      <Field label="Voice">
+      <Field label={t('settings.voice')}>
         <select
           style={s.select}
           value={cfg.openai_tts_voice || 'nova'}
@@ -1009,15 +1009,15 @@ function OpenAITtsSection({ cfg, set, save, saving, showToast }) {
           ))}
         </select>
         <div style={{ ...s.sublabel, marginTop: '4px' }}>
-          Note: Anthropic does not offer a TTS API — use Chatterbox (local) or OpenAI TTS.
+          {t('settings.ttsApiNote')}
         </div>
       </Field>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <Btn onClick={testOpenAITts} disabled={testing || !cfg.has_openai_key}>
-          {testing ? 'Speaking…' : '▶ Test voice'}
+          {testing ? t('settings.speaking') : t('settings.testVoice')}
         </Btn>
-        {!cfg.has_openai_key && <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Set OpenAI API key first</span>}
+        {!cfg.has_openai_key && <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('settings.setOpenaiKeyFirst')}</span>}
       </div>
     </>
   );
@@ -1046,89 +1046,26 @@ function TtsSlider({ label, hint, min, max, step, value, onChange }) {
   );
 }
 
-// ── Memory Section ────────────────────────────────────────────────────────────
-function MemorySection({ showToast }) {
-  const [mem, setMem] = useState(null);
-  const [clearing, setClearing] = useState(false);
-  const [reindexing, setReindexing] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
-
-  useEffect(() => {
-    apiFetch('/api/settings/memory').then(r => r.json()).then(setMem).catch(() => {});
-  }, []);
-
-  async function clearMemory() {
-    setClearing(true);
-    await apiFetch('/api/settings/memory', { method: 'DELETE' });
-    setMem({ summary: '', updated_at: null, word_count: 0 });
-    setClearing(false);
-    setConfirmClear(false);
-    showToast('Memory cleared');
-  }
-
-  async function reindex() {
-    setReindexing(true);
-    await apiFetch('/api/settings/reindex', { method: 'POST' });
-    showToast('Re-indexing started in background');
-    setTimeout(() => setReindexing(false), 2000);
-  }
-
-  const updatedStr = mem?.updated_at
-    ? new Date(mem.updated_at).toLocaleString()
-    : null;
-
-  return (
-    <Section title="Memory">
-      <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: '1.7', marginBottom: '16px' }}>
-        The rolling summary is injected into every Mirror reflection. It's what makes Liminal feel like it knows you.
-        {updatedStr && <span style={{ display: 'block', marginTop: '4px' }}>Last updated: {updatedStr} — {mem?.word_count || 0} words</span>}
-      </div>
-
-      {mem?.summary ? (
-        <div style={s.memoryBox}>{mem.summary}</div>
-      ) : (
-        <div style={{ ...s.memoryBox, color: 'var(--muted)' }}>
-          No memory yet. Write an entry and hit Reflect to build it.
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
-        <Btn onClick={reindex} disabled={reindexing}>
-          {reindexing ? 'Starting…' : 'Re-index all entries'}
-        </Btn>
-        <Btn danger onClick={() => setConfirmClear(true)} disabled={!mem?.summary}>
-          Clear memory summary
-        </Btn>
-      </div>
-
-      {confirmClear && (
-        <div style={s.confirmBox}>
-          <div style={{ fontSize: '12px', color: 'var(--body)', marginBottom: '10px' }}>
-            This deletes the rolling summary. Liminal will rebuild it after your next Reflect. Are you sure?
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Btn danger onClick={clearMemory} disabled={clearing}>{clearing ? 'Clearing…' : 'Yes, clear it'}</Btn>
-            <Btn onClick={() => setConfirmClear(false)}>Cancel</Btn>
-          </div>
-        </div>
-      )}
-    </Section>
-  );
-}
 
 // ── Account Section ───────────────────────────────────────────────────────────
-function AccountSection({ cfg, set, save, showToast, username, onLogout }) {
+function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarUrl, onAvatarChange }) {
+  const { t, lang, setLanguage: setLanguageFn } = useLanguage();
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [pwError, setPwError] = useState('');
   const [savingPw, setSavingPw] = useState(false);
+  const [deleteStep, setDeleteStep] = useState(null); // null → 'confirm' → 'password'
+  const [deletePw, setDeletePw] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef(null);
 
   async function changePassword() {
     setPwError('');
-    if (!currentPw || !newPw) { setPwError('All fields required.'); return; }
-    if (newPw !== confirmPw) { setPwError('New passwords do not match.'); return; }
-    if (newPw.length < 4) { setPwError('Password must be at least 4 characters.'); return; }
+    if (!currentPw || !newPw) { setPwError(t('settings.allFieldsRequired')); return; }
+    if (newPw !== confirmPw) { setPwError(t('settings.passwordsDoNotMatch')); return; }
+    if (newPw.length < 4) { setPwError(t('settings.passwordTooShort')); return; }
 
     setSavingPw(true);
     try {
@@ -1139,18 +1076,61 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout }) {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Password changed');
+        showToast(t('settings.passwordChanged'));
         setCurrentPw(''); setNewPw(''); setConfirmPw('');
       } else {
         setPwError(data.error || 'Failed.');
       }
-    } catch { setPwError('Request failed.'); }
+    } catch { setPwError(t('settings.requestFailed')); }
     finally { setSavingPw(false); }
   }
 
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const form = new FormData();
+      form.append('avatar', file);
+      const res = await apiFetch('/api/auth/avatar', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.avatar_url) {
+        onAvatarChange(data.avatar_url);
+        showToast(t('settings.profilePictureUpdated'));
+      } else {
+        showToast(t('settings.uploadFailed'));
+      }
+    } catch (err) {
+      console.error('Avatar upload failed:', err);
+      showToast(t('settings.uploadFailed'));
+    }
+    finally { setUploadingAvatar(false); e.target.value = ''; }
+  }
+
   return (
-    <Section title="Account">
-      <Field label="Display name" hint="Used as a personal greeting — doesn't affect AI behaviour">
+    <Section title={t('settings.tabAccount')}>
+      {/* Profile picture */}
+      <Field label={t('settings.profilePicture')} hint={t('settings.profilePictureHint')}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="Avatar" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: 'var(--border-style)' }} />
+          ) : (
+            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--panel-bg)', border: 'var(--border-style)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '600', color: 'var(--muted)' }}>
+              {(username || '?')[0].toUpperCase()}
+            </div>
+          )}
+          <div>
+            <Btn primary onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}>
+              {uploadingAvatar ? t('settings.uploading') : t('settings.uploadPhoto')}
+            </Btn>
+            <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+          </div>
+        </div>
+      </Field>
+
+      <div style={s.divider} />
+
+      <Field label={t('settings.displayName')} hint={t('settings.displayNameHint')}>
         <div style={s.row}>
           <input
             style={s.input}
@@ -1158,42 +1138,114 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout }) {
             onChange={e => set('display_name', e.target.value)}
             placeholder="Your name"
           />
-          <Btn primary onClick={() => save({ display_name: cfg.display_name })}>Save</Btn>
+          <Btn primary onClick={() => save({ display_name: cfg.display_name })}>{t('common.save')}</Btn>
         </div>
+      </Field>
+
+      <Field label={t('settings.language')} hint={t('settings.languageHint')}>
+        <select
+          style={s.input}
+          value={lang}
+          onChange={(e) => setLanguageFn(e.target.value)}
+        >
+          {LANGUAGES.map((l) => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
       </Field>
 
       <div style={s.divider} />
 
-      <div style={{ ...s.label, marginBottom: '14px' }}>Change password</div>
-      <Field label="Current password">
+      <div style={{ ...s.label, marginBottom: '14px' }}>{t('settings.changePassword')}</div>
+      <Field label={t('settings.currentPassword')}>
         <input style={s.input} type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} autoComplete="current-password" />
       </Field>
-      <Field label="New password">
+      <Field label={t('settings.newPassword')}>
         <input style={s.input} type="password" value={newPw} onChange={e => setNewPw(e.target.value)} autoComplete="new-password" />
       </Field>
-      <Field label="Confirm new password">
+      <Field label={t('settings.confirmNewPassword')}>
         <input style={s.input} type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} autoComplete="new-password" />
       </Field>
       {pwError && <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px' }}>{pwError}</div>}
       <Btn primary onClick={changePassword} disabled={savingPw}>
-        {savingPw ? 'Updating…' : 'Update password'}
+        {savingPw ? t('settings.updatingPassword') : t('settings.updatePassword')}
       </Btn>
 
       <div style={s.divider} />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
         <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-          Logged in as <strong style={{ color: 'var(--body)' }}>{username}</strong>
+          {t('settings.loggedInAs')} <strong style={{ color: 'var(--body)' }}>{username}</strong>
         </span>
-        <Btn danger onClick={onLogout}>Log out</Btn>
+        <Btn danger onClick={onLogout}>{t('settings.logOut')}</Btn>
       </div>
 
       <RestartButton />
+
+      <div style={s.divider} />
+
+      <div style={{ ...s.label, marginBottom: '10px', color: '#c0392b' }}>{t('settings.dangerZone')}</div>
+      {!deleteStep && (
+        <Btn danger onClick={() => setDeleteStep('confirm')}>{t('settings.deleteAccount')}</Btn>
+      )}
+
+      {deleteStep === 'confirm' && (
+        <div style={{ padding: '14px', border: '1px solid #e0c0be', borderRadius: '2px', background: 'var(--near-white)' }}>
+          <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
+            {t('settings.deleteAccountConfirm')}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Btn danger onClick={() => setDeleteStep('password')}>{t('settings.deleteAccountYes')}</Btn>
+            <Btn onClick={() => { setDeleteStep(null); setDeletePw(''); setDeleteError(''); }}>{t('common.cancel')}</Btn>
+          </div>
+        </div>
+      )}
+
+      {deleteStep === 'password' && (
+        <div style={{ padding: '14px', border: '1px solid #e0c0be', borderRadius: '2px', background: 'var(--near-white)' }}>
+          <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
+            {t('settings.deleteAccountPassword')}
+          </div>
+          {deleteError && <div style={{ fontSize: '11px', color: '#c0392b', marginBottom: '8px' }}>{deleteError}</div>}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              type="password"
+              style={{ ...s.input, flex: 1, borderColor: '#e0c0be' }}
+              placeholder={t('settings.password')}
+              value={deletePw}
+              onChange={(e) => setDeletePw(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleDeleteAccount()}
+              autoFocus
+            />
+            <Btn danger onClick={handleDeleteAccount} disabled={!deletePw}>{t('common.delete')}</Btn>
+            <Btn onClick={() => { setDeleteStep(null); setDeletePw(''); setDeleteError(''); }}>{t('common.cancel')}</Btn>
+          </div>
+        </div>
+      )}
     </Section>
   );
+
+  async function handleDeleteAccount() {
+    if (!deletePw) return;
+    setDeleteError('');
+    try {
+      const res = await apiFetch('/api/auth/account', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: deletePw }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        onLogout();
+      } else {
+        setDeleteError(data.error || 'Failed');
+      }
+    } catch { setDeleteError(t('settings.requestFailed')); }
+  }
 }
 
 function RestartButton() {
+  const { t } = useLanguage();
   const [state, setState] = useState('idle'); // idle | restarting
   const [countdown, setCountdown] = useState(10);
 
@@ -1219,274 +1271,123 @@ function RestartButton() {
   if (state === 'restarting') {
     return (
       <div style={{ fontSize: '13px', color: 'var(--muted)' }}>
-        Restarting Liminal… reloading in {countdown}s
+        {t('settings.restartingCountdown', { countdown })}
       </div>
     );
   }
 
   return (
-    <Btn onClick={handleRestart}>Restart Liminal</Btn>
+    <Btn onClick={handleRestart}>{t('settings.restart')}</Btn>
   );
 }
 
 // ── Life Context Section ───────────────────────────────────────────────────────
-function LifeContextSection({ showToast }) {
-  const [items, setItems] = useState([]);
-  const [newText, setNewText] = useState('');
-  const [editId, setEditId] = useState(null);
-  const [editText, setEditText] = useState('');
-
-  useEffect(() => {
-    apiFetch('/api/context').then(r => r.json()).then(setItems).catch(() => {});
-  }, []);
-
-  async function addItem() {
-    if (!newText.trim()) return;
-    const res = await apiFetch('/api/context', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: newText.trim() }),
-    });
-    const item = await res.json();
-    setItems(prev => [item, ...prev]);
-    setNewText('');
-    showToast('Added to life context');
-  }
-
-  async function saveEdit(id) {
-    if (!editText.trim()) return;
-    const res = await apiFetch(`/api/context/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: editText.trim() }),
-    });
-    const updated = await res.json();
-    setItems(prev => prev.map(i => i.id === id ? updated : i));
-    setEditId(null);
-    setEditText('');
-    showToast('Updated');
-  }
-
-  async function deleteItem(id) {
-    await apiFetch(`/api/context/${id}`, { method: 'DELETE' });
-    setItems(prev => prev.filter(i => i.id !== id));
-    showToast('Removed');
-  }
-
-  function formatDate(iso) {
-    if (!iso) return '';
-    return new Date(iso).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
-  }
-
-  return (
-    <Section title="Life Context">
-      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
-        These curated snippets are injected into every reflection above the rolling summary.
-        Highlight text in any journal entry and click "Add to Life Context", or add one manually below.
-      </div>
-
-      {/* Manual add */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-        <input
-          style={{ ...s.input, flex: 1 }}
-          placeholder="Add a context item manually..."
-          value={newText}
-          onChange={e => setNewText(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && addItem()}
-        />
-        <Btn onClick={addItem} disabled={!newText.trim()}>Add</Btn>
-      </div>
-
-      {/* Items list */}
-      {items.length === 0 && (
-        <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', padding: '16px 0' }}>
-          No context items yet. Highlight text in a journal entry to save it here.
-        </div>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {items.map(item => (
-          <div key={item.id} style={{
-            padding: '12px 14px',
-            border: 'var(--border-style)',
-            borderRadius: '2px',
-            background: 'var(--near-white)',
-          }}>
-            {editId === item.id ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <textarea
-                  style={{ ...s.input, minHeight: '72px', resize: 'vertical' }}
-                  value={editText}
-                  onChange={e => setEditText(e.target.value)}
-                  autoFocus
-                />
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <Btn primary onClick={() => saveEdit(item.id)}>Save</Btn>
-                  <Btn onClick={() => { setEditId(null); setEditText(''); }}>Cancel</Btn>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div style={{ fontSize: '13px', color: 'var(--strong)', lineHeight: '1.55', marginBottom: '8px' }}>
-                  {item.text}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {item.source_entry_title && (
-                    <span style={{ fontSize: '11px', color: 'var(--muted)', flex: 1 }}>
-                      From: {item.source_entry_title}
-                    </span>
-                  )}
-                  <span style={{ fontSize: '11px', color: 'var(--muted)', marginLeft: 'auto' }}>
-                    {formatDate(item.created_at)}
-                  </span>
-                  <button
-                    onClick={() => { setEditId(item.id); setEditText(item.text); }}
-                    style={{ fontSize: '11px', color: 'var(--muted)', padding: '2px 6px', border: 'var(--border-style)', borderRadius: '2px' }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => deleteItem(item.id)}
-                    style={{ fontSize: '11px', color: 'var(--muted)', padding: '2px 6px', border: 'var(--border-style)', borderRadius: '2px' }}
-                  >
-                    ×
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
 
 // ── Data Section ──────────────────────────────────────────────────────────────
 // ── Notion Import Section ─────────────────────────────────────────────────────
 
-function NotionImportSection() {
-  const [dragging, setDragging] = useState(false);
-  const [status, setStatus] = useState(null);
-  const pollRef = useRef(null);
-  const fileInputRef = useRef(null);
+// ── Data Section ──────────────────────────────────────────────────────────────
+
+function DataSection({ showToast }) {
+  const { t } = useLanguage();
+  const [step, setStep] = useState(null);
+  const [password, setPassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
+
+  // JSON import state
+  const [importingJson, setImportingJson] = useState(false);
+  const jsonInputRef = useRef(null);
+
+  // Notion import state
+  const [notionDragging, setNotionDragging] = useState(false);
+  const [notionStatus, setNotionStatus] = useState(null);
+  const notionFileRef = useRef(null);
+  const notionPollRef = useRef(null);
 
   useEffect(() => {
-    checkStatus();
-    return () => clearInterval(pollRef.current);
+    checkNotionStatus();
+    return () => clearInterval(notionPollRef.current);
   }, []);
 
-  async function checkStatus() {
+  async function checkNotionStatus() {
     try {
       const res = await fetch('/api/notion/status');
       const data = await res.json();
-      setStatus(data);
-      if (data.running) startPolling();
+      setNotionStatus(data);
+      if (data.running) startNotionPolling();
     } catch {}
   }
 
-  function startPolling() {
-    clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
+  function startNotionPolling() {
+    clearInterval(notionPollRef.current);
+    notionPollRef.current = setInterval(async () => {
       try {
         const res = await fetch('/api/notion/status');
         const data = await res.json();
-        setStatus(data);
-        if (!data.running) clearInterval(pollRef.current);
+        setNotionStatus(data);
+        if (!data.running) clearInterval(notionPollRef.current);
       } catch {}
     }, 1200);
   }
 
-  async function handleFile(file) {
+  async function handleNotionFile(file) {
     if (!file || !file.name.endsWith('.zip')) {
-      alert('Please select a Notion export ZIP file.');
+      showToast(t('settings.selectNotionZip'));
       return;
     }
     const formData = new FormData();
     formData.append('file', file);
     try {
       await fetch('/api/notion/import', { method: 'POST', body: formData });
-      startPolling();
+      startNotionPolling();
     } catch {}
   }
 
-  function onDrop(e) {
+  function onNotionDrop(e) {
     e.preventDefault();
-    setDragging(false);
+    setNotionDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    if (file) handleNotionFile(file);
   }
 
-  const pct = status?.total > 0 ? Math.round((status.done / status.total) * 100) : 0;
-  const showProgress = status?.running || status?.phase === 'complete' || status?.phase === 'error';
-
-  return (
-    <Section title="Import from Notion">
-      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.7' }}>
-        Drop your Notion export ZIP to bring your history into Liminal.
-        Import is duplicate-safe — running it again won't overwrite existing entries.
-      </div>
-
-      {/* Drop zone */}
-      <div
-        style={{
-          border: `1.5px dashed ${dragging ? 'var(--strong)' : 'var(--border)'}`,
-          background: dragging ? 'var(--near-white)' : 'transparent',
-          borderRadius: '3px',
-          padding: '28px 24px',
-          textAlign: 'center',
-          cursor: 'pointer',
-          transition: 'border-color 0.15s, background 0.15s',
-          marginBottom: '14px',
-        }}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
-        role="button"
-        tabIndex={0}
-      >
-        <div style={{ fontSize: '22px', color: 'var(--border)', marginBottom: '8px' }}>⊕</div>
-        <div style={{ fontSize: '12px', color: 'var(--body)' }}>
-          Drop Notion export ZIP here, or click to select
-        </div>
-        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
-          Notion → Settings → Export → Markdown & CSV
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".zip"
-          style={{ display: 'none' }}
-          onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])}
-        />
-      </div>
-
-      {/* Progress */}
-      {showProgress && (
-        <div style={{ border: 'var(--border-style)', borderRadius: '2px', overflow: 'hidden', background: 'var(--panel-bg)' }}>
-          <div style={{ height: '3px', background: 'var(--strong)', width: `${pct}%`, transition: 'width 0.4s ease' }} />
-          <div style={{ padding: '8px 12px', fontSize: '12px', color: 'var(--body)' }}>
-            {status.phase === 'error'
-              ? `Error: ${status.message}`
-              : status.message || 'Working…'}
-            {status.phase === 'complete' && status.result && (
-              <span style={{ marginLeft: '8px', color: 'var(--muted)' }}>
-                ({status.result.imported} imported, {status.result.skipped} skipped)
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-    </Section>
-  );
-}
-
-// ── Data Section ──────────────────────────────────────────────────────────────
-
-function DataSection({ showToast }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleteInput, setDeleteInput] = useState('');
-  const [deleting, setDeleting] = useState(false);
+  async function handleJsonImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportingJson(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      // Send full backup object to backend (it handles both legacy and v2 formats)
+      const payload = Array.isArray(data) ? { entries: data } : data;
+      if (!payload.entries?.length && !payload.notes?.length && !payload.oracle_sessions?.length && !payload.portrait) {
+        showToast(t('settings.importJsonNoData'));
+        return;
+      }
+      const res = await apiFetch('/api/settings/import-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      if (result.success) {
+        const parts = [];
+        if (result.entries) parts.push(`${result.entries} entries`);
+        if (result.notes) parts.push(`${result.notes} notes`);
+        if (result.oracle_sessions) parts.push(`${result.oracle_sessions} conversations`);
+        if (result.reflections) parts.push(`${result.reflections} reflections`);
+        if (result.memories) parts.push(`${result.memories} memories`);
+        showToast(`Imported: ${parts.join(', ') || 'backup restored'}`);
+      } else {
+        showToast(result.error || t('settings.importFailed'));
+      }
+    } catch {
+      showToast(t('settings.importFailed'));
+    } finally {
+      setImportingJson(false);
+      e.target.value = '';
+    }
+  }
 
   async function exportJournal() {
     const a = document.createElement('a');
@@ -1495,66 +1396,165 @@ function DataSection({ showToast }) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast('Export started');
+    showToast(t('settings.exportStarted'));
   }
 
-  async function deleteAllData() {
-    if (deleteInput !== 'DELETE') { showToast('Type DELETE to confirm'); return; }
+  async function deleteAllEntries() {
+    if (!password) return;
     setDeleting(true);
+    setError('');
     try {
       const res = await apiFetch('/api/settings/data', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: 'DELETE' }),
+        body: JSON.stringify({ password }),
       });
       const data = await res.json();
       if (data.success) {
-        showToast('All data deleted');
-        setConfirmDelete(false);
-        setDeleteInput('');
-        // Reload so entry list empties
+        showToast(t('settings.allEntriesDeleted'));
+        setStep(null);
+        setPassword('');
         setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setError(data.error || 'Deletion failed');
       }
-    } catch { showToast('Deletion failed'); }
+    } catch { setError(t('settings.deletionFailed')); }
     finally { setDeleting(false); }
   }
 
+  function reset() { setStep(null); setPassword(''); setError(''); }
+
+  const notionPct = notionStatus?.total > 0 ? Math.round((notionStatus.done / notionStatus.total) * 100) : 0;
+  const showNotionProgress = notionStatus?.running || notionStatus?.phase === 'complete' || notionStatus?.phase === 'error';
+
   return (
-    <Section title="Data">
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
-        <Btn onClick={exportJournal}>
-          ↓ Export journal (JSON)
-        </Btn>
-      </div>
-
-      <div style={{ ...s.label, marginBottom: '6px' }}>Delete all data</div>
-      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px', lineHeight: '1.6' }}>
-        Permanently deletes all journal entries, tags, and the memory summary.
-        Your password and portrait are kept. This cannot be undone.
-      </div>
-
-      {!confirmDelete ? (
-        <Btn danger onClick={() => setConfirmDelete(true)}>Delete all entries and memory</Btn>
-      ) : (
-        <div style={s.confirmBox}>
-          <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
-            Type DELETE to confirm permanent deletion
-          </div>
-          <div style={s.row}>
-            <input
-              style={{ ...s.input, borderColor: '#e0c0be' }}
-              placeholder="DELETE"
-              value={deleteInput}
-              onChange={e => setDeleteInput(e.target.value)}
-              autoFocus
-            />
-            <Btn danger onClick={deleteAllData} disabled={deleting || deleteInput !== 'DELETE'}>
-              {deleting ? '…' : 'Delete'}
-            </Btn>
-            <Btn onClick={() => { setConfirmDelete(false); setDeleteInput(''); }}>Cancel</Btn>
-          </div>
+    <>
+      {/* Export */}
+      <Section title={t('settings.exportBackup')}>
+        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '14px', lineHeight: '1.6' }}>
+          {t('settings.exportDesc')}
         </div>
-      )}
-    </Section>
+        <Btn onClick={exportJournal}>{t('settings.exportBackup')}</Btn>
+      </Section>
+
+      {/* Import */}
+      <Section title={t('settings.importData')}>
+        {/* JSON import */}
+        <div style={{ ...s.label, marginBottom: '8px' }}>{t('settings.importJson')}</div>
+        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px', lineHeight: '1.6' }}>
+          {t('settings.importJsonDesc')}
+        </div>
+
+        <div style={{ marginBottom: '24px' }}>
+          <Btn onClick={() => jsonInputRef.current?.click()} disabled={importingJson}>
+            {importingJson ? t('settings.working') : t('settings.importJsonBtn')}
+          </Btn>
+          <input ref={jsonInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleJsonImport} />
+        </div>
+
+        {/* Notion import */}
+        <div style={{ ...s.label, marginBottom: '8px' }}>{t('settings.importFromNotion')}</div>
+        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px', lineHeight: '1.6' }}>
+          {t('settings.notionImportDesc')}
+        </div>
+        <div
+          style={{
+            border: `1.5px dashed ${notionDragging ? 'var(--strong)' : 'var(--border)'}`,
+            background: notionDragging ? 'var(--near-white)' : 'transparent',
+            borderRadius: '3px',
+            padding: '28px 24px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            transition: 'border-color 0.15s, background 0.15s',
+            marginBottom: '14px',
+          }}
+          onDragOver={(e) => { e.preventDefault(); setNotionDragging(true); }}
+          onDragLeave={() => setNotionDragging(false)}
+          onDrop={onNotionDrop}
+          onClick={() => notionFileRef.current?.click()}
+          role="button"
+          tabIndex={0}
+        >
+          <div style={{ fontSize: '22px', color: 'var(--border)', marginBottom: '8px' }}>⊕</div>
+          <div style={{ fontSize: '12px', color: 'var(--body)' }}>
+            {t('settings.notionDropZone')}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+            {t('settings.notionExportPath')}
+          </div>
+          <input
+            ref={notionFileRef}
+            type="file"
+            accept=".zip"
+            style={{ display: 'none' }}
+            onChange={(e) => e.target.files[0] && handleNotionFile(e.target.files[0])}
+          />
+        </div>
+
+        {showNotionProgress && (
+          <div style={{ border: 'var(--border-style)', borderRadius: '2px', overflow: 'hidden', background: 'var(--panel-bg)' }}>
+            <div style={{ height: '3px', background: 'var(--strong)', width: `${notionPct}%`, transition: 'width 0.4s ease' }} />
+            <div style={{ padding: '8px 12px', fontSize: '12px', color: 'var(--body)' }}>
+              {notionStatus.phase === 'error'
+                ? `Error: ${notionStatus.message}`
+                : notionStatus.message || t('settings.working')}
+              {notionStatus.phase === 'complete' && notionStatus.result && (
+                <span style={{ marginLeft: '8px', color: 'var(--muted)' }}>
+                  ({t('settings.importedCount', { count: notionStatus.result.imported })}, {t('settings.skippedCount', { count: notionStatus.result.skipped })})
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Danger zone */}
+      <Section title={t('settings.dangerZone')}>
+        <div style={{ ...s.label, marginBottom: '6px' }}>{t('settings.deleteAllEntries')}</div>
+        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px', lineHeight: '1.6' }}>
+          {t('settings.deleteEntriesFullDesc')}
+        </div>
+
+        {!step && (
+          <Btn danger onClick={() => setStep('confirm')}>{t('settings.deleteAllEntries')}</Btn>
+        )}
+
+        {step === 'confirm' && (
+          <div style={s.confirmBox}>
+            <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
+              {t('settings.deleteEntriesConfirm')}
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Btn danger onClick={() => setStep('password')}>{t('settings.yesContinue')}</Btn>
+              <Btn onClick={reset}>{t('common.cancel')}</Btn>
+            </div>
+          </div>
+        )}
+
+        {step === 'password' && (
+          <div style={s.confirmBox}>
+            <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
+              {t('settings.enterPasswordToConfirm')}
+            </div>
+            {error && <div style={{ fontSize: '11px', color: '#c0392b', marginBottom: '8px' }}>{error}</div>}
+            <div style={s.row}>
+              <input
+                type="password"
+                style={{ ...s.input, borderColor: '#e0c0be' }}
+                placeholder={t('settings.password')}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && deleteAllEntries()}
+                autoFocus
+              />
+              <Btn danger onClick={deleteAllEntries} disabled={deleting || !password}>
+                {deleting ? '…' : t('common.delete')}
+              </Btn>
+              <Btn onClick={reset}>{t('common.cancel')}</Btn>
+            </div>
+          </div>
+        )}
+      </Section>
+    </>
   );
 }

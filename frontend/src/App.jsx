@@ -4,20 +4,23 @@ import EntryList from './components/EntryList';
 import WritingCanvas from './components/WritingCanvas';
 import MirrorPanel from './components/MirrorPanel';
 import PasswordGate from './components/PasswordGate';
+import Onboarding from './components/Onboarding';
 import HomePage from './pages/HomePage';
 import PortraitPage from './pages/PortraitPage';
 import NotesPage from './pages/NotesPage';
 import OraclePage from './pages/OraclePage';
+import MemoryPage from './pages/MemoryPage';
 import SettingsPage from './pages/SettingsPage';
 import { useEntries } from './hooks/useEntries';
 import { useReflect } from './hooks/useReflect';
-import { isAuthenticated, getStoredUsername, clearStoredToken } from './utils/api';
+import { isAuthenticated, getStoredUsername, clearStoredToken, apiFetch } from './utils/api';
+import { LanguageProvider } from './i18n/LanguageContext';
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
 // Mounted only after auth is confirmed — ensures hooks fetch with valid token.
 
-function AuthenticatedApp({ username, onLogout }) {
-  const [activeView, setActiveView] = useState('home');
+function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange }) {
+  const [activeView, setActiveView] = useState(isFirstSession ? 'journal' : 'home');
   const [previewVersion, setPreviewVersion] = useState(null);
   const [pendingNoteId, setPendingNoteId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
@@ -42,6 +45,13 @@ function AuthenticatedApp({ username, onLogout }) {
     regenerateBlock,
     loadReflections,
   } = useReflect();
+
+  // Create first entry for brand new users after onboarding
+  useEffect(() => {
+    if (isFirstSession && entries.length === 0) {
+      createEntry();
+    }
+  }, [isFirstSession]);
 
   // Load reflections whenever the active entry changes (covers initial load and entry switches)
   useEffect(() => {
@@ -70,7 +80,7 @@ function AuthenticatedApp({ username, onLogout }) {
   }
 
   return (
-    <Layout activeView={activeView} onViewChange={setActiveView}>
+    <Layout activeView={activeView} onViewChange={setActiveView} onLogout={onLogout} avatarUrl={avatarUrl} username={username}>
       {{
         entryList: (
           <EntryList
@@ -86,6 +96,7 @@ function AuthenticatedApp({ username, onLogout }) {
           if (activeView === 'home') return (
             <HomePage
               username={username}
+              avatarUrl={avatarUrl}
               onNavigateToEntry={(id) => { selectEntry({ id }); setActiveView('journal'); }}
               onNavigateToNote={(id) => { setPendingNoteId(id); setActiveView('notes'); }}
               onNavigateToOracle={(id) => { setPendingSessionId(id); setActiveView('oracle'); }}
@@ -94,7 +105,8 @@ function AuthenticatedApp({ username, onLogout }) {
           if (activeView === 'oracle') return <OraclePage initialSessionId={pendingSessionId} onSessionSelected={() => setPendingSessionId(null)} />;
           if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} />;
           if (activeView === 'portrait') return <PortraitPage />;
-if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} />;
+          if (activeView === 'memory') return <MemoryPage />;
+          if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />;
 
           return (
             <WritingCanvas
@@ -105,6 +117,7 @@ if (activeView === 'settings') return <SettingsPage username={username} onLogout
               entryListOpen={entryListOpen}
               onVersionPreview={setPreviewVersion}
               previewVersionId={previewVersion?.id}
+              isFirstSession={isFirstSession}
             />
           );
         },
@@ -133,32 +146,55 @@ if (activeView === 'settings') return <SettingsPage username={username} onLogout
 // ── Root app ──────────────────────────────────────────────────────────────────
 
 export default function App() {
-  // null = checking | 'gate' = show login | 'ok' = authenticated
+  // null = checking | 'gate' = show login | 'onboarding' = first-time setup | 'ok' = authenticated
   const [authStatus, setAuthStatus] = useState(null);
   const [username, setUsername] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [isFirstSession, setIsFirstSession] = useState(false);
+  const [language, setLanguage] = useState('en');
 
   useEffect(() => {
     // Check for valid stored JWT first
     if (isAuthenticated()) {
-      setUsername(getStoredUsername() || '');
-      setAuthStatus('ok');
+      // Verify onboarding status with the server
+      apiFetch('/api/auth/me')
+        .then((r) => r.json())
+        .then((data) => {
+          setUsername(data.username || getStoredUsername() || '');
+          if (data.avatar_url) setAvatarUrl(data.avatar_url);
+          // Fetch language setting
+          apiFetch('/api/settings').then(r => r.json()).then(s => {
+            if (s.language && s.language !== 'en') setLanguage(s.language);
+          }).catch(() => {});
+          if (data.onboarding_complete) {
+            setAuthStatus('ok');
+          } else {
+            setIsFirstSession(true);
+            setAuthStatus('onboarding');
+          }
+        })
+        .catch(() => {
+          clearStoredToken();
+          setAuthStatus('gate');
+        });
       return;
     }
 
-    // No token — check if any users exist
-    fetch('/api/auth/status')
-      .then((r) => r.json())
-      .then((d) => {
-        // Always show the gate (login or register is handled inside PasswordGate)
-        setAuthStatus('gate');
-      })
-      .catch(() => {
-        setAuthStatus('gate');
-      });
+    // No token — show login gate
+    setAuthStatus('gate');
   }, []);
 
-  function handleAuthSuccess(u) {
+  function handleAuthSuccess(u, onboardingComplete) {
     setUsername(u);
+    if (onboardingComplete) {
+      setAuthStatus('ok');
+    } else {
+      setIsFirstSession(true);
+      setAuthStatus('onboarding');
+    }
+  }
+
+  function handleOnboardingComplete() {
     setAuthStatus('ok');
   }
 
@@ -166,6 +202,7 @@ export default function App() {
     clearStoredToken();
     setAuthStatus('gate');
     setUsername('');
+    setIsFirstSession(false);
   }
 
   if (authStatus === null) {
@@ -184,9 +221,11 @@ export default function App() {
     );
   }
 
-  if (authStatus === 'gate') {
-    return <PasswordGate onSuccess={handleAuthSuccess} />;
-  }
-
-  return <AuthenticatedApp username={username} onLogout={handleLogout} />;
+  return (
+    <LanguageProvider initialLang={language}>
+      {authStatus === 'gate' && <PasswordGate onSuccess={handleAuthSuccess} />}
+      {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
+      {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} />}
+    </LanguageProvider>
+  );
 }

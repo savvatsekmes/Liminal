@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import MicButton from '../components/MicButton';
 import { useDictation } from '../hooks/useDictation';
+import { useLanguage } from '../i18n/LanguageContext';
 
 // ── Suggested question pool ────────────────────────────────────────────────
 const QUESTION_POOL = [
@@ -144,25 +145,25 @@ const s = {
   insightsCard: {
     border: 'var(--border-style)',
     borderRadius: '3px',
-    padding: '18px 24px',
-    marginBottom: '40px',
+    padding: '14px 20px',
+    marginBottom: '28px',
     display: 'flex',
-    gap: '32px',
+    gap: '24px',
     background: 'var(--near-white)',
   },
   insightStat: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '3px',
+    gap: '2px',
   },
   insightValue: {
-    fontSize: '22px',
+    fontSize: '16px',
     fontWeight: '700',
     color: 'var(--strong)',
     lineHeight: 1,
   },
   insightLabel: {
-    fontSize: '11px',
+    fontSize: '10px',
     color: 'var(--muted)',
     letterSpacing: '0.04em',
   },
@@ -173,12 +174,12 @@ const s = {
   },
   // Quick Ask
   sectionTitle: {
-    fontSize: '10px',
+    fontSize: '9px',
     fontWeight: '700',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
     color: 'var(--muted)',
-    marginBottom: '16px',
+    marginBottom: '10px',
   },
   suggestedRow: {
     display: 'flex',
@@ -378,23 +379,23 @@ const s = {
   },
 };
 
-function getGreeting() {
+function getGreeting(t) {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h >= 5 && h < 12) return t('home.greeting.morning');
+  if (h >= 12 && h < 17) return t('home.greeting.afternoon');
+  return t('home.greeting.evening');
 }
 
-function formatRelativeDate(dateStr) {
+function formatRelativeDate(dateStr, t) {
   if (!dateStr) return '—';
   try {
     const normalised = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
     const d = new Date(normalised.length === 10 ? normalised + 'T00:00:00' : normalised);
     const now = new Date();
     const diffDays = Math.floor((now - d) / 86400000);
-    if (diffDays === 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays === 0) return t('common.today');
+    if (diffDays === 1) return t('common.yesterday');
+    if (diffDays < 7) return t('common.daysAgo').replace('{count}', diffDays);
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   } catch {
     return dateStr;
@@ -411,7 +412,17 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username, onNavigateToEntry, onNavigateToNote, onNavigateToOracle }) {
+export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle }) {
+  const { t } = useLanguage();
+  const [displayName, setDisplayName] = useState(username || '');
+
+  // Fetch preferred name from portrait
+  useEffect(() => {
+    apiFetch('/api/portrait').then(r => r.json()).then(p => {
+      if (p.preferred_name) setDisplayName(p.preferred_name);
+    }).catch(() => {});
+  }, []);
+
   // Stats
   const [entryCount, setEntryCount] = useState(null);
   const [lastEntryDate, setLastEntryDate] = useState(null);
@@ -548,7 +559,7 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
         body: JSON.stringify({ question: q, answer: data.answer, archetype: data.archetype }),
       }).catch(() => {});
     } catch (err) {
-      setAnswer(`Something went wrong: ${err.message}`);
+      setAnswer(`${t('home.error')}: ${err.message}`);
       setAnsweredArchetype(activeArchetype);
       setAnsweredQuestion(q);
     } finally {
@@ -663,8 +674,17 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
     <div style={s.root}>
       <div style={s.inner}>
         {/* Greeting */}
-        <div style={s.greeting}>
-          {getGreeting()}{username ? `, ${username}` : ''}.
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+          ) : (
+            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '600', color: 'var(--muted)', flexShrink: 0 }}>
+              {(displayName || '?')[0].toUpperCase()}
+            </div>
+          )}
+          <div style={s.greeting}>
+            {getGreeting(t)}{displayName ? `, ${displayName}` : ''}.
+          </div>
         </div>
         <div style={s.greetingDate}>{today}</div>
 
@@ -677,16 +697,16 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
         ); })()}
 
         {/* Insights card */}
-        <div style={s.sectionTitle}>Journal</div>
+        <div style={s.sectionTitle}>{t('nav.journal')}</div>
         <div style={s.insightsCard}>
           <div style={s.insightStat}>
             <span style={s.insightValue}>{entryCount ?? '—'}</span>
-            <span style={s.insightLabel}>entries written</span>
+            <span style={s.insightLabel}>{t('home.entriesWritten')}</span>
           </div>
           <div style={s.insightDivider} />
           <div style={s.insightStat}>
-            <span style={s.insightValue}>{lastEntryDate ? formatRelativeDate(lastEntryDate) : '—'}</span>
-            <span style={s.insightLabel}>last written</span>
+            <span style={s.insightValue}>{lastEntryDate ? formatRelativeDate(lastEntryDate, t) : '—'}</span>
+            <span style={s.insightLabel}>{t('home.lastWritten')}</span>
           </div>
           {latestEntryTitle && (
             <>
@@ -694,28 +714,28 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
               <div
                 style={{ ...s.insightStat, cursor: 'pointer' }}
                 onClick={() => onNavigateToEntry?.(latestEntryId)}
-                title="Open in Journal"
+                title={t('home.openInJournal')}
               >
                 <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
                   {latestEntryTitle.slice(0, 36)}{latestEntryTitle.length > 36 ? '…' : ''}
                 </span>
-                <span style={s.insightLabel}>Latest Entry</span>
+                <span style={s.insightLabel}>{t('home.latestEntry')}</span>
               </div>
             </>
           )}
         </div>
 
         {/* Notes card */}
-        <div style={s.sectionTitle}>Notes</div>
+        <div style={s.sectionTitle}>{t('nav.notes')}</div>
         <div style={s.insightsCard}>
           <div style={s.insightStat}>
             <span style={s.insightValue}>{noteCount ?? '—'}</span>
-            <span style={s.insightLabel}>notes written</span>
+            <span style={s.insightLabel}>{t('home.notesWritten')}</span>
           </div>
           <div style={s.insightDivider} />
           <div style={s.insightStat}>
-            <span style={s.insightValue}>{lastNoteDate ? formatRelativeDate(lastNoteDate) : '—'}</span>
-            <span style={s.insightLabel}>last written</span>
+            <span style={s.insightValue}>{lastNoteDate ? formatRelativeDate(lastNoteDate, t) : '—'}</span>
+            <span style={s.insightLabel}>{t('home.lastWritten')}</span>
           </div>
           {latestNoteTitle && (
             <>
@@ -723,28 +743,28 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
               <div
                 style={{ ...s.insightStat, cursor: 'pointer' }}
                 onClick={() => onNavigateToNote?.(latestNoteId)}
-                title="Open in Notes"
+                title={t('home.openInNotes')}
               >
                 <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
                   {latestNoteTitle.slice(0, 36)}{latestNoteTitle.length > 36 ? '…' : ''}
                 </span>
-                <span style={s.insightLabel}>Latest Note</span>
+                <span style={s.insightLabel}>{t('home.latestNote')}</span>
               </div>
             </>
           )}
         </div>
 
         {/* Oracle card */}
-        <div style={s.sectionTitle}>Oracle</div>
+        <div style={s.sectionTitle}>{t('nav.oracle')}</div>
         <div style={s.insightsCard}>
           <div style={s.insightStat}>
             <span style={s.insightValue}>{oracleCount ?? '—'}</span>
-            <span style={s.insightLabel}>conversations</span>
+            <span style={s.insightLabel}>{t('home.conversations')}</span>
           </div>
           <div style={s.insightDivider} />
           <div style={s.insightStat}>
-            <span style={s.insightValue}>{lastOracleDate ? formatRelativeDate(lastOracleDate) : '—'}</span>
-            <span style={s.insightLabel}>last conversation</span>
+            <span style={s.insightValue}>{lastOracleDate ? formatRelativeDate(lastOracleDate, t) : '—'}</span>
+            <span style={s.insightLabel}>{t('home.lastConversation')}</span>
           </div>
           {latestOraclePreview && (
             <>
@@ -752,26 +772,26 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
               <div
                 style={{ ...s.insightStat, cursor: 'pointer' }}
                 onClick={() => onNavigateToOracle?.(latestOracleSessionId)}
-                title="Open in Oracle"
+                title={t('home.openInOracle')}
               >
                 <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
                   {latestOraclePreview.slice(0, 36)}{latestOraclePreview.length > 36 ? '…' : ''}
                 </span>
-                <span style={s.insightLabel}>Latest Conversation</span>
+                <span style={s.insightLabel}>{t('home.latestConversation')}</span>
               </div>
             </>
           )}
         </div>
 
         {/* Quick Ask */}
-        <div style={s.sectionTitle}>Quick Ask</div>
+        <div style={s.sectionTitle}>{t('home.quickAsk')}</div>
 
         {/* Input card */}
         <div style={s.askCard}>
           <textarea
             ref={textareaRef}
             style={s.textarea}
-            placeholder="How can I help you today?"
+            placeholder={t('home.askPlaceholder')}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
@@ -795,12 +815,12 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
                 style={{ ...s.archPill, ...(showCustom ? s.archPillActive : {}) }}
                 onClick={() => setShowCustom((v) => !v)}
               >
-                Custom ▾
+                {t('home.custom')} ▾
               </button>
               {showCustom && (
                 <input
                   style={s.customInput}
-                  placeholder="e.g. Alan Watts"
+                  placeholder={t('home.customArchetypePlaceholder')}
                   value={customArchetype}
                   onChange={(e) => setCustomArchetype(e.target.value)}
                   autoFocus
@@ -819,7 +839,7 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
               onClick={handleAsk}
               disabled={loading || !question.trim()}
             >
-              Ask ›
+              {t('home.ask')}
             </button>
           </div>
         </div>
@@ -854,7 +874,7 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
             <div style={s.responseHeader}>
               <span style={s.responseQuestion}>"{answeredQuestion}"</span>
               <span style={s.responseArchPill}>{answeredArchetype}</span>
-              <button style={s.regenBtn} onClick={handleRegen} title="Regenerate">
+              <button style={s.regenBtn} onClick={handleRegen} title={t('home.regenerate')}>
                 <RegenIcon />
               </button>
             </div>
@@ -865,20 +885,20 @@ export default function HomePage({ username, onNavigateToEntry, onNavigateToNote
               <button
                 style={{ ...s.actionBtn, ...(playing ? s.actionBtnActive : {}) }}
                 onClick={handleSpeak}
-                title={playing ? 'Stop' : 'Listen'}
+                title={playing ? t('mirror.stop') : t('mirror.listen')}
               >
                 <WaveformIcon playing={playing} />
               </button>
 
               <button style={s.actionLink} onClick={handleReset}>
-                Ask another question
+                {t('home.askAnother')}
               </button>
 
               {saved ? (
-                <span style={s.savedMsg}>Saved to journal</span>
+                <span style={s.savedMsg}>{t('home.savedToJournal')}</span>
               ) : (
                 <button style={s.actionLink} onClick={handleSaveToJournal}>
-                  + Save to journal
+                  {t('home.saveToJournal')}
                 </button>
               )}
             </div>

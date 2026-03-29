@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import MirrorBlock from './MirrorBlock';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
   root: {
@@ -112,16 +113,18 @@ export default function MirrorPanel({
   previewVersion,
   onClearPreview,
 }) {
+  const { t } = useLanguage();
+
   if (previewVersion) {
     return (
       <div style={s.root}>
         <div style={s.header}>
-          <span style={s.headerLabel}>Version Preview</span>
+          <span style={s.headerLabel}>{t('mirror.versionPreview')}</span>
           <button
             onClick={onClearPreview}
             style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '2px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'var(--font)' }}
           >
-            ✕ Close
+            ✕ {t('common.close')}
           </button>
         </div>
         <div style={{ ...s.body, padding: '20px 24px' }}>
@@ -140,9 +143,9 @@ export default function MirrorPanel({
     <div style={s.root}>
       {/* Header */}
       <div style={s.header}>
-        <span style={s.headerLabel}>Mirror</span>
+        <span style={s.headerLabel}>{t('mirror.title')}</span>
         {blocks.length > 0 && (
-          <span style={s.headerCount}>{blocks.length} reflection{blocks.length !== 1 ? 's' : ''}</span>
+          <span style={s.headerCount}>{t('mirror.reflections', { count: blocks.length, s: blocks.length !== 1 ? 's' : '' })}</span>
         )}
       </div>
 
@@ -172,7 +175,7 @@ export default function MirrorPanel({
           onClick={onReflect}
           disabled={loading}
         >
-          {loading ? 'Reflecting…' : '✦ Reflect'}
+          {loading ? t('mirror.reflecting') : t('mirror.reflect')}
         </button>
       </div>
     </div>
@@ -190,22 +193,24 @@ function formatVersionDate(isoStr) {
 }
 
 function EmptyState() {
+  const { t } = useLanguage();
   return (
     <div style={s.empty}>
       <div style={{ fontSize: '20px', marginBottom: '12px', color: 'var(--border)' }}>◎</div>
-      <div>Write something, then press Reflect.</div>
+      <div>{t('mirror.empty')}</div>
       <div style={{ marginTop: '6px', color: 'var(--border)' }}>
-        The Mirror reads your whole story.
+        {t('mirror.emptyHint')}
       </div>
     </div>
   );
 }
 
 function LoadingState() {
+  const { t } = useLanguage();
   return (
     <div style={s.loadingState}>
       <div style={s.loadingDots}>· · ·</div>
-      <div style={s.loadingText}>Reading your entry…</div>
+      <div style={s.loadingText}>{t('mirror.loading')}</div>
     </div>
   );
 }

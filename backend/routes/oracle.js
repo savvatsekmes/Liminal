@@ -149,7 +149,7 @@ router.post('/sessions/:id/messages', async (req, res) => {
     'SELECT role, content FROM oracle_messages WHERE session_id = ? ORDER BY created_at ASC LIMIT 30'
   ).all(session.id);
 
-  const systemPrompt = memory.buildOracleSystemPrompt(req.userId, activeArchetype);
+  const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype);
 
   try {
     const answer = await llm.callWithHistory(systemPrompt, history, { maxTokens: 1200 });

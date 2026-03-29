@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDictation } from '../hooks/useDictation';
+import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
 
@@ -500,6 +501,7 @@ function formatSessionDate(dateStr) {
 }
 
 export default function OraclePage({ initialSessionId, onSessionSelected }) {
+  const { t } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [currentSession, setCurrentSession] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -653,7 +655,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       // Remove optimistic messages on error and show it
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== tempId && m.type !== 'switch'),
-        { id: `err-${Date.now()}`, role: 'error', content: err.message || 'Something went wrong' },
+        { id: `err-${Date.now()}`, role: 'error', content: err.message || t('oracle.error') },
       ]);
     } finally {
       setLoading(false);
@@ -662,7 +664,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
   async function handleNewConversation() {
     if (messages.length > 0) {
-      if (!window.confirm('Start a new conversation? Your current one will be saved.')) return;
+      if (!window.confirm(t('oracle.newConversationConfirm'))) return;
     }
     stopAudio();
     try {
@@ -710,7 +712,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
   }
 
   async function handleDeleteTag(tag) {
-    openConfirm(`Delete tag "${tag}"? This will remove the tag from all conversations.`, async () => {
+    openConfirm(t('oracle.deleteTagConfirm', { tag }), async () => {
       await apiFetch(`/api/oracle/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
       setSessions((prev) => prev.map((s) => s.tag === tag ? { ...s, tag: null } : s));
       if (currentSession?.tag === tag) {
@@ -724,7 +726,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
   async function handleDeleteSession(sess) {
     openConfirm(
-      `Delete "${(sess.first_message || sess.title || 'this conversation').slice(0, 50)}"? This cannot be undone.`,
+      t('oracle.deleteSessionConfirm', { title: (sess.first_message || sess.title || t('oracle.thisConversation')).slice(0, 50) }),
       async () => {
         await apiFetch(`/api/oracle/sessions/${sess.id}`, { method: 'DELETE' });
         setSessions((prev) => prev.filter((s) => s.id !== sess.id));
@@ -821,8 +823,8 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
   }
 
   async function handleSaveMessage(msg) {
-    const title = (messages.find((m, i) => m.role === 'user' && messages[i + 1]?.id === msg.id)?.content || 'Oracle conversation').slice(0, 70);
-    const body = `<p><em>Oracle — ${msg.archetype || archetype}</em></p><p>${msg.content.split('\n\n').join('</p><p>')}</p>`;
+    const title = (messages.find((m, i) => m.role === 'user' && messages[i + 1]?.id === msg.id)?.content || t('oracle.oracleConversation')).slice(0, 70);
+    const body = `<p><em>${t('oracle.title')} — ${msg.archetype || archetype}</em></p><p>${msg.content.split('\n\n').join('</p><p>')}</p>`;
     try {
       await apiFetch('/api/entries', {
         method: 'POST',
@@ -844,12 +846,12 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       {/* History sidebar */}
       <div style={s.sidebar}>
         <div style={s.sidebarHeader}>
-          <span style={s.sidebarTitle}>Conversations</span>
-          <button style={s.sidebarNew} onClick={handleNewConversation} title="New conversation">+</button>
+          <span style={s.sidebarTitle}>{t('oracle.conversations')}</span>
+          <button style={s.sidebarNew} onClick={handleNewConversation} title={t('oracle.newConversation')}>+</button>
         </div>
         <div style={s.sidebarList}>
           {filteredSessions.length === 0 ? (
-            <div style={s.sidebarEmpty}>No conversations yet.</div>
+            <div style={s.sidebarEmpty}>{t('oracle.noConversations')}</div>
           ) : filteredSessions.map((sess) => {
             const active = currentSession?.id === sess.id;
             return (
@@ -882,21 +884,21 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       <div style={s.mainArea}>
       {/* Header */}
       <div style={s.header}>
-        <span style={s.headerTitle}>Oracle</span>
+        <span style={s.headerTitle}>{t('oracle.title')}</span>
         <div style={s.headerRight}>
           {currentSession && (
             <select
               style={s.sessionTagSelector}
               value={currentSession.tag || ''}
               onChange={(e) => handleSessionTagChange(e.target.value)}
-              title="Tag this conversation"
+              title={t('oracle.tagConversation')}
             >
-              <option value="">No tag</option>
+              <option value="">{t('oracle.noTag')}</option>
               {oracleTags.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
               {oracleTags.length === 0 && (
-                <option disabled>Create tags in the left strip</option>
+                <option disabled>{t('oracle.createTagsHint')}</option>
               )}
             </select>
           )}
@@ -908,10 +910,10 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
             {archetypeOptions.map((a) => (
               <option key={a} value={a}>{a}</option>
             ))}
-            <option value="__create__">+ Create archetype</option>
+            <option value="__create__">{t('oracle.createArchetypeOption')}</option>
           </select>
           <button style={s.headerBtn} onClick={handleNewConversation}>
-            Clear
+            {t('oracle.clear')}
           </button>
         </div>
       </div>
@@ -921,11 +923,10 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
         <div style={s.emptyState}>
           <div style={s.emptyBox}>
             <div style={s.emptyTitle}>
-              Choose an archetype above and ask anything.
+              {t('oracle.emptyTitle')}
             </div>
             <div style={s.emptySubtitle}>
-              Your entire journal is the context —<br />
-              it knows your patterns, your struggles, your story.
+              {t('oracle.emptySubtitle')}
             </div>
           </div>
         </div>
@@ -935,7 +936,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
             if (msg.type === 'switch') {
               return (
                 <div key={msg.id} style={s.switchDivider}>
-                  — Switched to {msg.archetype} —
+                  {t('oracle.switchedTo', { archetype: msg.archetype })}
                 </div>
               );
             }
@@ -957,7 +958,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
                 style={{ ...s.msgRow, ...(isUser ? s.msgRowUser : s.msgRowAssistant) }}
               >
                 <div style={s.msgLabel}>
-                  {isUser ? 'You' : (msg.archetype || archetype)}
+                  {isUser ? t('oracle.you') : (msg.archetype || archetype)}
                 </div>
                 <div style={{
                   ...s.msgBubble,
@@ -970,15 +971,15 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
                     <button
                       style={{ ...s.msgActionBtn, ...(isPlaying ? s.msgActionBtnActive : {}) }}
                       onClick={() => handleSpeak(msg)}
-                      title={isPlaying ? 'Stop' : 'Listen'}
+                      title={isPlaying ? t('oracle.stop') : t('oracle.listen')}
                     >
                       <WaveformIcon playing={isPlaying} />
                     </button>
                     {savedMsgIds.has(msg.id) ? (
-                      <span style={{ ...s.msgSaveLink, cursor: 'default' }}>Saved</span>
+                      <span style={{ ...s.msgSaveLink, cursor: 'default' }}>{t('oracle.saved')}</span>
                     ) : (
                       <button style={s.msgSaveLink} onClick={() => handleSaveMessage(msg)}>
-                        + Save to journal
+                        {t('oracle.saveToJournal')}
                       </button>
                     )}
                   </div>
@@ -1007,7 +1008,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
         <textarea
           ref={inputRef}
           style={s.inputTextarea}
-          placeholder={`Ask ${archetype} anything...`}
+          placeholder={t('oracle.askArchetype', { archetype })}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -1026,7 +1027,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
           onClick={handleSend}
           disabled={loading || !input.trim()}
         >
-          Send ›
+          {t('oracle.send')}
         </button>
       </div>
 
@@ -1036,8 +1037,8 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
           <div style={s.confirmBox}>
             <div style={s.confirmMsg}>{confirmModal.message}</div>
             <div style={s.confirmActions}>
-              <button style={s.confirmBtn} onClick={() => setConfirmModal(null)}>Cancel</button>
-              <button style={{ ...s.confirmBtn, ...s.confirmBtnDelete }} onClick={confirmModal.onConfirm}>Delete</button>
+              <button style={s.confirmBtn} onClick={() => setConfirmModal(null)}>{t('common.cancel')}</button>
+              <button style={{ ...s.confirmBtn, ...s.confirmBtnDelete }} onClick={confirmModal.onConfirm}>{t('common.delete')}</button>
             </div>
           </div>
         </div>
@@ -1047,19 +1048,19 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       {showCreateArchetype && (
         <div style={s.createModal} onClick={(e) => { if (e.target === e.currentTarget) setShowCreateArchetype(false); }}>
           <div style={s.createBox}>
-            <div style={s.createTitle}>Create archetype</div>
-            <label style={s.createLabel}>Name</label>
+            <div style={s.createTitle}>{t('oracle.createArchetype')}</div>
+            <label style={s.createLabel}>{t('oracle.archetypeName')}</label>
             <input
               style={s.createInput}
-              placeholder="e.g. Alan Watts, Master Roshi, Stoic Warrior"
+              placeholder={t('oracle.archetypeNamePlaceholder')}
               value={newArchetypeName}
               onChange={(e) => setNewArchetypeName(e.target.value)}
               autoFocus
             />
-            <label style={s.createLabel}>Description (optional)</label>
+            <label style={s.createLabel}>{t('oracle.archetypeDescription')}</label>
             <input
               style={s.createInput}
-              placeholder="How should this archetype respond?"
+              placeholder={t('oracle.archetypeDescPlaceholder')}
               value={newArchetypeDesc}
               onChange={(e) => setNewArchetypeDesc(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateArchetype(); }}
@@ -1069,14 +1070,14 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
                 style={s.createBtn}
                 onClick={() => { setShowCreateArchetype(false); setNewArchetypeName(''); setNewArchetypeDesc(''); }}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 style={{ ...s.createBtn, ...s.createBtnPrimary }}
                 onClick={handleCreateArchetype}
                 disabled={!newArchetypeName.trim()}
               >
-                Create
+                {t('oracle.create')}
               </button>
             </div>
           </div>
@@ -1090,6 +1091,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 // ── Tag strip ───────────────────────────────────────────────────────────────
 
 function TagStrip({ tags, filterTag, onFilter, addingTag, newTagInput, onAddingTag, onNewTagInput, onAddTag, onDeleteTag }) {
+  const { t } = useLanguage();
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -1100,7 +1102,7 @@ function TagStrip({ tags, filterTag, onFilter, addingTag, newTagInput, onAddingT
     <div style={s.tagStrip}>
       {/* "All" pill */}
       <TagFilterPill
-        label="All"
+        label={t('oracle.allTag')}
         active={filterTag === ALL_TAG}
         onClick={() => onFilter(ALL_TAG)}
       />
@@ -1129,7 +1131,7 @@ function TagStrip({ tags, filterTag, onFilter, addingTag, newTagInput, onAddingT
             if (e.key === 'Escape') { onAddingTag(false); onNewTagInput(''); }
           }}
           onBlur={() => { if (!newTagInput.trim()) { onAddingTag(false); } }}
-          placeholder="Tag…"
+          placeholder={t('oracle.tagPlaceholder')}
           maxLength={30}
           style={{
             width: '62px',
@@ -1145,7 +1147,7 @@ function TagStrip({ tags, filterTag, onFilter, addingTag, newTagInput, onAddingT
       ) : (
         <button
           onClick={() => onAddingTag(true)}
-          title="New tag"
+          title={t('oracle.newTag')}
           style={{
             width: '62px',
             padding: '4px 0',
@@ -1194,6 +1196,7 @@ function TagFilterPill({ label, active, onClick }) {
 }
 
 function TagCustomPill({ label, active, onClick, onDelete }) {
+  const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   return (
     <div
@@ -1237,7 +1240,7 @@ function TagCustomPill({ label, active, onClick, onDelete }) {
       {hover && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="Delete tag"
+          title={t('oracle.deleteTag')}
           style={{
             padding: '5px 5px 5px 2px',
             fontSize: '9px',
@@ -1259,6 +1262,7 @@ function TagCustomPill({ label, active, onClick, onDelete }) {
 // ── Sidebar item ────────────────────────────────────────────────────────────
 
 function SidebarItem({ sess, active, onClick, onDelete }) {
+  const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   return (
     <div
@@ -1275,12 +1279,12 @@ function SidebarItem({ sess, active, onClick, onDelete }) {
         {sess.archetype} · {formatSessionDate(sess.created_at)}
       </div>
       <div style={{ ...s.sidebarItemTitle, ...(active ? s.sidebarItemTitleActive : {}) }}>
-        {(sess.first_message || sess.title || 'New conversation').slice(0, 60)}
+        {(sess.first_message || sess.title || t('oracle.newConversation')).slice(0, 60)}
       </div>
       {hover && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="Delete conversation"
+          title={t('oracle.deleteConversation')}
           style={{
             position: 'absolute',
             top: '6px',

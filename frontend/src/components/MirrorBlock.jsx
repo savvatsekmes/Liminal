@@ -1,6 +1,15 @@
 import { useState, useRef } from 'react';
+import { useLanguage } from '../i18n/LanguageContext';
 
-const ARCHETYPES = ['Auto', 'Zen', 'Jungian', 'Stoic', 'Somatic', 'Taoist', 'Direct Friend'];
+const ARCHETYPE_KEYS = [
+  { value: 'Auto', key: 'archetype.auto' },
+  { value: 'Zen', key: 'archetype.zen' },
+  { value: 'Jungian', key: 'archetype.jungian' },
+  { value: 'Stoic', key: 'archetype.stoic' },
+  { value: 'Somatic', key: 'archetype.somatic' },
+  { value: 'Taoist', key: 'archetype.taoist' },
+  { value: 'Direct Friend', key: 'archetype.directFriend' },
+];
 
 const s = {
   block: {
@@ -77,6 +86,7 @@ const s = {
 };
 
 export default function MirrorBlock({ block, entryText, onRegenerate, ttsOnline }) {
+  const { t } = useLanguage();
   const [playing, setPlaying] = useState(false);
   const [regenerating, setRegen] = useState(false);
   const [selectedArchetype, setSelectedArchetype] = useState(block.archetype || 'Auto');
@@ -169,8 +179,8 @@ export default function MirrorBlock({ block, entryText, onRegenerate, ttsOnline 
             opacity: !ttsOnline && !window.speechSynthesis ? 0.4 : 1,
           }}
           onClick={handleListen}
-          title={playing ? 'Stop' : ttsOnline ? 'Listen (Chatterbox)' : 'Listen (Web Speech)'}
-          aria-label={playing ? 'Stop audio' : 'Listen'}
+          title={playing ? t('mirror.stop') : t('mirror.listen')}
+          aria-label={playing ? t('mirror.stop') : t('mirror.listen')}
         >
           <WaveformIcon playing={playing} />
         </button>
@@ -179,8 +189,8 @@ export default function MirrorBlock({ block, entryText, onRegenerate, ttsOnline 
         <button
           style={{ ...s.actionBtn, ...(regenerating ? s.actionBtnActive : {}) }}
           onClick={handleRegenerate}
-          title="Regenerate this block"
-          aria-label="Regenerate"
+          title={t('mirror.regenerate')}
+          aria-label={t('mirror.regenerate')}
           disabled={regenerating}
         >
           {regenerating ? '…' : <RegenIcon />}
@@ -194,8 +204,8 @@ export default function MirrorBlock({ block, entryText, onRegenerate, ttsOnline 
           title="Choose archetype for regeneration"
           aria-label="Archetype"
         >
-          {ARCHETYPES.map((a) => (
-            <option key={a} value={a}>{a}</option>
+          {ARCHETYPE_KEYS.map((a) => (
+            <option key={a.value} value={a.value}>{t(a.key)}</option>
           ))}
         </select>
       </div>

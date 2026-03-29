@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
   root: {
@@ -34,6 +35,7 @@ const s = {
 };
 
 export default function TagBar({ tags = [], onTagsChange }) {
+  const { t } = useLanguage();
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState('');
 
@@ -57,7 +59,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
 
   return (
     <div style={s.root}>
-      <span style={s.label}>Tags</span>
+      <span style={s.label}>{t('tags.label')}</span>
 
       {tags.map((tag) => (
         <span key={tag} className="tag">
@@ -80,7 +82,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
           onChange={(e) => setNewTag(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={addTag}
-          placeholder="tag name"
+          placeholder={t('tags.placeholder')}
         />
       ) : (
         <button
@@ -88,7 +90,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
           onClick={() => setAdding(true)}
           title="Add tag"
         >
-          + add
+          {t('tags.add')}
         </button>
       )}
     </div>

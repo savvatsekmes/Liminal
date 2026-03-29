@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { setStoredToken } from '../utils/api';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
   overlay: {
@@ -103,9 +104,9 @@ const s = {
 export default function PasswordGate({ onSuccess }) {
   const [view, setView] = useState('login'); // 'login' | 'register'
 
-  function handleAuthSuccess(token, username) {
+  function handleAuthSuccess(token, username, onboardingComplete) {
     setStoredToken(token);
-    onSuccess(username);
+    onSuccess(username, onboardingComplete);
   }
 
   if (view === 'register') {
@@ -118,6 +119,7 @@ export default function PasswordGate({ onSuccess }) {
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 function LoginForm({ onSuccess, onRegister }) {
+  const { t } = useLanguage();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -126,8 +128,8 @@ function LoginForm({ onSuccess, onRegister }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-    if (!username.trim()) { setError('Enter your username.'); return; }
-    if (!password) { setError('Enter your password.'); return; }
+    if (!username.trim()) { setError(t('auth.errorUsername')); return; }
+    if (!password) { setError(t('auth.errorPassword')); return; }
 
     setLoading(true);
     try {
@@ -138,13 +140,13 @@ function LoginForm({ onSuccess, onRegister }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Login failed.');
+        setError(data.error || t('auth.errorLoginFailed'));
         setPassword('');
       } else {
-        onSuccess(data.token, data.username);
+        onSuccess(data.token, data.username, data.onboarding_complete);
       }
     } catch {
-      setError('Could not reach the backend. Make sure Liminal is running.');
+      setError(t('auth.errorBackend'));
     } finally {
       setLoading(false);
     }
@@ -153,10 +155,10 @@ function LoginForm({ onSuccess, onRegister }) {
   return (
     <div style={s.overlay}>
       <form style={s.card} onSubmit={handleSubmit}>
-        <div style={s.logo}>Liminal</div>
-        <div style={s.tagline}>A journal for the in-between.</div>
+        <div style={s.logo}>{t('auth.title')}</div>
+        <div style={s.tagline}>{t('auth.tagline')}</div>
 
-        <label style={s.label} htmlFor="login-username">Username</label>
+        <label style={s.label} htmlFor="login-username">{t('auth.username')}</label>
         <input
           id="login-username"
           style={s.input}
@@ -165,10 +167,10 @@ function LoginForm({ onSuccess, onRegister }) {
           autoComplete="username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="Your username"
+          placeholder={t('auth.placeholderUsername')}
         />
 
-        <label style={s.label} htmlFor="login-password">Password</label>
+        <label style={s.label} htmlFor="login-password">{t('auth.password')}</label>
         <input
           id="login-password"
           style={{ ...s.input, marginBottom: error ? '0' : '20px' }}
@@ -176,17 +178,17 @@ function LoginForm({ onSuccess, onRegister }) {
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Your password"
+          placeholder={t('auth.placeholderPassword')}
         />
 
         {error && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
 
         <button style={{ ...s.btn, opacity: loading ? 0.5 : 1, marginTop: '8px' }} type="submit" disabled={loading}>
-          {loading ? '…' : 'Open journal →'}
+          {loading ? '…' : t('auth.login')}
         </button>
 
         <button type="button" style={s.btnSecondary} onClick={onRegister}>
-          Start Journal
+          {t('auth.register')}
         </button>
       </form>
     </div>
@@ -196,6 +198,7 @@ function LoginForm({ onSuccess, onRegister }) {
 // ── Register ──────────────────────────────────────────────────────────────────
 
 function RegisterForm({ onSuccess, onBack }) {
+  const { t } = useLanguage();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -205,9 +208,9 @@ function RegisterForm({ onSuccess, onBack }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-    if (!username.trim()) { setError('Choose a username.'); return; }
-    if (password.length < 4) { setError('Password must be at least 4 characters.'); return; }
-    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    if (!username.trim()) { setError(t('auth.errorChooseUsername')); return; }
+    if (password.length < 4) { setError(t('auth.errorPasswordLength')); return; }
+    if (password !== confirm) { setError(t('auth.errorPasswordMatch')); return; }
 
     setLoading(true);
     try {
@@ -218,22 +221,12 @@ function RegisterForm({ onSuccess, onBack }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Registration failed.');
+        setError(data.error || t('auth.errorRegisterFailed'));
       } else {
-        // Create first journal entry for the new user
-        const today = new Date().toISOString().split('T')[0];
-        await fetch('/api/entries', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${data.token}`,
-          },
-          body: JSON.stringify({ title: 'First entry', body: '', body_text: '', date: today }),
-        });
-        onSuccess(data.token, data.username);
+        onSuccess(data.token, data.username, data.onboarding_complete);
       }
     } catch {
-      setError('Could not reach the backend. Make sure Liminal is running.');
+      setError(t('auth.errorBackend'));
     } finally {
       setLoading(false);
     }
@@ -242,10 +235,10 @@ function RegisterForm({ onSuccess, onBack }) {
   return (
     <div style={s.overlay}>
       <form style={s.card} onSubmit={handleSubmit}>
-        <div style={s.logo}>Liminal</div>
-        <div style={s.tagline}>A journal for the in-between.</div>
+        <div style={s.logo}>{t('auth.title')}</div>
+        <div style={s.tagline}>{t('auth.tagline')}</div>
 
-        <label style={s.label} htmlFor="reg-username">Choose a username</label>
+        <label style={s.label} htmlFor="reg-username">{t('auth.chooseUsername')}</label>
         <input
           id="reg-username"
           style={s.input}
@@ -254,12 +247,12 @@ function RegisterForm({ onSuccess, onBack }) {
           autoComplete="username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="Username"
+          placeholder={t('auth.username')}
         />
 
         <div style={s.divider} />
 
-        <label style={s.label} htmlFor="reg-password">Create a password</label>
+        <label style={s.label} htmlFor="reg-password">{t('auth.createPassword')}</label>
         <input
           id="reg-password"
           style={s.input}
@@ -267,10 +260,10 @@ function RegisterForm({ onSuccess, onBack }) {
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 4 characters"
+          placeholder={t('auth.placeholderNewPassword')}
         />
 
-        <label style={s.label} htmlFor="reg-confirm">Confirm password</label>
+        <label style={s.label} htmlFor="reg-confirm">{t('auth.confirmPassword')}</label>
         <input
           id="reg-confirm"
           style={{ ...s.input, marginBottom: error ? '0' : '0' }}
@@ -278,7 +271,7 @@ function RegisterForm({ onSuccess, onBack }) {
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          placeholder="Confirm password"
+          placeholder={t('auth.placeholderConfirm')}
         />
 
         {error && <div style={{ ...s.error, marginTop: '16px' }}>{error}</div>}
@@ -288,7 +281,7 @@ function RegisterForm({ onSuccess, onBack }) {
           type="submit"
           disabled={loading}
         >
-          {loading ? 'Creating…' : 'Create Account →'}
+          {loading ? t('auth.creating') : t('auth.createAccount')}
         </button>
 
         <button type="button" style={s.btnSecondary} onClick={onBack}>
@@ -296,8 +289,9 @@ function RegisterForm({ onSuccess, onBack }) {
         </button>
 
         <div style={s.hint}>
-          Your journal lives entirely on this machine.<br />
-          Nothing is sent to the cloud without your API keys.
+          {t('auth.localHint').split('\n').map((line, i, arr) => (
+            <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
+          ))}
         </div>
       </form>
     </div>

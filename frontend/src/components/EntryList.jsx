@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 function ConfirmModal({ message, onConfirm, onCancel }) {
+  const { t } = useLanguage();
   return (
     <div
       style={{
@@ -38,7 +40,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
               cursor: 'pointer', fontFamily: 'var(--font)',
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={onConfirm}
@@ -48,7 +50,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
               cursor: 'pointer', fontFamily: 'var(--font)',
             }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
       </div>
@@ -334,6 +336,7 @@ function formatEntryDate(dateStr) {
 }
 
 export default function EntryList({ entries, activeId, onSelect, onNew, onDelete }) {
+  const { t } = useLanguage();
   const [search, setSearch] = useState('');
   const [showCal, setShowCal] = useState(true);
   const [hoverNew, setHoverNew] = useState(false);
@@ -341,7 +344,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
 
   function confirmDelete(id, title) {
     setConfirmModal({
-      message: `Delete "${title || 'Untitled'}"? This cannot be undone.`,
+      message: t('journal.deleteConfirm', { title: title || 'Untitled' }),
       onConfirm: () => { onDelete(id); setConfirmModal(null); },
     });
   }
@@ -357,22 +360,22 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
   return (
     <div style={s.root}>
       <div style={s.header}>
-        <span style={s.headerTitle}>Journal</span>
+        <span style={s.headerTitle}>{t('nav.journal')}</span>
         <div style={s.headerRight}>
           <button
             style={{ ...s.calToggle, ...(showCal ? { color: 'var(--strong)', background: 'var(--panel-bg)' } : {}) }}
             onClick={() => setShowCal(v => !v)}
-            title="Toggle calendar"
+            title={t('journal.calendar')}
           >
-            cal
+            {t('journal.calendar')}
           </button>
           <button
             style={{ ...s.newBtn, ...(hoverNew ? { color: 'var(--strong)' } : {}) }}
             onMouseEnter={() => setHoverNew(true)}
             onMouseLeave={() => setHoverNew(false)}
             onClick={onNew}
-            title="New entry"
-            aria-label="New entry"
+            title={t('journal.newEntry')}
+            aria-label={t('journal.newEntry')}
           >
             +
           </button>
@@ -385,16 +388,16 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
 
       <input
         style={s.search}
-        placeholder="Search..."
+        placeholder={t('common.search')}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        aria-label="Search entries"
+        aria-label={t('common.search')}
       />
 
       <div style={s.list}>
         {filtered.length === 0 && (
           <div style={s.empty}>
-            {search ? 'No entries match.' : 'No entries yet.\nClick + to start writing.'}
+            {search ? t('journal.noMatch') : t('journal.noEntries')}
           </div>
         )}
         {filtered.map((entry) => (

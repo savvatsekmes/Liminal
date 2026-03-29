@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 function formatVersion(isoStr) {
   const d = new Date(isoStr);
@@ -12,6 +13,7 @@ function formatVersion(isoStr) {
 }
 
 export default function VersionsPanel({ isOpen, onClose, versions, onRestore, onPreview, previewVersionId, loading, title }) {
+  const { t } = useLanguage();
   if (!isOpen) return null;
 
   return (
@@ -51,11 +53,11 @@ export default function VersionsPanel({ isOpen, onClose, versions, onRestore, on
           flexShrink: 0,
         }}>
           <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--strong)' }}>
-            ◷ {title || 'Versions'}
+            {title || t('versions.title')}
           </span>
           <button
             onClick={onClose}
-            title="Close"
+            title={t('common.close')}
             style={{
               fontSize: '16px',
               color: 'var(--muted)',
@@ -75,11 +77,11 @@ export default function VersionsPanel({ isOpen, onClose, versions, onRestore, on
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading ? (
             <div style={{ padding: '24px 16px', fontSize: '12px', color: 'var(--muted)' }}>
-              Loading…
+              {t('versions.loading')}
             </div>
           ) : versions.length === 0 ? (
             <div style={{ padding: '24px 16px', fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>
-              No versions yet
+              {t('versions.noVersions')}
             </div>
           ) : (
             versions.map((v) => (
@@ -99,6 +101,7 @@ export default function VersionsPanel({ isOpen, onClose, versions, onRestore, on
 }
 
 function VersionItem({ version, active, onRestore, onPreview }) {
+  const { t } = useLanguage();
   const [hover, setHover] = useState(false);
 
   return (
@@ -121,7 +124,7 @@ function VersionItem({ version, active, onRestore, onPreview }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '12px', color: active ? 'var(--strong)' : 'var(--strong)', marginBottom: '3px', fontWeight: active ? '600' : '400' }}>
           {formatVersion(version.saved_at)}
-          {active && <span style={{ marginLeft: '6px', fontSize: '10px', color: 'var(--muted)', fontWeight: '400' }}>previewing</span>}
+          {active && <span style={{ marginLeft: '6px', fontSize: '10px', color: 'var(--muted)', fontWeight: '400' }}>{t('versions.previewing')}</span>}
         </div>
         <div style={{
           fontSize: '11px',
@@ -151,7 +154,7 @@ function VersionItem({ version, active, onRestore, onPreview }) {
             whiteSpace: 'nowrap',
           }}
         >
-          Restore
+          {t('versions.restore')}
         </button>
       )}
     </div>

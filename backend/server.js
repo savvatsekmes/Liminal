@@ -27,6 +27,7 @@ app.use('/api/oracle',   require('./routes/oracle'));
 app.use('/api/stt',      require('./routes/stt'));
 app.use('/api/youtube',  require('./routes/youtube'));
 app.use('/api/images',   require('./routes/images'));
+app.use('/api/memories', require('./routes/memories'));
 
 // ── JSON error handler (prevents HTML 500 pages) ─────────────────────────────
 // Must be registered AFTER all routes.

@@ -1,9 +1,12 @@
+import { useLanguage } from '../i18n/LanguageContext';
+
 /**
  * MicButton — reusable record/stop button.
  * isRecording: red mic, pulsing
  * isProcessing: shows a spinner ring instead (Whisper uploading)
  */
 export default function MicButton({ isRecording, isProcessing, onClick, style = {} }) {
+  const { t } = useLanguage();
   const baseStyle = {
     width: '28px',
     height: '28px',
@@ -23,7 +26,7 @@ export default function MicButton({ isRecording, isProcessing, onClick, style = 
   return (
     <button
       onClick={isProcessing ? undefined : onClick}
-      title={isProcessing ? 'Transcribing…' : isRecording ? 'Stop dictating' : 'Dictate'}
+      title={isProcessing ? t('mic.transcribing') : isRecording ? t('mic.stop') : t('mic.dictate')}
       style={baseStyle}
       type="button"
     >

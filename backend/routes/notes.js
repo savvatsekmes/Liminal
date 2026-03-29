@@ -170,9 +170,10 @@ router.post('/:id/reflect', async (req, res) => {
   if (!note.body?.trim()) return res.status(400).json({ error: 'Note has no content to reflect on' });
 
   const llm = require('../services/llmService');
+  const memoryService = require('../services/memoryService');
   const db2 = require('../database');
   const portrait = db2.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-  const memory   = db2.prepare('SELECT summary FROM memory WHERE user_id = ?').get(req.userId);
+  const memorySummary = await memoryService.synthesizeMemory(req.userId);
 
   const typeContext = {
     quote:      'This is a quote the user saved — reflect on what it means for them, why they might have saved it, what it\'s calling forward in them.',
@@ -189,7 +190,7 @@ router.post('/:id/reflect', async (req, res) => {
 ${typePrompt}
 
 ${portrait?.character_description ? `CHARACTER PORTRAIT:\n${portrait.character_description}\n` : ''}
-${memory?.summary ? `WHAT YOU KNOW ABOUT THIS PERSON:\n${memory.summary}\n` : ''}
+${memorySummary ? `WHAT YOU KNOW ABOUT THIS PERSON:\n${memorySummary}\n` : ''}
 
 Respond with a JSON object:
 {

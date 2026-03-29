@@ -82,7 +82,7 @@ router.post('/', async (req, res) => {
     }
     res.json({ opening, blocks });
 
-    // 5. Background: index entry, update rolling summary, auto-tag
+    // 5. Background: index entry, extract memories, auto-tag
     const userId = req.userId;
     setImmediate(async () => {
       try {
@@ -94,8 +94,8 @@ router.post('/', async (req, res) => {
           ).run(entryId);
         }
 
-        // Update rolling summary
-        await memory.updateSummary(text, buildPortraitString(portrait), userId);
+        // Extract discrete memory items from this entry
+        await memory.extractAndStoreMemories(text, buildPortraitString(portrait), userId, entryId);
 
         // Auto-tag
         if (entryId) {
@@ -145,7 +145,7 @@ router.post('/block', async (req, res) => {
   if (!entryText) return res.status(400).json({ error: 'entryText is required' });
 
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-  const summary = memory.getSummary(req.userId);
+  const summary = await memory.synthesizeMemory(req.userId);
   const isAuto = !archetype || archetype === 'Auto';
 
   let systemPrompt;
@@ -211,25 +211,35 @@ Return ONLY the JSON object.`;
 });
 
 // ── POST /api/reflect/polish ─────────────────────────────────────────────────
-// Polish a single paragraph.
-// Body: { paragraph }
-// Returns: { original, polished }
+// Polish text — fix spelling, grammar, and readability while preserving voice.
+// Body: { text, format? }  (format: 'html' | 'plain', default 'html')
+// Returns: { polished }
 router.post('/polish', async (req, res) => {
-  const { paragraph } = req.body;
-  if (!paragraph) return res.status(400).json({ error: 'paragraph is required' });
+  const { text, format } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
 
-  const systemPrompt = `You are a writing editor. Your job is to polish a paragraph from a personal journal entry.
+  const isHtml = format !== 'plain';
+  const systemPrompt = `You are a gentle writing editor for personal journal entries and notes.
+
+Your job:
+- Fix spelling and grammar mistakes
+- Improve sentence flow and readability where awkward
+- Clean up punctuation and capitalisation
+- Break run-on sentences into clearer ones
 
 Rules:
-- Preserve the writer's voice, meaning, and tone exactly
-- Only improve clarity, coherence, and flow
-- Do not add new ideas, remove meaning, or change the emotional register
+- PRESERVE the writer's voice, tone, personality, and emotional register exactly
+- Do NOT add new ideas, metaphors, or flourishes
+- Do NOT remove meaning or cut content
 - Keep approximately the same length
-- Return only the polished paragraph text, nothing else`;
+- Do NOT add a title or heading
+- ${isHtml ? 'The input is HTML. Preserve all HTML tags, structure, and formatting exactly. Only change the text content within tags.' : 'Return plain text only.'}
+- Return ONLY the polished text, no commentary or explanation`;
 
   try {
-    const polished = await llm.call(systemPrompt, paragraph, { maxTokens: 500 });
-    res.json({ original: paragraph, polished: polished.trim() });
+    const maxTokens = Math.max(1000, Math.ceil(text.length / 2));
+    const polished = await llm.call(systemPrompt, text, { maxTokens });
+    res.json({ polished: polished.trim() });
   } catch (err) {
     console.error('[reflect/polish] Error:', err.message);
     res.status(500).json({ error: 'Polish failed.' });
@@ -243,7 +253,6 @@ function buildPortraitString(portrait) {
   const parts = [];
   if (portrait.mbti) parts.push(`MBTI: ${portrait.mbti}`);
   if (portrait.enneagram) parts.push(`Enneagram: ${portrait.enneagram}`);
-  if (portrait.context_note) parts.push(`Context: ${portrait.context_note}`);
   return parts.join('\n');
 }
 

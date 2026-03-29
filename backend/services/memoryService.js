@@ -1,8 +1,9 @@
 /**
- * Memory service — two-layer memory system.
+ * Memory service — hybrid memory system.
  *
- * Layer 1: Rolling summary (~800 tokens) — stored in SQLite, injected into
- *          every reflect call. Updated via a second LLM call after each entry.
+ * Layer 1: Discrete memory items — individual facts about the user stored in
+ *          the `memories` table. Auto-extracted after each reflect call, plus
+ *          manually added/pinned items. Synthesized into a narrative for prompts.
  *
  * Layer 2: Semantic RAG — entries embedded into Vectra. On reflect, the 3-5
  *          most similar past entries are retrieved and included in the prompt.
@@ -12,58 +13,164 @@ const db = require('../database');
 const llm = require('./llmService');
 const embedding = require('./embeddingService');
 
-// ── Rolling Summary ──────────────────────────────────────────────────────────
+// ── Discrete Memory Items ───────────────────────────────────────────────────
 
+function getMemories(userId = 1, limit = 50) {
+  return db.prepare(
+    'SELECT id, content, pinned, created_at FROM memories WHERE user_id = ? ORDER BY pinned DESC, created_at DESC LIMIT ?'
+  ).all(userId, limit);
+}
+
+// Legacy — still used by Settings memory panel and old code paths
 function getSummary(userId = 1) {
   const row = db.prepare('SELECT summary FROM memory WHERE user_id = ?').get(userId);
   return row ? row.summary : '';
 }
 
-async function updateSummary(currentEntry, portrait, userId = 1) {
-  const existing = getSummary(userId);
+/**
+ * Extract discrete memory items from a journal entry and store them.
+ * Replaces the old updateSummary() — instead of rewriting one blob,
+ * we extract 0-6 new facts and insert them individually.
+ */
+async function extractAndStoreMemories(currentEntry, portrait, userId = 1, entryId = null) {
+  const existing = getMemories(userId, 50);
+  const existingList = existing.map((m) => `- ${m.content}`).join('\n') || '(none yet)';
 
   const systemPrompt = `You are a memory curator for a personal journaling app called Liminal.
-Your job is to maintain a concise (~800 token) rolling summary of what you know about this person.
-This summary is injected into every future AI reflection so the AI always knows the user's full story.
+Extract 0-6 discrete, factual memories from this journal entry. Each memory should be a single clear statement about this person.
 
-The summary should capture:
-- Who they are (work, creative practice, physical practice, spiritual orientation)
-- Key relationships and their names
-- Recurring themes and emotional patterns
-- Ongoing life situations and transitions
-- Growth edges and recurring struggles
-- Their relationship with themselves
+Focus on:
+- Who they are (work, creative practice, relationships, values)
+- Key people in their life and the dynamics
+- Recurring patterns, themes, emotional tendencies
+- Ongoing life situations, transitions, decisions
+- Growth edges, fears, aspirations
+- Specific facts worth remembering (places, projects, practices)
 
-Be factual, warm, and specific. Use third person ("The user is...").
-Never pad. If nothing new emerges from this entry, return the existing summary unchanged.
-Keep the summary under 800 tokens.`;
+Rules:
+- Each memory is ONE fact, ONE sentence
+- Be specific, not vague — names, details, context
+- If a fact is already captured in the existing memories below, do NOT repeat it
+- If nothing genuinely new emerges from this entry, return an empty array
+- Return ONLY valid JSON: { "memories": ["...", "..."] }`;
 
-  const userMessage = `EXISTING SUMMARY:
-${existing || '(none yet — this is the first entry)'}
+  const userMessage = `EXISTING MEMORIES:
+${existingList}
 
-NEW ENTRY:
+NEW JOURNAL ENTRY:
 ${currentEntry}
 
 ${portrait ? `USER PORTRAIT:\n${portrait}` : ''}
 
-Update the summary to incorporate anything genuinely new from this entry. Return only the updated summary text, nothing else.`;
+Extract any genuinely new facts about this person. Return only the JSON.`;
 
   try {
-    const updated = await llm.call(systemPrompt, userMessage, { maxTokens: 900 });
-    const trimmed = updated.trim();
+    const raw = await llm.call(systemPrompt, userMessage, { maxTokens: 500 });
+    let newItems = [];
+    try {
+      const parsed = JSON.parse(raw.trim());
+      newItems = parsed.memories || [];
+    } catch {
+      const match = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
+      if (match) {
+        try { newItems = JSON.parse(match[1]).memories || []; } catch {}
+      }
+    }
 
-    const existing_row = db.prepare('SELECT id FROM memory WHERE user_id = ?').get(userId);
-    if (existing_row) {
+    if (newItems.length) {
+      const ins = db.prepare('INSERT INTO memories (user_id, content, pinned, source_entry_id) VALUES (?, ?, 0, ?)');
+      for (const item of newItems) {
+        if (typeof item === 'string' && item.trim()) {
+          ins.run(userId, item.trim(), entryId || null);
+        }
+      }
+      console.log(`[memory] Extracted ${newItems.length} new memories from entry ${entryId}`);
+
+      // Invalidate synthesis cache
+      invalidateSynthesisCache(userId);
+    } else {
+      console.log(`[memory] No new memories from entry ${entryId}`);
+    }
+
+    return newItems;
+  } catch (err) {
+    console.error('[memory] Failed to extract memories:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Synthesize discrete memory items into a coherent narrative for the LLM.
+ * Caches the result in the old `memory.summary` field to avoid re-synthesizing
+ * on every request. Invalidated when items change.
+ */
+async function synthesizeMemory(userId = 1) {
+  // Check cache — use the old memory table as cache store
+  const cached = db.prepare('SELECT summary, updated_at FROM memory WHERE user_id = ?').get(userId);
+  const cacheFlag = db.prepare("SELECT value FROM settings WHERE key = ?").get(`memory_dirty_${userId}`);
+
+  // If cache exists and isn't dirty, return it
+  if (cached?.summary && (!cacheFlag || cacheFlag.value !== '1')) {
+    return cached.summary;
+  }
+
+  const items = getMemories(userId, 50);
+  if (!items.length) return '';
+
+  const itemList = items.map((m) => {
+    const pin = m.pinned ? ' [pinned]' : '';
+    return `- ${m.content}${pin}`;
+  }).join('\n');
+
+  const systemPrompt = `You are a memory synthesizer for a personal journaling app called Liminal.
+Below is a list of discrete facts about a person. Synthesize them into a concise (~800 token), coherent narrative.
+
+This narrative is injected into every AI reflection so the Mirror always knows the person's full story.
+
+Rules:
+- Write in third person ("The user is...", "They...")
+- Group related facts naturally — don't just list them
+- Prioritise pinned items (user-curated, high importance)
+- Be factual, warm, and specific
+- Capture the person's full picture: identity, relationships, patterns, growth edges
+- Keep under 800 tokens
+- Return only the narrative text, nothing else`;
+
+  try {
+    const narrative = await llm.call(systemPrompt, `MEMORY ITEMS:\n${itemList}`, { maxTokens: 900 });
+    const trimmed = narrative.trim();
+
+    // Cache in old memory table
+    const existingRow = db.prepare('SELECT id FROM memory WHERE user_id = ?').get(userId);
+    if (existingRow) {
       db.prepare('UPDATE memory SET summary = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(trimmed, userId);
     } else {
       db.prepare('INSERT INTO memory (user_id, summary) VALUES (?, ?)').run(userId, trimmed);
     }
 
+    // Clear dirty flag
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '0')").run(`memory_dirty_${userId}`);
+
+    console.log(`[memory] Synthesized ${items.length} items into narrative (${trimmed.split(/\s+/).length} words)`);
     return trimmed;
   } catch (err) {
-    console.error('[memory] Failed to update rolling summary:', err.message);
-    return existing;
+    console.error('[memory] Synthesis failed, falling back to cached:', err.message);
+    return cached?.summary || '';
   }
+}
+
+function invalidateSynthesisCache(userId = 1) {
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')").run(`memory_dirty_${userId}`);
+}
+
+/**
+ * Build the memory section for system prompts.
+ * Uses synthesized narrative (cached when possible).
+ */
+async function buildMemorySection(userId = 1) {
+  const narrative = await synthesizeMemory(userId);
+  if (!narrative) return null;
+  return `## WHAT I KNOW ABOUT YOU\n${narrative}`;
 }
 
 // ── Semantic Retrieval ────────────────────────────────────────────────────────
@@ -103,8 +210,8 @@ async function retrieveSimilarEntries(currentEntryText, currentEntryId, k = 5) {
  * @param {number} userId
  */
 async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntryId = null, userId = 1, username = null) {
-  const [summary, similarEntries] = await Promise.all([
-    Promise.resolve(getSummary(userId)),
+  const [memorySection, similarEntries] = await Promise.all([
+    buildMemorySection(userId),
     retrieveSimilarEntries(currentEntryText, currentEntryId),
   ]);
 
@@ -113,20 +220,14 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
   // 1. Portrait
   sections.push(buildPortraitSection(portrait));
 
-  // 2. Life context items (user-curated, high priority)
-  const lifeContextDigest = buildLifeContextSection(userId);
-  if (lifeContextDigest) sections.push(lifeContextDigest);
+  // 2. Memory (synthesized narrative from discrete items — includes pinned/manual + auto-extracted)
+  if (memorySection) sections.push(memorySection);
 
-  // 3. Rolling summary
-  if (summary) {
-    sections.push(`## WHAT I KNOW ABOUT YOU\n${summary}`);
-  }
-
-  // 4. Notes digest (goals + quotes especially)
+  // 3. Notes digest (goals + quotes especially)
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
 
-  // 5. Relevant past entries
+  // 4. Relevant past entries
   if (similarEntries.length > 0) {
     const pastContext = similarEntries
       .map((e) => {
@@ -137,27 +238,17 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     sections.push(`## RELEVANT PAST ENTRIES\nThese past entries are most relevant to what was just written:\n\n${pastContext}`);
   }
 
-  // 6. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
+  // 5. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
   sections.push(buildMirrorInstructions(portrait, username));
 
-  return sections.join('\n\n');
-}
-
-function buildLifeContextSection(userId = 1) {
-  try {
-    const db = require('../database');
-    const rows = db.prepare('SELECT text, created_at FROM life_context WHERE user_id = ? ORDER BY created_at DESC LIMIT 20').all(userId);
-    if (!rows.length) return null;
-
-    const items = rows.map((r) => {
-      const date = r.created_at ? r.created_at.split('T')[0] : '';
-      return `- "${r.text}"${date ? ` (added ${date})` : ''}`;
-    }).join('\n');
-
-    return `## CURRENT LIFE CONTEXT (user-curated, high priority)\n${items}`;
-  } catch {
-    return null;
+  // 6. Language instruction
+  const s = require('./settingsService');
+  const lang = s.get('language') || portrait?.language || 'en';
+  if (lang && lang !== 'en') {
+    sections.push(`## LANGUAGE\nYou MUST write your entire response in ${getLanguageName(lang)}. All text — opening, block titles, body text, quotes — must be in ${getLanguageName(lang)}.`);
   }
+
+  return sections.join('\n\n');
 }
 
 function buildNotesDigest(userId = 1) {
@@ -257,8 +348,6 @@ function buildPortraitSection(portrait) {
   if (portrait.season_of_life) currentLines.push(`- Season of life: ${portrait.season_of_life}`);
   if (portrait.current_intention) currentLines.push(`- Intention: ${portrait.current_intention}`);
   if (currentLines.length) lines.push(`\nCurrent chapter:\n${currentLines.join('\n')}`);
-
-  if (portrait.context_note) lines.push(`\nCurrent context:\n${portrait.context_note}`);
 
   // Character portrait — scaled by influence slider
   const influence = portrait.slider_character_influence ?? 50;
@@ -472,13 +561,11 @@ Rules:
 
 async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
-  const summary = getSummary(userId);
   const sections = [];
 
   if (portrait) sections.push(buildPortraitSection(portrait));
-  const lifeCtx = buildLifeContextSection(userId);
-  if (lifeCtx) sections.push(lifeCtx);
-  if (summary) sections.push(`## WHAT I KNOW ABOUT YOU\n${summary}`);
+  const memSection = await buildMemorySection(userId);
+  if (memSection) sections.push(memSection);
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
 
@@ -492,18 +579,22 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
     `Speak directly to them using "you". Do not restate the question.`
   );
 
+  const s = require('./settingsService');
+  const lang = s.get('language') || portrait?.language || 'en';
+  if (lang && lang !== 'en') {
+    sections.push(`You MUST respond entirely in ${getLanguageName(lang)}.`);
+  }
+
   return sections.join('\n\n');
 }
 
-function buildOracleSystemPrompt(userId, archetype = 'Zen') {
+async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
-  const summary = getSummary(userId);
   const sections = [];
 
   if (portrait) sections.push(buildPortraitSection(portrait));
-  const lifeCtx = buildLifeContextSection(userId);
-  if (lifeCtx) sections.push(lifeCtx);
-  if (summary) sections.push(`## WHAT I KNOW ABOUT YOU\n${summary}`);
+  const memSection = await buildMemorySection(userId);
+  if (memSection) sections.push(memSection);
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
 
@@ -518,12 +609,32 @@ function buildOracleSystemPrompt(userId, archetype = 'Zen') {
     `Speak to them as "you". Stay in character throughout.`
   );
 
+  const s = require('./settingsService');
+  const lang = s.get('language') || portrait?.language || 'en';
+  if (lang && lang !== 'en') {
+    sections.push(`You MUST respond entirely in ${getLanguageName(lang)}.`);
+  }
+
   return sections.join('\n\n');
 }
 
+const LANGUAGE_NAMES = {
+  en: 'English', el: 'Greek', es: 'Spanish', fr: 'French', de: 'German',
+  pt: 'Portuguese', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean',
+  ru: 'Russian', ar: 'Arabic', tr: 'Turkish', nl: 'Dutch', sv: 'Swedish', pl: 'Polish',
+};
+
+function getLanguageName(code) {
+  return LANGUAGE_NAMES[code] || code;
+}
+
 module.exports = {
+  getMemories,
   getSummary,
-  updateSummary,
+  extractAndStoreMemories,
+  synthesizeMemory,
+  invalidateSynthesisCache,
+  buildMemorySection,
   retrieveSimilarEntries,
   buildReflectSystemPrompt,
   buildAskSystemPrompt,

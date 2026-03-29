@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from './ResizeDivider';
+import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 
 const styles = {
   root: {
@@ -74,18 +75,92 @@ const styles = {
     overflow: 'hidden',
     minWidth: 0,
   },
+  // Avatar
+  avatar: {
+    width: '30px',
+    height: '30px',
+    borderRadius: '50%',
+    cursor: 'pointer',
+    border: '2px solid transparent',
+    transition: 'border-color 0.15s',
+    objectFit: 'cover',
+    background: 'var(--panel-bg)',
+  },
+  avatarPlaceholder: {
+    width: '30px',
+    height: '30px',
+    borderRadius: '50%',
+    cursor: 'pointer',
+    border: '2px solid transparent',
+    transition: 'border-color 0.15s',
+    background: 'var(--panel-bg)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: '600',
+    color: 'var(--muted)',
+    fontFamily: 'var(--font)',
+  },
+  // Popout menu
+  popout: {
+    position: 'absolute',
+    bottom: '8px',
+    left: '52px',
+    minWidth: '160px',
+    background: 'var(--white)',
+    border: 'var(--border-style)',
+    borderRadius: '4px',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+    padding: '6px 0',
+    zIndex: 100,
+  },
+  popoutItem: {
+    display: 'block',
+    width: '100%',
+    padding: '8px 16px',
+    fontSize: '12px',
+    color: 'var(--body)',
+    background: 'none',
+    border: 'none',
+    textAlign: 'left',
+    cursor: 'pointer',
+    fontFamily: 'var(--font)',
+    transition: 'background 0.1s',
+  },
+  popoutDivider: {
+    borderTop: 'var(--border-style)',
+    margin: '4px 0',
+  },
 };
 
-export default function Layout({ children, activeView, onViewChange }) {
+export default function Layout({ children, activeView, onViewChange, onLogout, avatarUrl, username }) {
+  const { t, lang, setLanguage } = useLanguage();
   const [entryListOpen, setEntryListOpen] = useState(true);
   const [entryListWidth, startEntryDrag] = useResizable(240, { min: 160, max: 480 });
   const [mirrorWidth, startMirrorDrag] = useResizable(
     Math.floor((window.innerWidth - 48 - 240) / 2),
     { min: 200, max: window.innerWidth - 48 - 240 - 200 },
   );
+  const [popoutOpen, setPopoutOpen] = useState(false);
+  const popoutRef = useRef(null);
+
+  // Close popout on outside click
+  useEffect(() => {
+    if (!popoutOpen) return;
+    function handleClick(e) {
+      if (popoutRef.current && !popoutRef.current.contains(e.target)) {
+        setPopoutOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [popoutOpen]);
 
   // children is expected to be: { entryList, canvas, mirror }
   const { entryList, canvas, mirror } = children;
+
+  const initial = (username || '?')[0].toUpperCase();
 
   return (
     <div style={styles.root}>
@@ -95,43 +170,116 @@ export default function Layout({ children, activeView, onViewChange }) {
         <div style={styles.sidebarSpacer} />
 
         <SidebarButton
-          label="Home"
+          label={t('nav.home')}
           icon="◯"
           active={activeView === 'home'}
           onClick={() => onViewChange('home')}
         />
         <SidebarButton
-          label="Journal"
+          label={t('nav.journal')}
           icon="✦"
           active={activeView === 'journal'}
           onClick={() => onViewChange('journal')}
         />
         <SidebarButton
-          label="Notes"
+          label={t('nav.notes')}
           icon="◇"
           active={activeView === 'notes'}
           onClick={() => onViewChange('notes')}
         />
         <SidebarButton
-          label="Oracle"
+          label={t('nav.oracle')}
           icon="✧"
           active={activeView === 'oracle'}
           onClick={() => onViewChange('oracle')}
         />
         <SidebarButton
-          label="Portrait"
+          label={t('nav.portrait')}
           icon="◎"
           active={activeView === 'portrait'}
           onClick={() => onViewChange('portrait')}
         />
+        <SidebarButton
+          label={t('nav.context')}
+          icon="◈"
+          active={activeView === 'memory'}
+          onClick={() => onViewChange('memory')}
+        />
         <div style={styles.sidebarSpacer} />
 
-        <SidebarButton
-          label="Settings"
-          icon="⊙"
-          active={activeView === 'settings'}
-          onClick={() => onViewChange('settings')}
-        />
+        {/* User avatar + popout */}
+        <div style={{ position: 'relative' }} ref={popoutRef}>
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={username}
+              style={{
+                ...styles.avatar,
+                borderColor: popoutOpen || activeView === 'settings' ? 'var(--strong)' : 'transparent',
+              }}
+              onClick={() => setPopoutOpen((v) => !v)}
+            />
+          ) : (
+            <div
+              style={{
+                ...styles.avatarPlaceholder,
+                borderColor: popoutOpen || activeView === 'settings' ? 'var(--strong)' : 'transparent',
+              }}
+              onClick={() => setPopoutOpen((v) => !v)}
+              title={username}
+            >
+              {initial}
+            </div>
+          )}
+
+          {popoutOpen && (
+            <div style={styles.popout}>
+              <button
+                style={styles.popoutItem}
+                onMouseEnter={(e) => { e.target.style.background = 'var(--panel-bg)'; }}
+                onMouseLeave={(e) => { e.target.style.background = 'none'; }}
+                onClick={() => { setPopoutOpen(false); onViewChange('settings'); }}
+              >
+                {t('nav.settings')}
+              </button>
+              <div style={styles.popoutDivider} />
+              <div style={{ padding: '6px 16px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: '600', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  {t('settings.language')}
+                </div>
+                <select
+                  value={lang}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  style={{
+                    width: '100%',
+                    fontSize: '12px',
+                    padding: '4px 6px',
+                    border: 'var(--border-style)',
+                    borderRadius: '2px',
+                    background: 'var(--white)',
+                    fontFamily: 'var(--font)',
+                    color: 'var(--body)',
+                    outline: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.popoutDivider} />
+              <button
+                style={{ ...styles.popoutItem, color: 'var(--muted)' }}
+                onMouseEnter={(e) => { e.target.style.background = 'var(--panel-bg)'; }}
+                onMouseLeave={(e) => { e.target.style.background = 'none'; }}
+                onClick={() => { setPopoutOpen(false); onLogout(); }}
+              >
+                {t('nav.logout')}
+              </button>
+            </div>
+          )}
+        </div>
       </nav>
 
       {/* Entry list — only visible on the Journal tab */}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from '../components/ResizeDivider';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
   root: {
@@ -65,27 +66,6 @@ const s = {
     minHeight: '90px',
     resize: 'vertical',
     lineHeight: '1.6',
-  },
-  sliderRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '14px',
-  },
-  sliderLabel: {
-    fontSize: '11px',
-    color: 'var(--muted)',
-    width: '110px',
-    flexShrink: 0,
-    textAlign: 'right',
-  },
-  sliderLabelRight: {
-    textAlign: 'left',
-  },
-  slider: {
-    flex: 1,
-    accentColor: 'var(--strong)',
-    cursor: 'pointer',
   },
   saveBtn: {
     marginTop: '8px',
@@ -216,18 +196,9 @@ function AstroField({ label, value, missing }) {
   );
 }
 
-const SLIDER_AXES = [
-  { key: 'slider_rational_spiritual',      low: 'Rational',       high: 'Spiritual' },
-  { key: 'slider_gentle_direct',           low: 'Gentle',         high: 'Direct' },
-  { key: 'slider_reflective_action',       low: 'Reflective',     high: 'Action-oriented' },
-  { key: 'slider_light_deep',              low: 'Light touch',    high: 'Deep dive' },
-  { key: 'slider_conversational_poetic',   low: 'Conversational', high: 'Poetic' },
-  { key: 'slider_encouraging_challenging', low: 'Encouraging',    high: 'Challenging' },
-  { key: 'slider_candor',                  low: 'Agreeable',      high: 'Candid', hint: 'High: truth over comfort. The mirror will name what you\'re avoiding, challenge your assumptions, and ask the question you won\'t ask yourself.' },
-  { key: 'slider_character_influence',     low: 'Subtle',         high: 'Full character' },
-];
 
 export default function PortraitPage() {
+  const { t } = useLanguage();
   const [portrait, setPortrait] = useState(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -249,12 +220,12 @@ export default function PortraitPage() {
           p.life_path_number = calculateLifePath(p.birth_date);
         }
         if (p.sun_sign && !p.soul_card) {
-          const t = SUN_SIGN_TO_TAROT[p.sun_sign];
-          if (t) p.soul_card = `${t.card} ${t.number}`;
+          const tarot = SUN_SIGN_TO_TAROT[p.sun_sign];
+          if (tarot) p.soul_card = `${tarot.card} ${tarot.number}`;
         }
         if (p.life_path_number && !p.life_path_card) {
-          const t = LIFE_PATH_TO_TAROT[p.life_path_number];
-          if (t) p.life_path_card = `${t.card} ${t.number}`;
+          const tarot = LIFE_PATH_TO_TAROT[p.life_path_number];
+          if (tarot) p.life_path_card = `${tarot.card} ${tarot.number}`;
         }
         setPortrait(p);
       })
@@ -324,12 +295,12 @@ export default function PortraitPage() {
         updated.life_path_number = calculateLifePath(updated.birth_date);
       }
       if (updated.sun_sign && !updated.soul_card) {
-        const t = SUN_SIGN_TO_TAROT[updated.sun_sign];
-        if (t) updated.soul_card = `${t.card} ${t.number}`;
+        const tarot = SUN_SIGN_TO_TAROT[updated.sun_sign];
+        if (tarot) updated.soul_card = `${tarot.card} ${tarot.number}`;
       }
       if (updated.life_path_number && !updated.life_path_card) {
-        const t = LIFE_PATH_TO_TAROT[updated.life_path_number];
-        if (t) updated.life_path_card = `${t.card} ${t.number}`;
+        const tarot = LIFE_PATH_TO_TAROT[updated.life_path_number];
+        if (tarot) updated.life_path_card = `${tarot.card} ${tarot.number}`;
       }
       setPortrait(updated);
       setSaved(true);
@@ -352,53 +323,54 @@ export default function PortraitPage() {
     finally { setGenerating(false); }
   }
 
-  if (!portrait) return <div style={{ padding: '40px', color: 'var(--muted)', fontSize: '13px' }}>Loading portrait…</div>;
+  if (!portrait) return <div style={{ padding: '40px', color: 'var(--muted)', fontSize: '13px' }}>{t('common.loading')}</div>;
 
   return (
     <div style={s.root}>
       {/* ── Left: form column ── */}
       <div style={s.formCol}>
-      <div style={s.pageTitle}>Your Portrait</div>
-      <div style={s.pageSubtitle}>This context shapes every Mirror response. Treat it as living truth, not gospel.</div>
+      <div style={s.pageTitle}>{t('portrait.title')}</div>
+      <div style={s.pageSubtitle}>{t('portrait.subtitle')}</div>
 
+      <>
       {/* Personality */}
       <div style={s.section}>
-        <div style={s.sectionTitle}>Personality</div>
+        <div style={s.sectionTitle}>{t('portrait.personality')}</div>
         <div style={s.grid}>
           <div style={s.field}>
-            <label style={s.label}>Preferred Name</label>
-            <input style={s.input} value={portrait.preferred_name || ''} onChange={(e) => set('preferred_name', e.target.value)} placeholder="What should the Mirror call you?" />
+            <label style={s.label}>{t('portrait.preferredName')}</label>
+            <input style={s.input} value={portrait.preferred_name || ''} onChange={(e) => set('preferred_name', e.target.value)} placeholder={t('portrait.preferredNamePlaceholder')} />
           </div>
           <div style={s.field}>
-            <label style={s.label}>Sex</label>
+            <label style={s.label}>{t('portrait.sex')}</label>
             <select style={s.input} value={portrait.sex || ''} onChange={(e) => set('sex', e.target.value)}>
-              <option value="">— Select —</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Intersex">Intersex</option>
-              <option value="Prefer not to say">Prefer not to say</option>
+              <option value="">{t('portrait.selectDefault')}</option>
+              <option value="Male">{t('portrait.male')}</option>
+              <option value="Female">{t('portrait.female')}</option>
+              <option value="Intersex">{t('portrait.intersex')}</option>
+              <option value="Prefer not to say">{t('portrait.preferNotToSay')}</option>
             </select>
           </div>
           <div style={s.field}>
-            <label style={s.label}>Pronouns</label>
-            <input style={s.input} value={portrait.pronouns || ''} onChange={(e) => set('pronouns', e.target.value)} placeholder="e.g. he/him, she/her, they/them" />
+            <label style={s.label}>{t('portrait.pronouns')}</label>
+            <input style={s.input} value={portrait.pronouns || ''} onChange={(e) => set('pronouns', e.target.value)} placeholder={t('portrait.pronounsPlaceholder')} />
           </div>
           <div style={s.field}>
             <label style={s.label}>
-              MBTI Type{' '}
+              {t('portrait.mbti')}{' '}
               <a style={s.link} href="https://www.16personalities.com" target="_blank" rel="noreferrer">
-                (take test ↗)
+                {t('portrait.takeTest')}
               </a>
             </label>
-            <input style={s.input} value={portrait.mbti || ''} onChange={(e) => set('mbti', e.target.value)} placeholder="e.g. INFP" />
+            <input style={s.input} value={portrait.mbti || ''} onChange={(e) => set('mbti', e.target.value)} placeholder={t('portrait.mbtiPlaceholder')} />
           </div>
           <div style={s.field}>
-            <label style={s.label}>Enneagram</label>
-            <input style={s.input} value={portrait.enneagram || ''} onChange={(e) => set('enneagram', e.target.value)} placeholder="e.g. 4w5" />
+            <label style={s.label}>{t('portrait.enneagram')}</label>
+            <input style={s.input} value={portrait.enneagram || ''} onChange={(e) => set('enneagram', e.target.value)} placeholder={t('portrait.enneagramPlaceholder')} />
           </div>
           <div style={s.field}>
-            <label style={s.label}>Human Design (optional)</label>
-            <input style={s.input} value={portrait.human_design || ''} onChange={(e) => set('human_design', e.target.value)} placeholder="e.g. Generator" />
+            <label style={s.label}>{t('portrait.humanDesign')}</label>
+            <input style={s.input} value={portrait.human_design || ''} onChange={(e) => set('human_design', e.target.value)} placeholder={t('portrait.humanDesignPlaceholder')} />
           </div>
         </div>
       </div>
@@ -406,25 +378,25 @@ export default function PortraitPage() {
       {/* Astrology */}
       <div style={s.section}>
         <div style={s.sectionTitle}>
-          Astrology
-          {astroCalcing && <span style={{ fontWeight: '400', marginLeft: '8px', fontStyle: 'italic' }}>calculating…</span>}
+          {t('portrait.astrology')}
+          {astroCalcing && <span style={{ fontWeight: '400', marginLeft: '8px', fontStyle: 'italic' }}>{t('portrait.calculating')}</span>}
         </div>
 
         {/* Birth data inputs */}
         <div style={s.grid}>
           <div style={s.field}>
-            <label style={s.label}>Birth Date</label>
+            <label style={s.label}>{t('portrait.birthDate')}</label>
             <input style={s.input} type="date" value={portrait.birth_date || ''} onChange={(e) => set('birth_date', e.target.value)} />
           </div>
           <div style={s.field}>
-            <label style={s.label}>Birth Time</label>
+            <label style={s.label}>{t('portrait.birthTime')}</label>
             <input style={s.input} type="time" value={portrait.birth_time || ''} onChange={(e) => set('birth_time', e.target.value)} />
-            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Required for Moon & Rising</span>
+            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('portrait.birthTimeHint')}</span>
           </div>
           <div style={{ ...s.field, gridColumn: '1 / -1' }}>
-            <label style={s.label}>Birth Location</label>
-            <input style={s.input} value={portrait.birth_location || ''} onChange={(e) => set('birth_location', e.target.value)} placeholder="City, Country (e.g. Melbourne, Australia)" />
-            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Required for Rising sign calculation</span>
+            <label style={s.label}>{t('portrait.birthLocation')}</label>
+            <input style={s.input} value={portrait.birth_location || ''} onChange={(e) => set('birth_location', e.target.value)} placeholder={t('portrait.birthLocationPlaceholder')} />
+            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('portrait.birthLocationHint')}</span>
           </div>
         </div>
 
@@ -432,16 +404,16 @@ export default function PortraitPage() {
         {portrait.birth_date && (
           <div style={{ marginTop: '20px', padding: '16px 20px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
             <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '12px' }}>
-              Calculated
+              {t('portrait.calculated')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
-              <AstroField label="Sun sign" value={portrait.sun_sign} />
-              <AstroField label="Moon sign" value={portrait.moon_sign} missing={!portrait.birth_time ? 'Enter birth time' : null} />
-              <AstroField label="Rising" value={portrait.rising_sign} missing={!portrait.birth_time ? 'Enter birth time' : !portrait.birth_location ? 'Enter birth location' : null} />
-              <AstroField label="Chinese zodiac" value={portrait.chinese_zodiac && portrait.chinese_element ? `${portrait.chinese_element} ${portrait.chinese_zodiac}` : portrait.chinese_zodiac} />
-              <AstroField label="Life Path Number" value={portrait.life_path_number != null ? String(portrait.life_path_number) : null} />
-              <AstroField label="Soul Card" value={portrait.soul_card} missing={!portrait.sun_sign ? 'Needs sun sign' : null} />
-              <AstroField label="Life Path Card" value={portrait.life_path_card ? `${portrait.life_path_card}  (Life Path ${portrait.life_path_number})` : null} />
+              <AstroField label={t('portrait.sunSign')} value={portrait.sun_sign} />
+              <AstroField label={t('portrait.moonSign')} value={portrait.moon_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : null} />
+              <AstroField label={t('portrait.risingSign')} value={portrait.rising_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : !portrait.birth_location ? t('portrait.enterBirthLocation') : null} />
+              <AstroField label={t('portrait.chineseZodiac')} value={portrait.chinese_zodiac && portrait.chinese_element ? `${portrait.chinese_element} ${portrait.chinese_zodiac}` : portrait.chinese_zodiac} />
+              <AstroField label={t('portrait.lifePathNumber')} value={portrait.life_path_number != null ? String(portrait.life_path_number) : null} />
+              <AstroField label={t('portrait.soulCard')} value={portrait.soul_card} missing={!portrait.sun_sign ? t('portrait.needsSunSign') : null} />
+              <AstroField label={t('portrait.lifePathCard')} value={portrait.life_path_card ? `${portrait.life_path_card}  (Life Path ${portrait.life_path_number})` : null} />
             </div>
           </div>
         )}
@@ -449,82 +421,41 @@ export default function PortraitPage() {
         {/* Manual overrides */}
         <div style={{ marginTop: '16px' }}>
           <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '10px' }}>
-            Override (if auto-calculation is wrong for your cusp date or chart system):
+            {t('portrait.override')}
           </div>
           <div style={s.grid}>
             <div style={s.field}>
-              <label style={s.label}>Sun Sign</label>
+              <label style={s.label}>{t('portrait.sunSignOverride')}</label>
               <input style={s.input} value={portrait.sun_sign || ''} onChange={(e) => set('sun_sign', e.target.value)} placeholder="e.g. Scorpio" />
             </div>
             <div style={s.field}>
-              <label style={s.label}>Moon Sign</label>
+              <label style={s.label}>{t('portrait.moonSignOverride')}</label>
               <input style={s.input} value={portrait.moon_sign || ''} onChange={(e) => set('moon_sign', e.target.value)} placeholder="e.g. Pisces" />
             </div>
             <div style={s.field}>
-              <label style={s.label}>Rising Sign</label>
+              <label style={s.label}>{t('portrait.risingSignOverride')}</label>
               <input style={s.input} value={portrait.rising_sign || ''} onChange={(e) => set('rising_sign', e.target.value)} placeholder="e.g. Capricorn" />
             </div>
           </div>
         </div>
 
-        <div style={{ marginTop: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '20px' }}>
           <button
             style={{ ...s.saveBtn, opacity: astroCalcing ? 0.5 : 1 }}
             onClick={() => portrait.birth_date && calcAstrology(portrait)}
             disabled={astroCalcing || !portrait.birth_date}
-            title={!portrait.birth_date ? 'Enter a birth date first' : 'Calculate astrological signs'}
+            title={!portrait.birth_date ? t('portrait.enterBirthDateFirst') : t('portrait.calculateAstrology')}
           >
-            {astroCalcing ? 'Calculating…' : '✦ Calculate astrology'}
+            {astroCalcing ? t('portrait.calculating') : t('portrait.calculateAstrology')}
           </button>
+          <button style={{ ...s.saveBtn, opacity: saving ? 0.5 : 1 }} onClick={save} disabled={saving}>
+            {saving ? t('common.saving') : t('portrait.savePortrait')}
+          </button>
+          {saved && <span style={s.savedMsg}>{t('common.saved')}</span>}
         </div>
       </div>
+      </>
 
-      {/* Context note */}
-      <div style={s.section}>
-        <div style={s.sectionTitle}>Current Context</div>
-        <div style={s.field}>
-          <label style={s.label}>What's happening in your life right now?</label>
-          <textarea
-            style={{ ...s.input, ...s.textarea }}
-            value={portrait.context_note || ''}
-            onChange={(e) => set('context_note', e.target.value)}
-            placeholder="Current chapter of life, what matters most right now, ongoing situations…"
-          />
-        </div>
-      </div>
-
-      {/* Response sliders */}
-      <div style={s.section}>
-        <div style={s.sectionTitle}>Default Response Style</div>
-        {SLIDER_AXES.map(({ key, low, high, hint }) => (
-          <div key={key}>
-            <div style={s.sliderRow}>
-              <span style={s.sliderLabel}>{low}</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                style={s.slider}
-                value={portrait[key] ?? 50}
-                onChange={(e) => set(key, Number(e.target.value))}
-              />
-              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{high}</span>
-            </div>
-            {hint && (portrait[key] ?? 50) > 65 && (
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '-6px', marginBottom: '8px', paddingLeft: '2px', lineHeight: 1.4 }}>
-                {hint}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        <button style={{ ...s.saveBtn, opacity: saving ? 0.5 : 1 }} onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save portrait'}
-        </button>
-        {saved && <span style={s.savedMsg}>Saved.</span>}
-      </div>
       </div>{/* end formCol */}
 
       <ResizeDivider onMouseDown={startPortraitPanelDrag} inverted />
@@ -549,6 +480,7 @@ export default function PortraitPage() {
 // ── Character Portrait Panel ──────────────────────────────────────────────────
 
 function CharacterPortraitPanel({ description, generating, editing, onGenerate, onEdit, onEditDone, onEditCancel, width = 320 }) {
+  const { t } = useLanguage();
   const [editText, setEditText] = useState(description);
   const [playing, setPlaying] = useState(false);
   const [ttsOnline, setTtsOnline] = useState(false);
@@ -625,12 +557,12 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
           <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-            Character Portrait
+            {t('portrait.characterPortrait')}
           </div>
           {description && !editing && !generating && (
             <button
               onClick={handleListen}
-              title={playing ? 'Stop' : ttsOnline ? 'Listen (Chatterbox)' : 'Listen (Web Speech)'}
+              title={playing ? t('mirror.stop') : t('mirror.listen')}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '26px', height: '26px', borderRadius: '3px',
@@ -644,7 +576,7 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
           )}
         </div>
         <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
-          AI synthesis of your portrait data
+          {t('portrait.aiSynthesis')}
         </div>
       </div>
 
@@ -685,7 +617,7 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
 
         {!generating && !editing && !description && (
           <div style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.7' }}>
-            No portrait generated yet. Fill in your personality and astrology details, then click Generate.
+            {t('portrait.noPortrait')}
           </div>
         )}
       </div>
@@ -706,14 +638,14 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
               style={{ flex: 1, fontSize: '12px', padding: '8px 0' }}
               onClick={() => onEditDone(editText)}
             >
-              Save
+              {t('common.save')}
             </button>
             <button
               className="btn-ghost"
               style={{ flex: 1, fontSize: '12px' }}
               onClick={onEditCancel}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         ) : (
@@ -724,7 +656,7 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
               onClick={onGenerate}
               disabled={generating}
             >
-              {generating ? 'Generating…' : description ? '↺ Regenerate' : '✦ Generate portrait'}
+              {generating ? t('portrait.generating') : description ? t('portrait.regenerate') : t('portrait.generate')}
             </button>
             {description && !generating && (
               <button
@@ -732,13 +664,13 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
                 style={{ width: '100%', fontSize: '12px' }}
                 onClick={onEdit}
               >
-                Edit manually
+                {t('portrait.editManually')}
               </button>
             )}
           </>
         )}
         <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: '1.5', marginTop: '2px' }}>
-          Adjust "Character influence" slider to control how much this shapes your Mirror responses.
+          {t('portrait.characterInfluenceHint')}
         </div>
       </div>
     </div>
@@ -746,6 +678,7 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
 }
 
 function TarotCardSelect({ value, onChange }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef(null);
@@ -778,7 +711,7 @@ function TarotCardSelect({ value, onChange }) {
           borderRadius: '2px',
         }}
       >
-        <span>{selected ? `${selected.number} — ${selected.name}` : '— Select a card —'}</span>
+        <span>{selected ? `${selected.number} — ${selected.name}` : t('portrait.selectCard')}</span>
         <span style={{ fontSize: '10px', color: 'var(--muted)' }}>▾</span>
       </div>
       {open && (
@@ -797,7 +730,7 @@ function TarotCardSelect({ value, onChange }) {
         }}>
           <input
             autoFocus
-            placeholder="Search…"
+            placeholder={t('portrait.searchCard')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ ...s.input, width: '100%', borderBottom: 'var(--border-style)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderRadius: 0, fontSize: '12px' }}
@@ -846,10 +779,11 @@ function WaveformIcon({ playing }) {
 }
 
 function GeneratingDots() {
+  const { t } = useLanguage();
   const [dots, setDots] = useState('');
   useEffect(() => {
-    const t = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 500);
-    return () => clearInterval(t);
+    const iv = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 500);
+    return () => clearInterval(iv);
   }, []);
-  return <span>Generating{dots}</span>;
+  return <span>{t('portrait.generatingLabel')}{dots}</span>;
 }

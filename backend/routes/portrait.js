@@ -129,14 +129,56 @@ Do NOT list their traits mechanically. Weave everything together into prose that
 Return only the portrait text. No headers, no preamble.`;
 
   const lines = ['Here is everything known about this person:'];
-  if (portrait.mbti)          lines.push(`MBTI: ${portrait.mbti}`);
-  if (portrait.enneagram)     lines.push(`Enneagram: ${portrait.enneagram}`);
-  if (portrait.human_design)  lines.push(`Human Design: ${portrait.human_design}`);
-  if (portrait.sun_sign)      lines.push(`Astrology: Sun ${portrait.sun_sign}${portrait.moon_sign ? ', Moon ' + portrait.moon_sign : ''}${portrait.rising_sign ? ', Rising ' + portrait.rising_sign : ''}`);
-  if (portrait.chinese_zodiac) lines.push(`Chinese zodiac: ${portrait.chinese_element || ''} ${portrait.chinese_zodiac}`.trim());
-  if (portrait.birth_date)    lines.push(`Born: ${portrait.birth_date}${portrait.birth_location ? ' in ' + portrait.birth_location : ''}`);
-  if (portrait.context_note)  lines.push(`\nCurrent life context:\n${portrait.context_note}`);
 
+  // Identity
+  if (portrait.preferred_name) lines.push(`Name: ${portrait.preferred_name}`);
+  if (portrait.sex)            lines.push(`Sex: ${portrait.sex}`);
+  if (portrait.pronouns)       lines.push(`Pronouns: ${portrait.pronouns}`);
+
+  // Personality typology
+  if (portrait.mbti)           lines.push(`MBTI: ${portrait.mbti}`);
+  if (portrait.enneagram)      lines.push(`Enneagram: ${portrait.enneagram}`);
+  if (portrait.human_design)   lines.push(`Human Design: ${portrait.human_design}`);
+
+  // Astrology
+  if (portrait.sun_sign)       lines.push(`Astrology: Sun ${portrait.sun_sign}${portrait.moon_sign ? ', Moon ' + portrait.moon_sign : ''}${portrait.rising_sign ? ', Rising ' + portrait.rising_sign : ''}`);
+  if (portrait.chinese_zodiac) lines.push(`Chinese zodiac: ${portrait.chinese_element || ''} ${portrait.chinese_zodiac}`.trim());
+  if (portrait.birth_date)     lines.push(`Born: ${portrait.birth_date}${portrait.birth_location ? ' in ' + portrait.birth_location : ''}`);
+
+  // Numerology & tarot
+  if (portrait.life_path_number) lines.push(`Life path number: ${portrait.life_path_number}`);
+  if (portrait.life_path_card)   lines.push(`Life path tarot card: ${portrait.life_path_card}`);
+  if (portrait.soul_card)        lines.push(`Soul card: ${portrait.soul_card}`);
+  if (portrait.working_tarot_card) lines.push(`Working tarot card: ${portrait.working_tarot_card}`);
+
+  // Current season & intention
+  if (portrait.season_of_life)    lines.push(`Current season of life: ${portrait.season_of_life}`);
+  if (portrait.current_intention) lines.push(`Current intention: ${portrait.current_intention}`);
+
+  // Sliders (personality spectrum)
+  const sliderDescriptions = {
+    slider_rational_spiritual: ['Rational', 'Spiritual'],
+    slider_gentle_direct: ['Gentle', 'Direct'],
+    slider_reflective_action: ['Reflective', 'Action-oriented'],
+    slider_light_deep: ['Light', 'Deep'],
+    slider_conversational_poetic: ['Conversational', 'Poetic'],
+    slider_encouraging_challenging: ['Encouraging', 'Challenging'],
+    slider_candor: ['Reserved', 'Candid'],
+  };
+  const sliderLines = [];
+  for (const [key, [low, high]] of Object.entries(sliderDescriptions)) {
+    const val = portrait[key];
+    if (val != null && val !== 50) {
+      const pct = val > 50 ? `${val}% toward ${high}` : `${100 - val}% toward ${low}`;
+      sliderLines.push(`  ${low}–${high}: ${pct}`);
+    }
+  }
+  if (sliderLines.length) lines.push(`\nPersonality spectrum:\n${sliderLines.join('\n')}`);
+
+  // Context note (free-text self-description)
+  if (portrait.context_note) lines.push(`\nIn their own words: "${portrait.context_note}"`);
+
+  // Active archetypes
   try {
     const active = JSON.parse(portrait.active_archetypes || '[]');
     if (active.length) lines.push(`\nActive reflection lenses: ${active.join(', ')}`);
@@ -145,7 +187,7 @@ Return only the portrait text. No headers, no preamble.`;
   lines.push('\nWrite the character portrait now:');
 
   try {
-    const description = await llm.call(systemPrompt, lines.join('\n'), { maxTokens: 600 });
+    const description = await llm.call(systemPrompt, lines.join('\n'), { maxTokens: 1000 });
     const trimmed = description.trim();
 
     db.prepare('UPDATE portrait SET character_description = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(trimmed, req.userId);

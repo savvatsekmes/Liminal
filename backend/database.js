@@ -133,6 +133,16 @@ db.exec(`
     UNIQUE(note_id, user_id),
     FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS memories (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL DEFAULT 1,
+    content         TEXT NOT NULL,
+    pinned          INTEGER NOT NULL DEFAULT 0,
+    source_entry_id INTEGER REFERENCES entries(id) ON DELETE SET NULL,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at DESC);
 `);
 
 // Add new columns if they don't exist yet (migration for existing databases)
@@ -153,6 +163,11 @@ addColumnSafe('portrait', 'season_of_life', 'TEXT');
 addColumnSafe('portrait', 'current_intention', 'TEXT');
 addColumnSafe('portrait', 'sex', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
+
+addColumnSafe('users', 'onboarding_complete', 'INTEGER DEFAULT 0');
+addColumnSafe('users', 'avatar_path', 'TEXT');
+// Mark pre-existing users as onboarded
+db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete = 0 AND last_login IS NOT NULL').run();
 
 addColumnSafe('entries',         'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('notes',           'user_id', 'INTEGER DEFAULT 1');
@@ -229,6 +244,19 @@ if (userCount === 0) {
     const displayName = db.prepare("SELECT value FROM settings WHERE key = 'display_name'").get();
     const username = displayName?.value?.trim() || 'user';
     db.prepare('INSERT OR IGNORE INTO users (id, username, password_hash) VALUES (1, ?, ?)').run(username, oldAuth.password_hash);
+  }
+}
+
+// Migrate life_context → memories (one-time)
+const memoryCount = db.prepare('SELECT COUNT(*) as n FROM memories').get().n;
+if (memoryCount === 0) {
+  const lifeCtxRows = db.prepare('SELECT text, source_entry_id, user_id, created_at FROM life_context').all();
+  if (lifeCtxRows.length) {
+    const ins = db.prepare('INSERT INTO memories (user_id, content, pinned, source_entry_id, created_at) VALUES (?, ?, 1, ?, ?)');
+    for (const r of lifeCtxRows) {
+      ins.run(r.user_id || 1, r.text, r.source_entry_id || null, r.created_at);
+    }
+    console.log(`[db] Migrated ${lifeCtxRows.length} life_context items → memories (pinned)`);
   }
 }
 

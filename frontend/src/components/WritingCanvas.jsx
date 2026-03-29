@@ -22,6 +22,7 @@ import Code from '@tiptap/extension-code';
 import TagBar from './TagBar';
 import VersionsPanel from './VersionsPanel';
 import { apiFetch } from '../utils/api';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
   root: {
@@ -149,7 +150,9 @@ export default function WritingCanvas({
   entryListOpen,
   onVersionPreview,
   previewVersionId,
+  isFirstSession,
 }) {
+  const { t } = useLanguage();
   const saveTimer = useRef(null);
   const savedTimer = useRef(null);
   const lastSnapshotAt = useRef(null);
@@ -160,6 +163,7 @@ export default function WritingCanvas({
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [polishing, setPolishing] = useState(false);
 
   const editorRef = useRef(null);
   const { isRecording, isProcessing, toggle: toggleDictation } = useDictation((text) => {
@@ -217,15 +221,42 @@ export default function WritingCanvas({
     setVersionsOpen(false);
   }
 
+  async function handlePolish() {
+    if (!editor || !entry?.id || polishing) return;
+    const html = editor.getHTML();
+    if (!html || html === '<p></p>') return;
+    setPolishing(true);
+    try {
+      // Snapshot before polish so user can undo
+      await apiFetch(`/api/entries/${entry.id}/snapshot`, { method: 'POST' }).catch(() => {});
+      const res = await apiFetch('/api/reflect/polish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: html, format: 'html' }),
+      });
+      const data = await res.json();
+      if (data.polished) {
+        editor.commands.setContent(data.polished, false);
+        const text = editor.getText();
+        await onUpdate({ body: data.polished, body_text: text }, entry.id);
+        setSaveStatus('saved');
+        clearTimeout(savedTimer.current);
+        savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      }
+    } catch (err) {
+      console.error('Polish failed:', err);
+    } finally {
+      setPolishing(false);
+    }
+  }
+
   async function saveToLifeContext() {
     if (!contextPopup) return;
-    await apiFetch('/api/context', {
+    await apiFetch('/api/memories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: contextPopup.text,
-        source_entry_id: entry?.id || null,
-        source_entry_title: entry?.title || null,
+        content: contextPopup.text,
       }),
     });
     setContextSaved(true);
@@ -251,7 +282,9 @@ export default function WritingCanvas({
       YoutubeEmbed,
       ImageEmbed,
       Placeholder.configure({
-        placeholder: 'Write here…',
+        placeholder: isFirstSession
+          ? t('journal.firstSession')
+          : t('journal.placeholder'),
         emptyEditorClass: 'is-editor-empty',
       }),
     ],
@@ -314,7 +347,7 @@ export default function WritingCanvas({
         <button
           style={s.toggleListBtn}
           onClick={toggleEntryList}
-          title={entryListOpen ? 'Hide entry list' : 'Show entry list'}
+          title={entryListOpen ? t('journal.hideEntryList') : t('journal.showEntryList')}
         >
           {entryListOpen ? '◂' : '▸'}
         </button>
@@ -390,20 +423,20 @@ export default function WritingCanvas({
 
         {saveStatus !== 'idle' && (
           <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0 }}>
-            {saveStatus === 'saving' ? 'Saving…' : '✓ Saved'}
+            {saveStatus === 'saving' ? t('common.saving') : `✓ ${t('common.saved')}`}
           </span>
         )}
 
         <button
           style={{ ...s.toolbarBtn, fontSize: '14px' }}
-          title="Version history"
+          title={t('journal.versionHistory')}
           onClick={() => { setVersionsOpen(true); fetchVersions(); }}
           type="button"
         >
           ◷
         </button>
 
-        <span style={s.wordCount}>{words} words</span>
+        <span style={s.wordCount}>{t('common.words', { count: words })}</span>
 
         <MicButton
           isRecording={isRecording}
@@ -414,9 +447,9 @@ export default function WritingCanvas({
         <button
           style={{ ...s.toolbarBtn, fontSize: '12px', width: 'auto', padding: '0 10px' }}
           onClick={onNew}
-          title="New entry"
+          title={t('journal.newEntry')}
         >
-          + New
+          + {t('journal.newEntry')}
         </button>
       </div>
 
@@ -435,8 +468,8 @@ export default function WritingCanvas({
             style={s.dateTitle}
             value={entry.title || ''}
             onChange={(e) => onUpdate({ title: e.target.value })}
-            placeholder="Entry title"
-            aria-label="Entry title"
+            placeholder={t('journal.entryTitle')}
+            aria-label={t('journal.entryTitle')}
           />
           <span style={s.dateLine}>{formatDate(entry.date)}</span>
         </div>
@@ -460,10 +493,36 @@ export default function WritingCanvas({
           </>
         ) : (
           <div style={{ color: 'var(--muted)', fontSize: '14px', paddingTop: '16px' }}>
-            Select an entry or create a new one.
+            {t('journal.selectEntry')}
           </div>
         )}
       </div>
+
+      {/* Polish button — fixed footer */}
+      {entry && words > 0 && (
+        <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)' }}>
+          <button
+            style={{
+              width: '100%',
+              fontSize: '12px',
+              padding: '9px 0',
+              fontWeight: '500',
+              color: 'var(--white)',
+              background: 'var(--strong)',
+              borderRadius: '2px',
+              cursor: polishing ? 'default' : 'pointer',
+              transition: 'opacity 0.15s',
+              border: 'none',
+              fontFamily: 'var(--font)',
+              opacity: polishing ? 0.55 : 1,
+            }}
+            onClick={handlePolish}
+            disabled={polishing}
+          >
+            {polishing ? t('journal.polishing') : t('journal.polish')}
+          </button>
+        </div>
+      )}
 
       {/* Life context selection popup */}
       {contextPopup && (
@@ -485,7 +544,7 @@ export default function WritingCanvas({
         }}
           onClick={saveToLifeContext}
         >
-          {contextSaved ? '✓ Added to Life Context' : '+ Add to Life Context'}
+          {contextSaved ? t('journal.savedToMemory') : t('journal.saveToMemory')}
         </div>
       )}
 
