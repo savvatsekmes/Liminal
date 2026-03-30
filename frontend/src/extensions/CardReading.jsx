@@ -17,7 +17,9 @@ export const CardReading = Node.create({
   name: 'cardReading',
   group: 'block',
   atom: true,
+  selectable: false, // prevents accidental selection + deletion when adjacent nodes are deleted
   draggable: true,
+  isolating: true,
 
   addAttributes() {
     return {

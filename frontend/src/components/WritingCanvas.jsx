@@ -240,7 +240,7 @@ export default function WritingCanvas({
 
       // Strip card reading blocks before polishing — preserve them as placeholders
       const cardReadings = [];
-      const strippedHtml = html.replace(/<div data-card-reading[^>]*>(<\/div>)?/g, (match) => {
+      const strippedHtml = html.replace(/<div data-card-reading[^>]*><\/div>/g, (match) => {
         cardReadings.push(match);
         return `<!--card-reading-${cardReadings.length - 1}-->`;
       });

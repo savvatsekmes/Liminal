@@ -62,7 +62,7 @@ module.exports = [
     id: 'free-pull',
     nameKey: 'cards.spreadFreePull',
     cardCount: 0, // 0 = manual, pull one at a time
-    maxCards: 15,
+    maxCards: 24,
     positions: [], // positions assigned dynamically as "Card 1", "Card 2", etc.
   },
 ];
