@@ -9,6 +9,7 @@ frontend/build/
 
 # Database & data
 backend/data/
+!backend/data/*.js
 *.db
 *.db-shm
 *.db-wal

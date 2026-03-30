@@ -23,6 +23,9 @@ import { ImageEmbed } from '../extensions/ImageEmbed';
 import { apiFetch } from '../utils/api';
 import MirrorBlock from '../components/MirrorBlock';
 import MicButton from '../components/MicButton';
+import CardPullModal from '../components/CardPullModal';
+import DoodleModal from '../components/DoodleModal';
+import { CardReading } from '../extensions/CardReading';
 import VersionsPanel from '../components/VersionsPanel';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from '../components/ResizeDivider';
@@ -658,7 +661,7 @@ function noteWordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function NoteToolbar({ editor, saveStatus, onVersionsOpen }) {
+function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle }) {
   const { t } = useLanguage();
   if (!editor) return null;
   const words = noteWordCount(editor.getText());
@@ -718,6 +721,9 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen }) {
       {btn('Quote',         editor.isActive('blockquote'),   () => editor.chain().focus().toggleBlockquote().run(),   '"')}
       <div style={divider} />
       {btn('Horizontal rule', false, () => editor.chain().focus().setHorizontalRule().run(), '—')}
+      <div style={divider} />
+      {btn(t('cards.pullCards'), false, () => onCardPull?.(), <svg width="12" height="15" viewBox="0 0 12 15" fill="none" stroke="currentColor" strokeWidth="1"><rect x="0.5" y="0.5" width="11" height="14" rx="1.5"/><rect x="1.5" y="1.5" width="9" height="12" rx="1" strokeWidth="0.6"/><polygon points="6,3.5 8,7.5 6,11 4,7.5" fill="currentColor" stroke="none"/></svg>)}
+      {btn(t('doodle.title'), false, () => onDoodle?.(), <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12L1 13L3 12L12 3L11 2L2 11Z" /><path d="M10 3L11 4" /></svg>)}
       <div style={{ flex: 1 }} />
       <button
         style={{ ...btnStyle, fontSize: '14px', marginRight: '2px' }}
@@ -766,6 +772,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [cardModalOpen, setCardModalOpen] = useState(false);
+  const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const ttsAudioRef = useRef(null);
 
@@ -779,15 +787,29 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
     setPolishing(true);
     try {
       await apiFetch(`/api/notes/${note.id}/snapshot`, { method: 'POST' }).catch(() => {});
+
+      // Strip card reading blocks before polishing — preserve them as placeholders
+      const cardReadings = [];
+      const strippedHtml = html.replace(/<div data-card-reading[^>]*>(<\/div>)?/g, (match) => {
+        cardReadings.push(match);
+        return `<!--card-reading-${cardReadings.length - 1}-->`;
+      });
+
       const res = await apiFetch('/api/reflect/polish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: html, format: 'html' }),
+        body: JSON.stringify({ text: strippedHtml, format: 'html' }),
       });
       const data = await res.json();
       if (data.polished) {
-        ed.commands.setContent(data.polished, false);
-        onChange(note.id, { body: data.polished });
+        // Re-insert card reading blocks
+        let polished = data.polished;
+        cardReadings.forEach((block, i) => {
+          polished = polished.replace(`<!--card-reading-${i}-->`, block);
+        });
+
+        ed.commands.setContent(polished, false);
+        onChange(note.id, { body: polished });
         setSaveStatus('saved');
         clearTimeout(savedTimer.current);
         savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -879,6 +901,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       HardBreak, HorizontalRule, Blockquote, History,
       YoutubeEmbed,
       ImageEmbed,
+      CardReading,
       Placeholder.configure({
         placeholder: t(NOTE_PLACEHOLDER_KEYS[note.type] || 'notes.placeholderReflection'),
         emptyEditorClass: 'is-editor-empty',
@@ -925,6 +948,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         editor={editor}
         saveStatus={saveStatus}
         onVersionsOpen={() => { setVersionsOpen(true); fetchVersions(); }}
+        onCardPull={() => setCardModalOpen(true)}
+        onDoodle={() => setDoodleModalOpen(true)}
       />
 
       {/* Type selector row — like the TAGS bar in Journal */}
@@ -1035,6 +1060,37 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         loading={versionsLoading}
         title={t('notes.noteVersions')}
       />
+
+      {cardModalOpen && (
+        <CardPullModal
+          onClose={() => setCardModalOpen(false)}
+          onInsert={(data) => {
+            if (data.type === 'cardReading') {
+              editorRef.current?.chain().focus().insertContent({
+                type: 'cardReading',
+                attrs: data.attrs,
+              }).run();
+            } else {
+              editorRef.current?.chain().focus().insertContent(data).run();
+            }
+            setCardModalOpen(false);
+          }}
+          entryText={editorRef.current?.getText() || ''}
+        />
+      )}
+
+      {doodleModalOpen && (
+        <DoodleModal
+          onClose={() => setDoodleModalOpen(false)}
+          onInsert={(dataUrl) => {
+            editorRef.current?.chain().focus().insertContent({
+              type: 'imageEmbed',
+              attrs: { src: dataUrl, alt: 'Doodle', width: '100%', analyzed: false },
+            }).run();
+            setDoodleModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

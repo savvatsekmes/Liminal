@@ -22,6 +22,9 @@ import Code from '@tiptap/extension-code';
 import Blockquote from '../extensions/Blockquote';
 import TagBar from './TagBar';
 import VersionsPanel from './VersionsPanel';
+import CardPullModal from './CardPullModal';
+import DoodleModal from './DoodleModal';
+import { CardReading } from '../extensions/CardReading';
 import { apiFetch } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -165,6 +168,8 @@ export default function WritingCanvas({
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [cardModalOpen, setCardModalOpen] = useState(false);
+  const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const ttsAudioRef = useRef(null);
 
@@ -232,16 +237,30 @@ export default function WritingCanvas({
     try {
       // Snapshot before polish so user can undo
       await apiFetch(`/api/entries/${entry.id}/snapshot`, { method: 'POST' }).catch(() => {});
+
+      // Strip card reading blocks before polishing — preserve them as placeholders
+      const cardReadings = [];
+      const strippedHtml = html.replace(/<div data-card-reading[^>]*>(<\/div>)?/g, (match) => {
+        cardReadings.push(match);
+        return `<!--card-reading-${cardReadings.length - 1}-->`;
+      });
+
       const res = await apiFetch('/api/reflect/polish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: html, format: 'html' }),
+        body: JSON.stringify({ text: strippedHtml, format: 'html' }),
       });
       const data = await res.json();
       if (data.polished) {
-        editor.commands.setContent(data.polished, false);
+        // Re-insert card reading blocks
+        let polished = data.polished;
+        cardReadings.forEach((block, i) => {
+          polished = polished.replace(`<!--card-reading-${i}-->`, block);
+        });
+
+        editor.commands.setContent(polished, false);
         const text = editor.getText();
-        await onUpdate({ body: data.polished, body_text: text }, entry.id);
+        await onUpdate({ body: polished, body_text: text }, entry.id);
         setSaveStatus('saved');
         clearTimeout(savedTimer.current);
         savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -326,6 +345,7 @@ export default function WritingCanvas({
       History,
       YoutubeEmbed,
       ImageEmbed,
+      CardReading,
       Placeholder.configure({
         placeholder: isFirstSession
           ? t('journal.firstSession')
@@ -470,6 +490,22 @@ export default function WritingCanvas({
           onClick={() => editor?.chain().focus().setHorizontalRule().run()}
         >
           —
+        </ToolbarButton>
+
+        <div style={s.toolbarDivider} />
+
+        <ToolbarButton
+          label={t('cards.pullCards')}
+          onClick={() => setCardModalOpen(true)}
+        >
+          <svg width="12" height="15" viewBox="0 0 12 15" fill="none" stroke="currentColor" strokeWidth="1"><rect x="0.5" y="0.5" width="11" height="14" rx="1.5"/><rect x="1.5" y="1.5" width="9" height="12" rx="1" strokeWidth="0.6"/><polygon points="6,3.5 8,7.5 6,11 4,7.5" fill="currentColor" stroke="none"/></svg>
+        </ToolbarButton>
+
+        <ToolbarButton
+          label={t('doodle.title')}
+          onClick={() => setDoodleModalOpen(true)}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12L1 13L3 12L12 3L11 2L2 11Z" /><path d="M10 3L11 4" /></svg>
         </ToolbarButton>
 
         <div style={s.toolbarSpacer} />
@@ -694,6 +730,37 @@ export default function WritingCanvas({
         loading={versionsLoading}
         title="Entry Versions"
       />
+
+      {cardModalOpen && (
+        <CardPullModal
+          onClose={() => setCardModalOpen(false)}
+          onInsert={(data) => {
+            if (data.type === 'cardReading') {
+              editor?.chain().focus().insertContent({
+                type: 'cardReading',
+                attrs: data.attrs,
+              }).run();
+            } else {
+              editor?.chain().focus().insertContent(data).run();
+            }
+            setCardModalOpen(false);
+          }}
+          entryText={editor?.getText() || ''}
+        />
+      )}
+
+      {doodleModalOpen && (
+        <DoodleModal
+          onClose={() => setDoodleModalOpen(false)}
+          onInsert={(dataUrl) => {
+            editor?.chain().focus().insertContent({
+              type: 'imageEmbed',
+              attrs: { src: dataUrl, alt: 'Doodle', width: '100%', analyzed: false },
+            }).run();
+            setDoodleModalOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

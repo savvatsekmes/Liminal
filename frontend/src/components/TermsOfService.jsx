@@ -110,6 +110,13 @@ export default function TermsOfService({ onBack }) {
             <p style={s.paragraph}>{t('terms.notAdviceBody')}</p>
           </div>
 
+          {/* Tarot & Oracle */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.tarotTitle')}</div>
+            <p style={s.paragraph}>{t('terms.tarotBody1')}</p>
+            <p style={s.paragraph}>{t('terms.tarotBody2')}</p>
+          </div>
+
           {/* Privacy & Data */}
           <div style={s.section}>
             <div style={s.sectionTitle}>{t('terms.privacyTitle')}</div>
