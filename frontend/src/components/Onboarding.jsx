@@ -150,7 +150,7 @@ const s = {
   },
 };
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 export default function Onboarding({ username, onComplete }) {
   const [step, setStep] = useState(0);
@@ -289,6 +289,14 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 4 && (
+            <OllamaStep
+              onContinue={() => goTo(5)}
+              onSkipForNow={handleSkipForNow}
+              onSkipCompletely={handleSkipCompletely}
+              saving={saving}
+            />
+          )}
+          {step === 5 && (
             <DoneStep
               data={data}
               onFinish={saveAndComplete}
@@ -552,7 +560,112 @@ function PersonalityStep({ data, set, onContinue, onSkipForNow, onSkipCompletely
   );
 }
 
-// ── Step 4: Done ─────────────────────────────────────────────────────────────
+// ── Step 4: Ollama Setup ────────────────────────────────────────────────────
+
+function OllamaStep({ onContinue, onSkipForNow, onSkipCompletely, saving }) {
+  const { t } = useLanguage();
+  const [ollamaStatus, setOllamaStatus] = useState(null); // null = checking, true = online, false = offline
+
+  useEffect(() => {
+    apiFetch('/api/ollama/models')
+      .then(r => r.json())
+      .then(data => setOllamaStatus(data.online === true))
+      .catch(() => setOllamaStatus(false));
+  }, []);
+
+  function recheckOllama() {
+    setOllamaStatus(null);
+    apiFetch('/api/ollama/models')
+      .then(r => r.json())
+      .then(data => setOllamaStatus(data.online === true))
+      .catch(() => setOllamaStatus(false));
+  }
+
+  return (
+    <>
+      <div style={s.title}>{t('onboarding.ollamaTitle')}</div>
+      <div style={{ ...s.subtitle, whiteSpace: 'pre-line' }}>
+        {t('onboarding.ollamaSubtitle')}
+      </div>
+
+      <div style={{
+        padding: '16px 18px',
+        border: 'var(--border-style)',
+        borderRadius: '2px',
+        background: 'var(--near-white)',
+        marginBottom: '16px',
+        fontSize: '12px',
+        color: 'var(--body)',
+        lineHeight: '1.8',
+      }}>
+        <div style={{ fontWeight: '600', color: 'var(--strong)', marginBottom: '8px' }}>
+          {t('onboarding.ollamaSteps')}
+        </div>
+        <div>1. {t('onboarding.ollamaStep1')}</div>
+        <div style={{ marginLeft: '16px', marginBottom: '4px' }}>
+          <a
+            href="https://ollama.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--strong)', textDecoration: 'underline' }}
+          >
+            ollama.com/download
+          </a>
+        </div>
+        <div>2. {t('onboarding.ollamaStep2')}</div>
+        <div>3. {t('onboarding.ollamaStep3')}</div>
+      </div>
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        marginBottom: '20px',
+        fontSize: '12px',
+      }}>
+        <div style={{
+          width: '7px',
+          height: '7px',
+          borderRadius: '50%',
+          background: ollamaStatus === null ? 'var(--border)' : ollamaStatus ? '#2ecc71' : '#e74c3c',
+          flexShrink: 0,
+        }} />
+        <span style={{ color: ollamaStatus ? 'var(--body)' : 'var(--muted)' }}>
+          {ollamaStatus === null
+            ? t('onboarding.ollamaChecking')
+            : ollamaStatus
+              ? t('onboarding.ollamaDetected')
+              : t('onboarding.ollamaNotDetected')}
+        </span>
+        {ollamaStatus !== null && (
+          <button
+            onClick={recheckOllama}
+            style={{
+              fontSize: '11px',
+              color: 'var(--muted)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'var(--font)',
+              textDecoration: 'underline',
+            }}
+          >
+            {t('onboarding.ollamaRecheck')}
+          </button>
+        )}
+      </div>
+
+      <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
+        {t('onboarding.ollamaSettingsHint')}
+      </div>
+
+      <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>
+      <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
+    </>
+  );
+}
+
+// ── Step 5: Done ─────────────────────────────────────────────────────────────
 
 function DoneStep({ data, onFinish, saving }) {
   const { t } = useLanguage();

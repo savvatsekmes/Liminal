@@ -166,6 +166,7 @@ addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
 
 addColumnSafe('users', 'onboarding_complete', 'INTEGER DEFAULT 0');
 addColumnSafe('users', 'avatar_path', 'TEXT');
+addColumnSafe('users', 'terms_accepted_at', 'DATETIME');
 // Mark pre-existing users as onboarded
 db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete = 0 AND last_login IS NOT NULL').run();
 

@@ -560,21 +560,6 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
           <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
             {t('portrait.characterPortrait')}
           </div>
-          {description && !editing && !generating && (
-            <button
-              onClick={handleListen}
-              title={playing ? t('mirror.stop') : t('mirror.listen')}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: '26px', height: '26px', borderRadius: '3px',
-                color: playing ? 'var(--strong)' : 'var(--muted)',
-                background: playing ? 'var(--panel-bg)' : 'none',
-                cursor: 'pointer', border: 'none', transition: 'color 0.12s',
-              }}
-            >
-              <WaveformIcon playing={playing} />
-            </button>
-          )}
         </div>
         <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
           {t('portrait.aiSynthesis')}
@@ -651,14 +636,42 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
           </div>
         ) : (
           <>
-            <button
-              className="btn-primary"
-              style={{ width: '100%', fontSize: '12px', padding: '9px 0', opacity: generating ? 0.5 : 1 }}
-              onClick={onGenerate}
-              disabled={generating}
-            >
-              {generating ? t('portrait.generating') : description ? t('portrait.regenerate') : t('portrait.generate')}
-            </button>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button
+                className="btn-primary"
+                style={{ flex: 1, fontSize: '12px', padding: '9px 0', opacity: generating ? 0.5 : 1 }}
+                onClick={onGenerate}
+                disabled={generating}
+              >
+                {generating ? t('portrait.generating') : description ? t('portrait.regenerate') : t('portrait.generate')}
+              </button>
+              <button
+                onClick={handleListen}
+                title={playing ? t('common.stop') : t('common.readAloud')}
+                type="button"
+                disabled={!description || generating}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '20px',
+                  border: 'none',
+                  background: playing ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                  color: playing ? 'var(--strong)' : 'var(--muted)',
+                  cursor: (!description || generating) ? 'default' : 'pointer',
+                  transition: 'color 0.15s, background 0.15s',
+                  flexShrink: 0,
+                  opacity: (!description || generating) ? 0.35 : 1,
+                  boxShadow: playing
+                    ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                    : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+                }}
+              >
+                <WaveformIcon playing={playing} />
+              </button>
+            </div>
             {description && !generating && (
               <button
                 className="btn-ghost"

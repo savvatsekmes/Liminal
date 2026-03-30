@@ -36,15 +36,16 @@ router.get('/status', (req, res) => {
 
 // ── POST /api/auth/register ──────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, agreed_to_terms } = req.body;
   if (!username?.trim()) return res.status(400).json({ error: 'Username is required' });
   if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  if (!agreed_to_terms) return res.status(400).json({ error: 'You must agree to the Terms of Service' });
 
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
   if (existing) return res.status(409).json({ error: 'Username already taken' });
 
   const hash = await bcrypt.hash(password, SALT_ROUNDS);
-  const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username.trim(), hash);
+  const result = db.prepare('INSERT INTO users (username, password_hash, terms_accepted_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(username.trim(), hash);
   const userId = result.lastInsertRowid;
 
   // Create portrait row for new user

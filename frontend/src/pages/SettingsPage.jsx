@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
+import TermsOfService from '../components/TermsOfService';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABS = [
@@ -441,6 +442,58 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
   );
 }
 
+// ── Ollama Install Guide ─────────────────────────────────────────────────────
+function OllamaInstallGuide({ onRecheck }) {
+  const { t } = useLanguage();
+  return (
+    <div style={{
+      marginTop: '12px',
+      padding: '16px 18px',
+      border: 'var(--border-style)',
+      borderRadius: '2px',
+      background: 'var(--near-white)',
+      fontSize: '12px',
+      color: 'var(--body)',
+      lineHeight: '1.8',
+    }}>
+      <div style={{ fontWeight: '600', color: 'var(--strong)', marginBottom: '8px' }}>
+        {t('settings.ollamaInstallTitle')}
+      </div>
+      <div>1. {t('settings.ollamaInstallStep1')}</div>
+      <div style={{ marginLeft: '16px', marginBottom: '4px' }}>
+        <a
+          href="https://ollama.com/download"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'var(--strong)', textDecoration: 'underline' }}
+        >
+          ollama.com/download
+        </a>
+      </div>
+      <div>2. {t('settings.ollamaInstallStep2')}</div>
+      <div>3. {t('settings.ollamaInstallStep3')}</div>
+      <button
+        onClick={onRecheck}
+        style={{
+          marginTop: '12px',
+          padding: '7px 16px',
+          fontSize: '12px',
+          fontWeight: '500',
+          border: 'var(--border-style)',
+          borderRadius: '20px',
+          background: 'var(--white)',
+          color: 'var(--body)',
+          cursor: 'pointer',
+          fontFamily: 'var(--font)',
+          transition: 'border-color 0.12s, color 0.12s',
+        }}
+      >
+        {t('settings.ollamaRecheck')}
+      </button>
+    </div>
+  );
+}
+
 // ── LLM Section ───────────────────────────────────────────────────────────────
 function LLMSection({ cfg, set, save, saving, showToast }) {
   const { t } = useLanguage();
@@ -644,6 +697,12 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
                 {t('settings.ollamaOffline')}
               </div>
+            )}
+            {ollamaData && !ollamaData.online && (
+              <OllamaInstallGuide onRecheck={() => {
+                setOllamaData(null);
+                apiFetch('/api/ollama/models').then(r => r.json()).then(setOllamaData).catch(() => setOllamaData({ online: false, models: [] }));
+              }} />
             )}
             {ollamaData?.online && ollamaData.models?.length > 0 && (
               <select
@@ -1060,6 +1119,7 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
   const [deletePw, setDeletePw] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const avatarInputRef = useRef(null);
 
   async function changePassword() {
@@ -1182,6 +1242,27 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
       </div>
 
       <RestartButton />
+
+      <div style={s.divider} />
+
+      <button
+        onClick={() => setShowTerms(true)}
+        style={{
+          background: 'none',
+          border: 'none',
+          fontSize: '12px',
+          color: 'var(--muted)',
+          cursor: 'pointer',
+          fontFamily: 'var(--font)',
+          padding: 0,
+          textDecoration: 'underline',
+          marginBottom: '8px',
+        }}
+      >
+        {t('settings.viewTerms')}
+      </button>
+
+      {showTerms && <TermsOfService onBack={() => setShowTerms(false)} />}
 
       <div style={s.divider} />
 

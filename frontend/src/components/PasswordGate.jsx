@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { setStoredToken } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
+import TermsOfService from './TermsOfService';
 
 const s = {
   overlay: {
@@ -202,6 +203,8 @@ function RegisterForm({ onSuccess, onBack }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -211,13 +214,14 @@ function RegisterForm({ onSuccess, onBack }) {
     if (!username.trim()) { setError(t('auth.errorChooseUsername')); return; }
     if (password.length < 4) { setError(t('auth.errorPasswordLength')); return; }
     if (password !== confirm) { setError(t('auth.errorPasswordMatch')); return; }
+    if (!agreedToTerms) { setError(t('auth.errorMustAgree')); return; }
 
     setLoading(true);
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username: username.trim(), password, agreed_to_terms: true }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -230,6 +234,10 @@ function RegisterForm({ onSuccess, onBack }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (showTerms) {
+    return <TermsOfService onBack={() => setShowTerms(false)} />;
   }
 
   return (
@@ -266,7 +274,7 @@ function RegisterForm({ onSuccess, onBack }) {
         <label style={s.label} htmlFor="reg-confirm">{t('auth.confirmPassword')}</label>
         <input
           id="reg-confirm"
-          style={{ ...s.input, marginBottom: error ? '0' : '0' }}
+          style={{ ...s.input, marginBottom: '0' }}
           type="password"
           autoComplete="new-password"
           value={confirm}
@@ -274,12 +282,54 @@ function RegisterForm({ onSuccess, onBack }) {
           placeholder={t('auth.placeholderConfirm')}
         />
 
+        {/* Terms of Service checkbox */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginTop: '18px',
+        }}>
+          <input
+            id="reg-terms"
+            type="checkbox"
+            checked={agreedToTerms}
+            onChange={(e) => setAgreedToTerms(e.target.checked)}
+            style={{
+              width: '14px',
+              height: '14px',
+              accentColor: 'var(--strong)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          />
+          <label htmlFor="reg-terms" style={{ fontSize: '12px', color: 'var(--body)', cursor: 'pointer' }}>
+            {t('auth.agreeToTerms')}
+            <button
+              type="button"
+              onClick={() => setShowTerms(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--strong)',
+                fontSize: '12px',
+                fontWeight: '600',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                padding: 0,
+                fontFamily: 'var(--font)',
+              }}
+            >
+              {t('auth.termsLink')}
+            </button>
+          </label>
+        </div>
+
         {error && <div style={{ ...s.error, marginTop: '16px' }}>{error}</div>}
 
         <button
-          style={{ ...s.btn, marginTop: '20px', opacity: loading ? 0.5 : 1 }}
+          style={{ ...s.btn, marginTop: '20px', opacity: (loading || !agreedToTerms) ? 0.5 : 1 }}
           type="submit"
-          disabled={loading}
+          disabled={loading || !agreedToTerms}
         >
           {loading ? t('auth.creating') : t('auth.createAccount')}
         </button>
