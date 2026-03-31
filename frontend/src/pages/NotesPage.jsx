@@ -28,6 +28,7 @@ import DoodleModal from '../components/DoodleModal';
 import { CardReading } from '../extensions/CardReading';
 import VersionsPanel from '../components/VersionsPanel';
 import { useResizable } from '../hooks/useResizable';
+import Calendar from '../components/Calendar';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import ResizeDivider from '../components/ResizeDivider';
@@ -87,6 +88,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
   const [newTagInput, setNewTagInput] = useState('');
   const [showNewTagInput, setShowNewTagInput] = useState(false);
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
+  const [showCal, setShowCal] = useState(true);
   const [reflectBlocks, setReflectBlocks] = useState([]);
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState(null);
@@ -193,22 +195,51 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           borderBottom: 'var(--border-style)',
           flexShrink: 0,
         }}>
-          <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--strong)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             {filterType === 'custom' && filterCustomTag
               ? filterCustomTag
               : filterType === 'all' ? t('notes.title') : filterType.charAt(0).toUpperCase() + filterType.slice(1) + 's'}
           </span>
-          <button
-            onClick={handleCreateNote}
-            title={t('notes.newNote')}
-            style={{ fontSize: '18px', color: 'var(--muted)', lineHeight: 1 }}
-          >
-            +
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button
+              style={{
+                fontSize: '11px',
+                color: showCal ? 'var(--strong)' : 'var(--muted)',
+                background: showCal ? 'var(--panel-bg)' : 'none',
+                border: 'var(--border-style)',
+                borderRadius: '2px',
+                padding: '2px 5px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font)',
+                lineHeight: 1.4,
+                transition: 'color 0.15s, background 0.15s',
+              }}
+              onClick={() => setShowCal(v => !v)}
+              title={t('journal.calendar')}
+            >
+              {t('journal.calendar')}
+            </button>
+            <button
+              onClick={handleCreateNote}
+              title={t('notes.newNote')}
+              style={{ fontSize: '18px', color: 'var(--muted)', lineHeight: 1 }}
+            >
+              +
+            </button>
+          </div>
         </div>
 
+        {showCal && (
+          <Calendar
+            items={notes}
+            activeId={activeNote?.id}
+            onSelect={(note) => selectNote(note)}
+            dateField="created_at"
+          />
+        )}
+
         {/* Note items */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
           {notes.length === 0 && (
             <div style={{ padding: '24px 14px', fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>
               {t('notes.noNotes')}
@@ -548,10 +579,11 @@ function NoteListItem({ note, active, onClick, onDelete }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        padding: '10px 14px',
+        padding: '8px 12px',
         cursor: 'pointer',
-        borderBottom: 'var(--border-style)',
-        background: active ? 'var(--panel-bg)' : 'transparent',
+        borderRadius: '10px',
+        margin: '1px 6px',
+        background: active ? 'var(--panel-bg)' : hover ? 'var(--panel-bg)' : 'transparent',
         transition: 'background 0.1s',
         position: 'relative',
       }}
@@ -575,7 +607,7 @@ function NoteListItem({ note, active, onClick, onDelete }) {
         paddingRight: hover ? '18px' : '0',
         ...meta.bodyStyle,
       }}>
-        {preview}
+        {note.title || preview}
       </div>
       {hover && (
         <button
@@ -797,6 +829,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [titling, setTitling] = useState(false);
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
@@ -880,6 +913,29 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       console.error('Polish failed:', err);
     } finally {
       setPolishing(false);
+    }
+  }
+
+  async function handleGenerateTitle() {
+    const ed = editorRef.current;
+    if (!ed || !note?.id || titling) return;
+    const text = ed.getText();
+    if (!text || text.trim().length < 10) return;
+    setTitling(true);
+    try {
+      const res = await apiFetch('/api/reflect/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.title) {
+        onChange(note.id, { title: data.title });
+      }
+    } catch (err) {
+      console.error('Title generation failed:', err);
+    } finally {
+      setTitling(false);
     }
   }
 
@@ -1032,6 +1088,29 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         />
       </div>
 
+      {/* Note title */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '14px 32px 0', flexShrink: 0 }}>
+        <input
+          style={{
+            fontSize: '18px',
+            fontWeight: '700',
+            color: 'var(--strong)',
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            width: '100%',
+            fontFamily: 'var(--font)',
+            lineHeight: '1.3',
+          }}
+          value={note.title || ''}
+          onChange={(e) => onChange(note.id, { title: e.target.value })}
+          placeholder="Untitled"
+        />
+        <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+          {formatDate(note.created_at)}
+        </span>
+      </div>
+
       {/* Scrollable content */}
       <div ref={editorWrapRef} onContextMenu={handleEditorContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
         {note.type === 'quote' && (
@@ -1142,6 +1221,29 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
           disabled={polishing || !hasText}
         >
           {polishing ? t('notes.polishing') : t('notes.polish')}
+        </button>
+        <button
+          onClick={handleGenerateTitle}
+          title="Generate title"
+          disabled={titling || !hasText}
+          style={{
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '20px',
+            border: 'none',
+            background: 'var(--near-white)',
+            color: 'var(--muted)',
+            cursor: (titling || !hasText) ? 'default' : 'pointer',
+            transition: 'color 0.15s, background 0.15s, opacity 0.15s',
+            flexShrink: 0,
+            opacity: (titling || !hasText) ? 0.35 : 1,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+          }}
+        >
+          {titling ? <SpinnerIcon /> : <TitleIcon />}
         </button>
         <MicButton
           isRecording={isRecording}
@@ -1751,6 +1853,26 @@ function DefaultEditor({ note, editor }) {
     <div className={className} style={{ fontSize: '15px', lineHeight: '1.8' }}>
       <EditorContent editor={editor} />
     </div>
+  );
+}
+
+function TitleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <line x1="2" y1="3" x2="12" y2="3" />
+      <line x1="2" y1="7" x2="9" y2="7" />
+      <line x1="2" y1="11" x2="6" y2="11" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M7 1a6 6 0 0 1 6 6" opacity="0.3">
+        <animateTransform attributeName="transform" type="rotate" from="0 7 7" to="360 7 7" dur="0.8s" repeatCount="indefinite" />
+      </path>
+    </svg>
   );
 }
 

@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import Calendar from './Calendar';
 
 function ConfirmModal({ message, onConfirm, onCancel }) {
   const { t } = useLanguage();
@@ -106,10 +107,10 @@ const s = {
   },
   search: {
     margin: '8px 10px',
-    padding: '5px 8px',
+    padding: '5px 10px',
     fontSize: '12px',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     background: 'var(--white)',
     width: 'calc(100% - 20px)',
     color: 'var(--strong)',
@@ -124,7 +125,7 @@ const s = {
   item: {
     padding: '8px 12px',
     cursor: 'pointer',
-    borderRadius: '2px',
+    borderRadius: '10px',
     margin: '1px 6px',
     transition: 'background 0.1s',
   },
@@ -157,173 +158,8 @@ const s = {
     textAlign: 'center',
     lineHeight: '1.6',
   },
-  // Calendar
-  cal: {
-    flexShrink: 0,
-    borderBottom: 'var(--border-style)',
-    padding: '10px 12px 12px',
-  },
-  calHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: '10px',
-  },
-  calTitle: {
-    fontSize: '12px',
-    fontWeight: '600',
-    color: 'var(--strong)',
-    letterSpacing: '0.02em',
-  },
-  calNav: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-  },
-  calNavBtn: {
-    fontSize: '13px',
-    color: 'var(--muted)',
-    padding: '1px 5px',
-    borderRadius: '2px',
-    lineHeight: 1.4,
-    cursor: 'pointer',
-    transition: 'color 0.12s',
-  },
-  calGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '2px',
-  },
-  calDow: {
-    textAlign: 'center',
-    fontSize: '10px',
-    fontWeight: '600',
-    color: 'var(--muted)',
-    letterSpacing: '0.04em',
-    paddingBottom: '4px',
-  },
-  calDay: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    aspectRatio: '1',
-    borderRadius: '50%',
-    fontSize: '11px',
-    cursor: 'default',
-    color: 'var(--muted)',
-    transition: 'background 0.1s, color 0.1s',
-  },
-  calDayHasEntry: {
-    color: 'var(--strong)',
-    fontWeight: '600',
-    cursor: 'pointer',
-    background: 'var(--panel-bg)',
-  },
-  calDayToday: {
-    background: 'var(--strong)',
-    color: 'var(--white)',
-    fontWeight: '600',
-  },
-  calDaySelected: {
-    background: 'var(--body)',
-    color: 'var(--white)',
-    fontWeight: '600',
-  },
 };
 
-const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-function toLocalYMD(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function Calendar({ entries, activeId, onSelect }) {
-  const today = new Date();
-  const todayYMD = toLocalYMD(today);
-
-  const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
-
-  // Set of dates (YYYY-MM-DD) that have entries, mapped to first entry on that day
-  const entryMap = useMemo(() => {
-    const map = {};
-    for (const e of entries) {
-      const d = (e.date || e.created_at || '').slice(0, 10);
-      if (d && !map[d]) map[d] = e;
-    }
-    return map;
-  }, [entries]);
-
-  const activeDate = useMemo(() => {
-    const active = entries.find(e => e.id === activeId);
-    return active ? (active.date || active.created_at || '').slice(0, 10) : null;
-  }, [entries, activeId]);
-
-  function prevMonth() {
-    setCursor(c => {
-      const d = new Date(c.year, c.month - 1, 1);
-      return { year: d.getFullYear(), month: d.getMonth() };
-    });
-  }
-  function nextMonth() {
-    setCursor(c => {
-      const d = new Date(c.year, c.month + 1, 1);
-      return { year: d.getFullYear(), month: d.getMonth() };
-    });
-  }
-
-  const monthLabel = new Date(cursor.year, cursor.month, 1)
-    .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-  // Build grid: Monday-first
-  const firstDay = new Date(cursor.year, cursor.month, 1);
-  const lastDay = new Date(cursor.year, cursor.month + 1, 0);
-  // day of week 0=Sun..6=Sat → shift to Mon-first: Mon=0..Sun=6
-  const startDow = (firstDay.getDay() + 6) % 7; // blanks before day 1
-  const days = [];
-  for (let i = 0; i < startDow; i++) days.push(null);
-  for (let d = 1; d <= lastDay.getDate(); d++) days.push(d);
-
-  return (
-    <div style={s.cal}>
-      <div style={s.calHeader}>
-        <span style={s.calTitle}>{monthLabel}</span>
-        <div style={s.calNav}>
-          <button style={s.calNavBtn} onClick={prevMonth} title="Previous month">‹</button>
-          <button style={s.calNavBtn} onClick={nextMonth} title="Next month">›</button>
-        </div>
-      </div>
-      <div style={s.calGrid}>
-        {DOW.map((d, i) => <div key={i} style={s.calDow}>{d}</div>)}
-        {days.map((day, i) => {
-          if (!day) return <div key={`blank-${i}`} />;
-          const ymd = `${cursor.year}-${String(cursor.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const isToday = ymd === todayYMD;
-          const isSelected = ymd === activeDate;
-          const entry = entryMap[ymd];
-
-          let style = { ...s.calDay };
-          if (isSelected) style = { ...style, ...s.calDaySelected };
-          else if (isToday) style = { ...style, ...s.calDayToday };
-          else if (entry) style = { ...style, ...s.calDayHasEntry };
-
-          return (
-            <div
-              key={ymd}
-              style={style}
-              onClick={() => entry && onSelect(entry)}
-              title={entry ? entry.title || 'Entry' : undefined}
-            >
-              {day}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function formatEntryDate(dateStr) {
   if (!dateStr) return '';
@@ -383,7 +219,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
       </div>
 
       {showCal && (
-        <Calendar entries={entries} activeId={activeId} onSelect={onSelect} />
+        <Calendar items={entries} activeId={activeId} onSelect={onSelect} />
       )}
 
       <input

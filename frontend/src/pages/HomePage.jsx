@@ -173,6 +173,47 @@ const s = {
     background: 'var(--border)',
     alignSelf: 'stretch',
   },
+  // Moon card
+  moonCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    border: 'var(--border-style)',
+    borderRadius: '16px',
+    padding: '16px 20px',
+    marginBottom: '28px',
+    background: 'var(--near-white)',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s',
+  },
+  moonInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  moonPhase: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--strong)',
+    marginBottom: '2px',
+  },
+  moonDetail: {
+    fontSize: '11px',
+    color: 'var(--muted)',
+    lineHeight: '1.5',
+  },
+  moonMeaning: {
+    fontSize: '11px',
+    color: 'var(--body)',
+    fontStyle: 'italic',
+    lineHeight: '1.5',
+    marginTop: '4px',
+  },
+  moonArrow: {
+    fontSize: '22px',
+    color: 'var(--muted)',
+    flexShrink: 0,
+    lineHeight: 1,
+  },
   // Quick Ask
   sectionTitle: {
     fontSize: '9px',
@@ -416,7 +457,7 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle }) {
+export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky }) {
   const { t } = useLanguage();
   const [displayName, setDisplayName] = useState(username || '');
 
@@ -426,6 +467,9 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       if (p.preferred_name) setDisplayName(p.preferred_name);
     }).catch(() => {});
   }, []);
+
+  // Moon
+  const [moon, setMoon] = useState(null);
 
   // Stats
   const [entryCount, setEntryCount] = useState(null);
@@ -522,6 +566,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
     fetch('/api/tts/status').then((r) => r.json()).then((d) => {
       setTtsOnline(d.online);
+    }).catch(() => {});
+
+    apiFetch('/api/sky/current').then(r => r.json()).then(data => {
+      if (data?.moon) setMoon(data.moon);
     }).catch(() => {});
   }, []);
 
@@ -707,6 +755,26 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             <span style={s.quoteAuthor}>— {q.author}</span>
           </div>
         ); })()}
+
+        {/* Moon phase widget */}
+        {moon && (
+          <div
+            style={s.moonCard}
+            onClick={() => onNavigateToSky?.()}
+            title="View Sky"
+          >
+            <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
+            <div style={s.moonInfo}>
+              <div style={s.moonPhase}>{moon.phase}</div>
+              <div style={s.moonDetail}>
+                {moon.illumination != null && <span>{Math.round(moon.illumination)}% illuminated</span>}
+                {moon.moonSign && <span> &middot; Moon in {moon.moonSign}</span>}
+              </div>
+              {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
+            </div>
+            <span style={s.moonArrow}>&rsaquo;</span>
+          </div>
+        )}
 
         {/* Insights card */}
         <div style={s.sectionTitle}>{t('nav.journal')}</div>
@@ -984,6 +1052,59 @@ function ArchetypeIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.2" />
       <path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MoonPhaseSVGSmall({ illumination = 50, phase = '' }) {
+  const size = 44;
+  const r = size / 2 - 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const fill = 'var(--strong)';
+
+  const isWaning = phase.toLowerCase().includes('waning') || phase === 'Last Quarter';
+  const isNew = phase === 'New Moon';
+  const isFull = phase === 'Full Moon';
+  const frac = illumination / 100;
+
+  if (isNew) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={fill} strokeWidth="0.5" />
+      </svg>
+    );
+  }
+
+  if (isFull) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={r} fill={fill} />
+      </svg>
+    );
+  }
+
+  const terminatorX = r * Math.abs(2 * frac - 1);
+
+  let d;
+  if (!isWaning) {
+    if (frac <= 0.5) {
+      d = `M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${terminatorX} ${r} 0 0 1 ${cx} ${cy - r}`;
+    } else {
+      d = `M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${terminatorX} ${r} 0 0 0 ${cx} ${cy - r}`;
+    }
+  } else {
+    if (frac <= 0.5) {
+      d = `M ${cx} ${cy - r} A ${r} ${r} 0 0 0 ${cx} ${cy + r} A ${terminatorX} ${r} 0 0 0 ${cx} ${cy - r}`;
+    } else {
+      d = `M ${cx} ${cy - r} A ${r} ${r} 0 0 0 ${cx} ${cy + r} A ${terminatorX} ${r} 0 0 1 ${cx} ${cy - r}`;
+    }
+  }
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={fill} strokeWidth="0.5" opacity="0.15" />
+      <path d={d} fill={fill} />
     </svg>
   );
 }

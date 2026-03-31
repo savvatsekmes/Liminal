@@ -168,6 +168,7 @@ export default function WritingCanvas({
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [titling, setTitling] = useState(false);
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
@@ -269,6 +270,26 @@ export default function WritingCanvas({
       console.error('Polish failed:', err);
     } finally {
       setPolishing(false);
+    }
+  }
+
+  async function handleGenerateTitle() {
+    if (!editor || !entry?.id || titling) return;
+    const text = editor.getText();
+    if (!text || text.trim().length < 10) return;
+    setTitling(true);
+    try {
+      const res = await apiFetch('/api/reflect/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.title) onUpdate({ title: data.title });
+    } catch (err) {
+      console.error('Title generation failed:', err);
+    } finally {
+      setTitling(false);
     }
   }
 
@@ -605,6 +626,29 @@ export default function WritingCanvas({
           >
             {polishing ? t('journal.polishing') : t('journal.polish')}
           </button>
+          <button
+            onClick={handleGenerateTitle}
+            title="Generate title"
+            disabled={titling || words === 0}
+            style={{
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '20px',
+              border: 'none',
+              background: 'var(--near-white)',
+              color: 'var(--muted)',
+              cursor: (titling || words === 0) ? 'default' : 'pointer',
+              transition: 'color 0.15s, background 0.15s, opacity 0.15s',
+              flexShrink: 0,
+              opacity: (titling || words === 0) ? 0.35 : 1,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+            }}
+          >
+            {titling ? <SpinnerIcon /> : <TitleIcon />}
+          </button>
           <MicButton
             isRecording={isRecording}
             isProcessing={isProcessing}
@@ -762,6 +806,26 @@ export default function WritingCanvas({
         />
       )}
     </div>
+  );
+}
+
+function TitleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <line x1="2" y1="3" x2="12" y2="3" />
+      <line x1="2" y1="7" x2="9" y2="7" />
+      <line x1="2" y1="11" x2="6" y2="11" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M7 1a6 6 0 0 1 6 6" opacity="0.3">
+        <animateTransform attributeName="transform" type="rotate" from="0 7 7" to="360 7 7" dur="0.8s" repeatCount="indefinite" />
+      </path>
+    </svg>
   );
 }
 

@@ -5,6 +5,7 @@ import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
+import Calendar from '../components/Calendar';
 
 const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.filter(a => a.value !== 'Auto').map(a => a.value);
 const ALL_TAG = '__all__';
@@ -114,6 +115,17 @@ const s = {
     overflowX: 'hidden',
     padding: '16px 6px',
     gap: '4px',
+  },
+  tagStripDivider: {
+    width: '9px',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'stretch',
+    justifyContent: 'center',
+  },
+  tagStripDividerLine: {
+    width: '1px',
+    background: 'var(--border-color, rgba(0,0,0,0.1))',
   },
   // Session tag selector in header
   sessionTagSelector: {
@@ -506,6 +518,7 @@ function formatSessionDate(dateStr) {
 export default function OraclePage({ initialSessionId, onSessionSelected }) {
   const { t } = useLanguage();
   const [sessions, setSessions] = useState([]);
+  const [showCal, setShowCal] = useState(true);
   const [currentSession, setCurrentSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [archetype, setArchetype] = useState('Zen');
@@ -876,8 +889,37 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       <div style={s.sidebar}>
         <div style={s.sidebarHeader}>
           <span style={s.sidebarTitle}>{t('oracle.conversations')}</span>
-          <button style={s.sidebarNew} onClick={handleNewConversation} title={t('oracle.newConversation')}>+</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button
+              style={{
+                fontSize: '11px',
+                color: showCal ? 'var(--strong)' : 'var(--muted)',
+                background: showCal ? 'var(--panel-bg)' : 'none',
+                border: 'var(--border-style)',
+                borderRadius: '2px',
+                padding: '2px 5px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font)',
+                lineHeight: 1.4,
+                transition: 'color 0.15s, background 0.15s',
+              }}
+              onClick={() => setShowCal(v => !v)}
+              title={t('journal.calendar')}
+            >
+              {t('journal.calendar')}
+            </button>
+            <button style={s.sidebarNew} onClick={handleNewConversation} title={t('oracle.newConversation')}>+</button>
+          </div>
         </div>
+        {showCal && (
+          <Calendar
+            items={filteredSessions}
+            activeId={currentSession?.id}
+            onSelect={(sess) => loadSession(sess.id)}
+            dateField="created_at"
+            titleField="first_message"
+          />
+        )}
         <div style={s.sidebarList}>
           {filteredSessions.length === 0 ? (
             <div style={s.sidebarEmpty}>{t('oracle.noConversations')}</div>
@@ -908,6 +950,11 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
         onAddTag={handleAddTag}
         onDeleteTag={handleDeleteTag}
       />
+
+      {/* Divider between tags and chat */}
+      <div style={s.tagStripDivider}>
+        <div style={s.tagStripDividerLine} />
+      </div>
 
       {/* Main chat area */}
       <div style={s.mainArea}>

@@ -3,6 +3,7 @@ import { apiFetch } from '../utils/api';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from '../components/ResizeDivider';
 import { useLanguage } from '../i18n/LanguageContext';
+import SkyPage from './SkyPage';
 
 const s = {
   root: {
@@ -198,8 +199,43 @@ function AstroField({ label, value, missing }) {
 }
 
 
-export default function PortraitPage() {
+const tabBarStyle = {
+  display: 'flex',
+  gap: '0',
+  borderBottom: '0.5px solid var(--border)',
+  marginBottom: '0',
+  flexShrink: 0,
+  padding: '0 48px',
+};
+const tabStyle = {
+  fontSize: '10px',
+  fontWeight: '600',
+  letterSpacing: '0.14em',
+  textTransform: 'uppercase',
+  color: 'var(--muted)',
+  padding: '14px 20px',
+  cursor: 'pointer',
+  borderBottom: '1.5px solid transparent',
+  transition: 'color 0.15s, border-color 0.15s',
+  background: 'none',
+  border: 'none',
+  fontFamily: 'var(--font)',
+};
+const tabActiveStyle = {
+  color: 'var(--strong)',
+  borderBottom: '1.5px solid var(--strong)',
+};
+
+export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded }) {
   const { t } = useLanguage();
+  const [pageTab, setPageTab] = useState(initialTab || 'portrait');
+
+  useEffect(() => {
+    if (initialTab) {
+      setPageTab(initialTab);
+      onTabLoaded?.();
+    }
+  }, [initialTab]);
   const [portrait, setPortrait] = useState(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -324,9 +360,33 @@ export default function PortraitPage() {
     finally { setGenerating(false); }
   }
 
-  if (!portrait) return <div style={{ padding: '40px', color: 'var(--muted)', fontSize: '13px' }}>{t('common.loading')}</div>;
+  if (!portrait && pageTab === 'portrait') return <div style={{ padding: '40px', color: 'var(--muted)', fontSize: '13px' }}>{t('common.loading')}</div>;
+
+  // Sky or Cards tab — render SkyPage with its own internal tabs pre-selected
+  if (pageTab === 'sky' || pageTab === 'cards') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        <div style={tabBarStyle}>
+          {['portrait', 'sky', 'cards'].map(tb => (
+            <button key={tb} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>
+              {tb === 'portrait' ? 'Portrait' : tb === 'sky' ? 'Sky' : 'Cards'}
+            </button>
+          ))}
+        </div>
+        <SkyPage onNavigateEntry={onNavigateEntry} initialTab={pageTab === 'cards' ? 'cards' : 'sky'} hideTabBar />
+      </div>
+    );
+  }
 
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      <div style={tabBarStyle}>
+        {['portrait', 'sky', 'cards'].map(tb => (
+          <button key={tb} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>
+            {tb === 'portrait' ? 'Portrait' : tb === 'sky' ? 'Sky' : 'Cards'}
+          </button>
+        ))}
+      </div>
     <div style={s.root}>
       {/* ── Left: form column ── */}
       <div style={s.formCol}>
@@ -474,6 +534,7 @@ export default function PortraitPage() {
         }}
         onEditCancel={() => setEditingPortrait(false)}
       />
+    </div>
     </div>
   );
 }

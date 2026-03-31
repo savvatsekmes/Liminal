@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../database');
 const { indexEntry } = require('../services/embeddingService');
 const { requireAuth } = require('../middleware/auth');
+const { getMoonPhase, getSkyNotes } = require('../services/skyService');
 
 router.use(requireAuth);
 
@@ -65,12 +66,17 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { title = 'Untitled', body = '', body_text = '', date, tags = [] } = req.body;
 
+  // Tag with current sky conditions
+  const now = new Date();
+  const moon = getMoonPhase(now);
+  const skyNotes = getSkyNotes(now);
+
   const result = db
     .prepare(
-      `INSERT INTO entries (title, body, body_text, date, tags, user_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO entries (title, body, body_text, date, tags, user_id, moon_phase, moon_sign, sky_notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(title, body, body_text, date || new Date().toISOString().split('T')[0], JSON.stringify(tags), req.userId);
+    .run(title, body, body_text, date || now.toISOString().split('T')[0], JSON.stringify(tags), req.userId, moon.phase, moon.moonSign, skyNotes || null);
 
   const entry = entryRow(db.prepare('SELECT * FROM entries WHERE id = ?').get(result.lastInsertRowid));
 

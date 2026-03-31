@@ -24,6 +24,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   const [previewVersion, setPreviewVersion] = useState(null);
   const [pendingNoteId, setPendingNoteId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
+  const [pendingPortraitTab, setPendingPortraitTab] = useState(null);
 
   const {
     entries,
@@ -100,11 +101,12 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNavigateToEntry={(id) => { selectEntry({ id }); setActiveView('journal'); }}
               onNavigateToNote={(id) => { setPendingNoteId(id); setActiveView('notes'); }}
               onNavigateToOracle={(id) => { setPendingSessionId(id); setActiveView('oracle'); }}
+              onNavigateToSky={() => { setPendingPortraitTab('sky'); setActiveView('portrait'); }}
             />
           );
           if (activeView === 'oracle') return <OraclePage initialSessionId={pendingSessionId} onSessionSelected={() => setPendingSessionId(null)} />;
           if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} />;
-          if (activeView === 'portrait') return <PortraitPage />;
+          if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); setActiveView('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
           if (activeView === 'memory') return <MemoryPage />;
           if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />;
 

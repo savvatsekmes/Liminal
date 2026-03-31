@@ -238,10 +238,16 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     sections.push(`## RELEVANT PAST ENTRIES\nThese past entries are most relevant to what was just written:\n\n${pastContext}`);
   }
 
-  // 5. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
+  // 5. Sky context
+  try {
+    const { getSkyContext } = require('./skyService');
+    sections.push(`Sky context: ${getSkyContext()}`);
+  } catch (e) { /* skip if skyService unavailable */ }
+
+  // 6. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
   sections.push(buildMirrorInstructions(portrait, username));
 
-  // 6. Language instruction
+  // 7. Language instruction
   const s = require('./settingsService');
   const lang = s.get('language') || portrait?.language || 'en';
   if (lang && lang !== 'en') {

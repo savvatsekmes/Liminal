@@ -174,8 +174,13 @@ db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete =
 
 addColumnSafe('entries',         'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('notes',           'user_id', 'INTEGER DEFAULT 1');
+addColumnSafe('notes',           'title', "TEXT DEFAULT ''");
 addColumnSafe('life_context',    'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('oracle_sessions', 'tag',     'TEXT');
+
+addColumnSafe('entries', 'moon_phase', 'TEXT');
+addColumnSafe('entries', 'moon_sign',  'TEXT');
+addColumnSafe('entries', 'sky_notes',  'TEXT');
 
 // Recreate portrait table to remove id=1 constraint and add user_id
 const portraitCols = db.prepare("PRAGMA table_info(portrait)").all().map(c => c.name);
@@ -276,6 +281,16 @@ seedSettingFromEnv('openai_api_key',  'OPENAI_API_KEY');
 seedSettingFromEnv('ollama_url',      'OLLAMA_URL');
 seedSettingFromEnv('ollama_model',    'OLLAMA_MODEL');
 seedSettingFromEnv('chatterbox_url',  'CHATTERBOX_URL');
+
+// Sky cache
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sky_cache (
+    id         INTEGER PRIMARY KEY,
+    cache_key  TEXT UNIQUE,
+    data       TEXT,
+    cached_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
 
 // YouTube transcript cache
 db.exec(`

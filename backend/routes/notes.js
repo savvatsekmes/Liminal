@@ -78,6 +78,7 @@ router.put('/:id', (req, res) => {
   if (attribution !== undefined) { fields.push('attribution = ?'); params.push(attribution || null); }
   if (target_date !== undefined) { fields.push('target_date = ?'); params.push(target_date || null); }
   if (custom_tag !== undefined)  { fields.push('custom_tag = ?');  params.push(custom_tag || null); }
+  if (req.body.title !== undefined) { fields.push('title = ?');    params.push(req.body.title); }
 
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 

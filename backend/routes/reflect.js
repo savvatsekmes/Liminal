@@ -253,6 +253,34 @@ Rules:
   }
 });
 
+// ── POST /api/reflect/title — generate a title from text ────────────────────
+
+router.post('/title', async (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
+
+  const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (plain.length < 10) return res.status(400).json({ error: 'text too short to generate a title' });
+
+  const systemPrompt = `You generate short, evocative titles for personal journal entries and notes.
+
+Rules:
+- Return ONLY the title, nothing else — no quotes, no punctuation wrapping, no explanation
+- 2–8 words maximum
+- Capture the essence or emotional centre of the text
+- Use the writer's own language/tone where possible
+- Do NOT use generic titles like "My Thoughts" or "Daily Reflection"
+- Do NOT use colons or subtitle formats`;
+
+  try {
+    const title = await llm.call(systemPrompt, plain.slice(0, 2000), { maxTokens: 30 });
+    res.json({ title: title.trim().replace(/^["']|["']$/g, '') });
+  } catch (err) {
+    console.error('[reflect/title] Error:', err.message);
+    res.status(500).json({ error: 'Title generation failed.' });
+  }
+});
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildPortraitString(portrait) {
