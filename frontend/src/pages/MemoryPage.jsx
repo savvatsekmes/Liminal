@@ -189,7 +189,7 @@ const s = {
   },
 };
 
-const TAB_LABELS = { style: 'context.responseStyle', archetypes: 'context.archetypes', memory: 'context.memory' };
+const TAB_LABELS = { style: 'context.responseStyle', archetypes: 'Archetypes', memory: 'context.memory' };
 
 export default function MemoryPage() {
   const { t } = useLanguage();

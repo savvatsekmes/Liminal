@@ -50,11 +50,10 @@ export default function ArchetypeAvatar({ archetype, size = 28, color }) {
     jungian: (
       <svg width={s} height={s} viewBox={v}>
         {bg}
-        {/* Yin-yang style: circle with dividing line */}
-        <circle cx={r} cy={r} r={r * 0.45} stroke={c} strokeWidth="1.2" fill="none" />
-        <line x1={r} y1={r * 0.55} x2={r} y2={r * 1.45} stroke={c} strokeWidth="1" />
-        <circle cx={r} cy={r * 0.78} r="1.5" fill={c} />
-        <circle cx={r} cy={r * 1.22} r="1.5" fill="none" stroke={c} strokeWidth="0.8" />
+        {/* Mirror / mask — shadow work */}
+        <circle cx={r} cy={r * 0.62} r={r * 0.24} stroke={c} strokeWidth="1.2" fill="none" />
+        <circle cx={r} cy={r * 0.62} r={r * 0.24} fill={c} opacity="0.25" clipPath={`inset(0 50% 0 0)`} />
+        <path d={`M ${r - r * 0.35} ${r * 1.5} a ${r * 0.35} ${r * 0.3} 0 0 1 ${r * 0.7} 0`} stroke={c} strokeWidth="1.2" fill="none" strokeLinecap="round" />
       </svg>
     ),
     stoic: (
@@ -78,11 +77,20 @@ export default function ArchetypeAvatar({ archetype, size = 28, color }) {
     taoist: (
       <svg width={s} height={s} viewBox={v}>
         {bg}
-        {/* Water / wave */}
-        <path d={`M ${r * 0.4} ${r} Q ${r * 0.7} ${r * 0.7} ${r} ${r} T ${r * 1.6} ${r}`}
-          stroke={c} strokeWidth="1.3" fill="none" strokeLinecap="round" />
-        <path d={`M ${r * 0.5} ${r * 1.2} Q ${r * 0.8} ${r * 0.95} ${r * 1.1} ${r * 1.2} T ${r * 1.55} ${r * 1.2}`}
-          stroke={c} strokeWidth="1" fill="none" strokeLinecap="round" opacity="0.6" />
+        {/* Yin-yang */}
+        <defs>
+          <clipPath id={`tao-left-${s}`}><rect x="0" y="0" width={r} height={s} /></clipPath>
+          <clipPath id={`tao-right-${s}`}><rect x={r} y="0" width={r} height={s} /></clipPath>
+        </defs>
+        <circle cx={r} cy={r} r={r * 0.45} stroke={c} strokeWidth="1.2" fill="none" />
+        {/* Left half filled */}
+        <circle cx={r} cy={r} r={r * 0.45} fill={c} opacity="0.7" clipPath={`url(#tao-left-${s})`} />
+        {/* S-curve: top small arc dark, bottom small arc light */}
+        <path d={`M ${r} ${r * 0.55} A ${r * 0.225} ${r * 0.225} 0 0 1 ${r} ${r} A ${r * 0.225} ${r * 0.225} 0 0 0 ${r} ${r * 1.45}`} fill={c} opacity="0.7" />
+        <path d={`M ${r} ${r * 0.55} A ${r * 0.225} ${r * 0.225} 0 0 0 ${r} ${r} A ${r * 0.225} ${r * 0.225} 0 0 1 ${r} ${r * 1.45}`} fill="white" />
+        {/* Dots */}
+        <circle cx={r} cy={r * 0.775} r={r * 0.07} fill="white" />
+        <circle cx={r} cy={r * 1.225} r={r * 0.07} fill={c} opacity="0.7" />
       </svg>
     ),
     friend: (

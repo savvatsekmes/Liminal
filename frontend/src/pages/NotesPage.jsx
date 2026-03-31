@@ -94,10 +94,30 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
   const newTagRef = useRef(null);
 
   const [noteListWidth, startNoteListDrag] = useResizable(210, { min: 140, max: 380 });
-  const [mirrorPanelWidth, startMirrorDrag] = useResizable(
-    Math.floor((window.innerWidth - 48 - 76 - 210) / 2),
-    { min: 180, max: window.innerWidth - 48 - 76 - 210 - 200 },
-  );
+  // Mirror split as percentage of editor+mirror area
+  const [mirrorPct, setMirrorPct] = useState(50);
+  const editorMirrorRef = useRef(null);
+  const startMirrorDrag = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startPct = mirrorPct;
+    const areaW = editorMirrorRef.current?.offsetWidth || 1;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    function onMove(evt) {
+      const delta = startX - evt.clientX;
+      const deltaPct = (delta / areaW) * 100;
+      setMirrorPct(Math.max(15, Math.min(75, startPct + deltaPct)));
+    }
+    function onUp() {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [mirrorPct]);
 
   // Load saved reflection when note changes
   useEffect(() => {
@@ -290,39 +310,41 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
 
       <ResizeDivider onMouseDown={startNoteListDrag} />
 
-      {/* Note editor */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--white)' }}>
-        {activeNote ? (
-          <NoteEditor
-            key={activeNote.id}
-            note={activeNote}
-            onChange={scheduleUpdate}
-            customTags={customTags}
-            onVersionPreview={setPreviewVersion}
-            previewVersionId={previewVersion?.id}
-          />
-        ) : (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexDirection: 'column',
-            gap: '12px',
-            color: 'var(--muted)',
-          }}>
-            <div style={{ fontSize: '28px', opacity: 0.3 }}>◈</div>
-            <div style={{ fontSize: '13px' }}>{t('notes.selectNote')}</div>
-            <button className="btn-ghost" onClick={handleCreateNote} style={{ marginTop: '4px' }}>
-              {t('notes.newNote')}
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Editor + mirror area */}
+      <div ref={editorMirrorRef} style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+        {/* Note editor */}
+        <div style={{ width: `${100 - mirrorPct}%`, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--white)' }}>
+          {activeNote ? (
+            <NoteEditor
+              key={activeNote.id}
+              note={activeNote}
+              onChange={scheduleUpdate}
+              customTags={customTags}
+              onVersionPreview={setPreviewVersion}
+              previewVersionId={previewVersion?.id}
+            />
+          ) : (
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              gap: '12px',
+              color: 'var(--muted)',
+            }}>
+              <div style={{ fontSize: '28px', opacity: 0.3 }}>◈</div>
+              <div style={{ fontSize: '13px' }}>{t('notes.selectNote')}</div>
+              <button className="btn-ghost" onClick={handleCreateNote} style={{ marginTop: '4px' }}>
+                {t('notes.newNote')}
+              </button>
+            </div>
+          )}
+        </div>
 
-      <ResizeDivider onMouseDown={startMirrorDrag} inverted />
-      {/* Note mirror panel */}
-      <div style={{ width: mirrorPanelWidth + 'px', flexShrink: 0, overflow: 'hidden' }}>
+        <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted />
+        {/* Note mirror panel */}
+        <div style={{ width: `${mirrorPct}%`, minWidth: 0, overflow: 'hidden' }}>
         <NoteMirrorPanel
           note={activeNote}
           blocks={reflectBlocks}
@@ -333,6 +355,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           onClearPreview={() => setPreviewVersion(null)}
         />
       </div>
+      </div>{/* end editor+mirror area */}
 
       {/* Confirm modal */}
       {confirmModal && (

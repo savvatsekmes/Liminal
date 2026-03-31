@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from './ResizeDivider';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
@@ -140,10 +140,30 @@ export default function Layout({ children, activeView, onViewChange, onLogout, a
   const { t, lang, setLanguage } = useLanguage();
   const [entryListOpen, setEntryListOpen] = useState(true);
   const [entryListWidth, startEntryDrag] = useResizable(240, { min: 160, max: 480 });
-  const [mirrorWidth, startMirrorDrag] = useResizable(
-    Math.floor((window.innerWidth - 48 - 240) / 2),
-    { min: 200, max: window.innerWidth - 48 - 240 - 200 },
-  );
+  // Mirror split as percentage (0–100) of content area
+  const [mirrorPct, setMirrorPct] = useState(50);
+  const contentRef = useRef(null);
+  const startMirrorDrag = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startPct = mirrorPct;
+    const contentW = contentRef.current?.offsetWidth || 1;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    function onMove(evt) {
+      const delta = startX - evt.clientX;
+      const deltaPct = (delta / contentW) * 100;
+      setMirrorPct(Math.max(15, Math.min(75, startPct + deltaPct)));
+    }
+    function onUp() {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [mirrorPct]);
   const [popoutOpen, setPopoutOpen] = useState(false);
   const popoutRef = useRef(null);
 
@@ -300,12 +320,19 @@ export default function Layout({ children, activeView, onViewChange, onLogout, a
       )}
 
       {/* Main content: canvas + mirror */}
-      <div style={styles.content}>
-        {canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}
-        {activeView === 'journal' && <ResizeDivider onMouseDown={startMirrorDrag} inverted />}
+      <div style={styles.content} ref={contentRef}>
         <div style={{
-          width: activeView === 'journal' ? mirrorWidth + 'px' : 0,
-          flexShrink: 0,
+          width: activeView === 'journal' ? `${100 - mirrorPct}%` : '100%',
+          minWidth: 0,
+          display: 'flex',
+          overflow: 'hidden',
+        }}>
+          {canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}
+        </div>
+        {activeView === 'journal' && <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted />}
+        <div style={{
+          width: activeView === 'journal' ? `${mirrorPct}%` : 0,
+          minWidth: 0,
           overflow: 'hidden',
         }}>
           {mirror}
