@@ -28,6 +28,8 @@ backend/.env
 
 # IDE / Claude Code
 .claude/
+.mcp.json
+.vscode/
 
 # OS
 .DS_Store

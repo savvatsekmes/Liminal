@@ -85,7 +85,7 @@ const s = {
     fontSize: '13px',
     padding: '8px 10px',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     background: 'var(--white)',
     color: 'var(--strong)',
     outline: 'none',
@@ -98,7 +98,7 @@ const s = {
     fontSize: '13px',
     padding: '8px 10px',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     background: 'var(--white)',
     color: 'var(--strong)',
     outline: 'none',
@@ -109,7 +109,7 @@ const s = {
   segmented: {
     display: 'inline-flex',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     overflow: 'hidden',
   },
   segBtn: {
@@ -179,13 +179,13 @@ const s = {
     padding: '3px 8px',
     background: 'var(--panel-bg)',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     color: 'var(--body)',
   },
   memoryBox: {
     padding: '14px 16px',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '16px',
     background: 'var(--near-white)',
     fontSize: '12px',
     color: 'var(--body)',
@@ -198,7 +198,7 @@ const s = {
   confirmBox: {
     padding: '16px',
     border: '1px solid #e0c0be',
-    borderRadius: '2px',
+    borderRadius: '16px',
     background: '#fff9f9',
     marginTop: '12px',
   },
@@ -209,7 +209,7 @@ const s = {
     padding: '10px 18px',
     background: 'var(--strong)',
     color: 'var(--white)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     fontSize: '13px',
     zIndex: 9999,
     pointerEvents: 'none',
@@ -406,7 +406,7 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
         <select
           value={selected}
           onChange={e => setSelected(e.target.value)}
-          style={{ flex: 1, fontSize: '12px', padding: '6px 8px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--white)', color: 'var(--strong)', outline: 'none', fontFamily: 'var(--font)' }}
+          style={{ flex: 1, fontSize: '12px', padding: '6px 8px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)', color: 'var(--strong)', outline: 'none', fontFamily: 'var(--font)' }}
         >
           <option value=''>{t('settings.selectModel')}</option>
           {RECOMMENDED_MODELS.map(x => (
@@ -421,7 +421,7 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
           ) : (
             <button
               onClick={() => downloadModel(m.name)}
-              style={{ fontSize: '11px', color: 'var(--body)', padding: '5px 12px', border: 'var(--border-style)', borderRadius: '2px', flexShrink: 0, background: 'var(--white)', cursor: 'pointer', fontFamily: 'var(--font)' }}
+              style={{ fontSize: '11px', color: 'var(--body)', padding: '5px 12px', border: 'var(--border-style)', borderRadius: '10px', flexShrink: 0, background: 'var(--white)', cursor: 'pointer', fontFamily: 'var(--font)' }}
             >
               {t('settings.download')}
             </button>
@@ -432,7 +432,7 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
         <div style={{ marginTop: '8px' }}>
           <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>{pull.status}</div>
           {pull.total > 0 && (
-            <div style={{ height: '3px', background: 'var(--panel-bg)', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ height: '3px', background: 'var(--panel-bg)', borderRadius: '10px', overflow: 'hidden' }}>
               <div style={{ height: '100%', background: 'var(--strong)', width: `${Math.round((pull.progress / pull.total) * 100)}%`, transition: 'width 0.3s' }} />
             </div>
           )}
@@ -450,7 +450,7 @@ function OllamaInstallGuide({ onRecheck }) {
       marginTop: '12px',
       padding: '16px 18px',
       border: 'var(--border-style)',
-      borderRadius: '2px',
+      borderRadius: '16px',
       background: 'var(--near-white)',
       fontSize: '12px',
       color: 'var(--body)',
@@ -694,7 +694,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('settings.checkingOllama')}</div>
             )}
             {ollamaData && !ollamaData.online && (
-              <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--near-white)' }}>
                 {t('settings.ollamaOffline')}
               </div>
             )}
@@ -716,7 +716,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               </select>
             )}
             {ollamaData?.online && ollamaData.models?.length === 0 && (
-              <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--near-white)' }}>
                 {t('settings.noModelsInstalled')}
               </div>
             )}
@@ -1272,7 +1272,7 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
       )}
 
       {deleteStep === 'confirm' && (
-        <div style={{ padding: '14px', border: '1px solid #e0c0be', borderRadius: '2px', background: 'var(--near-white)' }}>
+        <div style={{ padding: '14px', border: '1px solid #e0c0be', borderRadius: '16px', background: 'var(--near-white)' }}>
           <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
             {t('settings.deleteAccountConfirm')}
           </div>
@@ -1284,7 +1284,7 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
       )}
 
       {deleteStep === 'password' && (
-        <div style={{ padding: '14px', border: '1px solid #e0c0be', borderRadius: '2px', background: 'var(--near-white)' }}>
+        <div style={{ padding: '14px', border: '1px solid #e0c0be', borderRadius: '16px', background: 'var(--near-white)' }}>
           <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
             {t('settings.deleteAccountPassword')}
           </div>
@@ -1543,7 +1543,7 @@ function DataSection({ showToast }) {
           style={{
             border: `1.5px dashed ${notionDragging ? 'var(--strong)' : 'var(--border)'}`,
             background: notionDragging ? 'var(--near-white)' : 'transparent',
-            borderRadius: '3px',
+            borderRadius: '16px',
             padding: '28px 24px',
             textAlign: 'center',
             cursor: 'pointer',
@@ -1574,7 +1574,7 @@ function DataSection({ showToast }) {
         </div>
 
         {showNotionProgress && (
-          <div style={{ border: 'var(--border-style)', borderRadius: '2px', overflow: 'hidden', background: 'var(--panel-bg)' }}>
+          <div style={{ border: 'var(--border-style)', borderRadius: '10px', overflow: 'hidden', background: 'var(--panel-bg)' }}>
             <div style={{ height: '3px', background: 'var(--strong)', width: `${notionPct}%`, transition: 'width 0.4s ease' }} />
             <div style={{ padding: '8px 12px', fontSize: '12px', color: 'var(--body)' }}>
               {notionStatus.phase === 'error'

@@ -3,8 +3,10 @@ import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
+import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
+import ArchetypeAvatar from '../components/ArchetypeAvatar';
 
-const BUILT_IN_ARCHETYPES = ['Zen', 'Jungian', 'Stoic', 'Somatic', 'Taoist', 'Direct Friend'];
+const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.filter(a => a.value !== 'Auto').map(a => a.value);
 const ALL_TAG = '__all__';
 
 // ── Styles ─────────────────────────────────────────────────────────────────
@@ -60,7 +62,7 @@ const s = {
   sidebarItem: {
     padding: '8px 12px',
     cursor: 'pointer',
-    borderRadius: '2px',
+    borderRadius: '10px',
     margin: '1px 6px',
     transition: 'background 0.1s',
   },
@@ -139,7 +141,7 @@ const s = {
   confirmBox: {
     background: 'var(--white)',
     border: 'var(--border-style)',
-    borderRadius: '4px',
+    borderRadius: '16px',
     padding: '24px 28px',
     width: '320px',
     maxWidth: '90vw',
@@ -160,7 +162,7 @@ const s = {
     fontSize: '12px',
     fontWeight: '500',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     cursor: 'pointer',
     fontFamily: 'var(--font)',
     background: 'var(--white)',
@@ -209,7 +211,7 @@ const s = {
     fontSize: '12px',
     padding: '4px 8px',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     background: 'var(--white)',
     color: 'var(--strong)',
     outline: 'none',
@@ -221,7 +223,7 @@ const s = {
     color: 'var(--muted)',
     padding: '4px 8px',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     background: 'var(--white)',
     cursor: 'pointer',
     fontFamily: 'var(--font)',
@@ -237,7 +239,7 @@ const s = {
     marginTop: '4px',
     background: 'var(--white)',
     border: 'var(--border-style)',
-    borderRadius: '3px',
+    borderRadius: '16px',
     minWidth: '260px',
     zIndex: 100,
     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
@@ -268,7 +270,7 @@ const s = {
   createBox: {
     background: 'var(--white)',
     border: 'var(--border-style)',
-    borderRadius: '4px',
+    borderRadius: '16px',
     padding: '28px 32px',
     width: '360px',
     maxWidth: '90vw',
@@ -291,7 +293,7 @@ const s = {
     fontSize: '13px',
     padding: '8px 10px',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     outline: 'none',
     fontFamily: 'var(--font)',
     color: 'var(--strong)',
@@ -310,7 +312,7 @@ const s = {
     fontSize: '12px',
     fontWeight: '500',
     border: 'var(--border-style)',
-    borderRadius: '2px',
+    borderRadius: '10px',
     cursor: 'pointer',
     fontFamily: 'var(--font)',
   },
@@ -376,7 +378,7 @@ const s = {
   },
   msgBubble: {
     padding: '12px 16px',
-    borderRadius: '3px',
+    borderRadius: '16px',
     lineHeight: '1.75',
   },
   msgBubbleUser: {
@@ -442,7 +444,7 @@ const s = {
     padding: '12px 16px',
     background: 'var(--near-white)',
     border: 'var(--border-style)',
-    borderRadius: '3px',
+    borderRadius: '16px',
   },
   dot: {
     width: '5px',
@@ -465,7 +467,7 @@ const s = {
     fontSize: '13px',
     padding: '10px 12px',
     border: 'var(--border-style)',
-    borderRadius: '3px',
+    borderRadius: '10px',
     background: 'var(--white)',
     color: 'var(--strong)',
     outline: 'none',
@@ -508,6 +510,9 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
   const [messages, setMessages] = useState([]);
   const [archetype, setArchetype] = useState('Zen');
   const [archetypeOptions, setArchetypeOptions] = useState([...BUILT_IN_ARCHETYPES]);
+  const [customArchetypesList, setCustomArchetypesList] = useState([]);
+  const [archetypeOpen, setArchetypeOpen] = useState(false);
+  const archetypePickerRef = useRef(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showCreateArchetype, setShowCreateArchetype] = useState(false);
@@ -536,6 +541,18 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     setInput((prev) => prev + (prev.trim() ? ' ' : '') + text);
   });
 
+  // Close archetype picker on outside click
+  useEffect(() => {
+    if (!archetypeOpen) return;
+    function handleClick(e) {
+      if (archetypePickerRef.current && !archetypePickerRef.current.contains(e.target)) {
+        setArchetypeOpen(false);
+      }
+    }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [archetypeOpen]);
+
   useEffect(() => {
     // Load sessions, portrait archetypes, tags, and TTS status in parallel
     Promise.all([
@@ -558,6 +575,10 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
           const all = [...new Set([...BUILT_IN_ARCHETYPES, ...active.filter((a) => !BUILT_IN_ARCHETYPES.includes(a))])];
           setArchetypeOptions(all);
           if (active.length) setArchetype(active[0]);
+        } catch {}
+        try {
+          const custom = Array.isArray(portrait.custom_archetypes) ? portrait.custom_archetypes : JSON.parse(portrait.custom_archetypes || '[]');
+          if (custom.length) setCustomArchetypesList(custom);
         } catch {}
       }
       setTtsOnline(ttsData.online);
@@ -826,14 +847,21 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
   async function handleSaveMessage(msg) {
     const title = (messages.find((m, i) => m.role === 'user' && messages[i + 1]?.id === msg.id)?.content || t('oracle.oracleConversation')).slice(0, 70);
     const body = `<p><em>${t('oracle.title')} — ${msg.archetype || archetype}</em></p><p>${msg.content.split('\n\n').join('</p><p>')}</p>`;
+    const body_text = msg.content;
     try {
-      await apiFetch('/api/entries', {
+      const res = await apiFetch('/api/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, body }),
+        body: JSON.stringify({ title, body, body_text }),
       });
-      setSavedMsgIds((prev) => new Set([...prev, msg.id]));
-    } catch {}
+      if (res.ok) {
+        setSavedMsgIds((prev) => new Set([...prev, msg.id]));
+      } else {
+        console.error('Save to journal failed:', await res.text());
+      }
+    } catch (err) {
+      console.error('Save to journal error:', err);
+    }
   }
 
   const showEmpty = !loading && messages.length === 0;
@@ -903,16 +931,6 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
               )}
             </select>
           )}
-          <select
-            style={s.archetypeSelect}
-            value={archetype}
-            onChange={(e) => handleArchetypeChange(e.target.value)}
-          >
-            {archetypeOptions.map((a) => (
-              <option key={a} value={a}>{a}</option>
-            ))}
-            <option value="__create__">{t('oracle.createArchetypeOption')}</option>
-          </select>
           <button style={s.headerBtn} onClick={handleNewConversation}>
             {t('oracle.clear')}
           </button>
@@ -1017,6 +1035,94 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
           }}
           rows={1}
         />
+        {/* Archetype picker */}
+        <div style={{ position: 'relative' }} ref={archetypePickerRef}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
+            title={archetype}
+            type="button"
+            style={{
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '20px',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'color 0.15s, background 0.15s',
+              flexShrink: 0,
+              background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+              color: 'var(--strong)',
+              boxShadow: archetypeOpen
+                ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+            }}
+          >
+            {(() => {
+              const builtIn = BUILT_IN_ARCH_OBJECTS.find(a => a.value === archetype);
+              const custom = customArchetypesList.find(a => a.name === archetype);
+              if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color="var(--strong)" />;
+              if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+              return <ArchetypeAvatar archetype={{ value: archetype }} size={20} color="var(--strong)" />;
+            })()}
+          </button>
+          {archetypeOpen && (
+            <div style={{
+              position: 'absolute',
+              bottom: '46px',
+              right: 0,
+              background: 'var(--white)',
+              borderRadius: '12px',
+              padding: '6px',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.06)',
+              zIndex: 50,
+              minWidth: '160px',
+            }}>
+              {BUILT_IN_ARCH_OBJECTS.map((a) => (
+                <button
+                  key={a.value}
+                  style={{
+                    display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left',
+                    padding: '7px 14px', fontSize: '12px', background: 'none', border: 'none',
+                    borderRadius: '8px', cursor: 'pointer', fontFamily: 'var(--font)',
+                    transition: 'background 0.1s',
+                    fontWeight: archetype === a.value ? '600' : '400',
+                    color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
+                  }}
+                  onClick={() => { handleArchetypeChange(a.value); setArchetypeOpen(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
+                  <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
+                </button>
+              ))}
+              {customArchetypesList.length > 0 && (
+                <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
+              )}
+              {customArchetypesList.map((c) => (
+                <button
+                  key={c.name}
+                  style={{
+                    display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left',
+                    padding: '7px 14px', fontSize: '12px', background: 'none', border: 'none',
+                    borderRadius: '8px', cursor: 'pointer', fontFamily: 'var(--font)',
+                    transition: 'background 0.1s',
+                    fontWeight: archetype === c.name ? '600' : '400',
+                    color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
+                  }}
+                  onClick={() => { handleArchetypeChange(c.name); setArchetypeOpen(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+                  <span style={{ marginLeft: '8px' }}>{c.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <MicButton
           isRecording={isDictating}
           isProcessing={isDictatingProcessing}
@@ -1028,7 +1134,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
           onClick={handleSend}
           disabled={loading || !input.trim()}
         >
-          {t('oracle.send')}
+          {t('oracle.ask')}
         </button>
       </div>
 

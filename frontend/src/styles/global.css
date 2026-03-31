@@ -127,7 +127,7 @@ input, textarea, select {
   color: var(--strong);
   background: var(--white);
   border: var(--border-style);
-  border-radius: 2px;
+  border-radius: 10px;
   padding: 7px 10px;
   outline: none;
   transition: border-color 0.15s;

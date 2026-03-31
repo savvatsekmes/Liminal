@@ -15,6 +15,7 @@ router.get('/', (req, res) => {
     ...row,
     archetypes: parseJSON(row.archetypes, []),
     active_archetypes: parseJSON(row.active_archetypes, []),
+    custom_archetypes: parseJSON(row.custom_archetypes, []),
   };
   res.json(parsed);
 });
@@ -42,6 +43,7 @@ router.put('/', (req, res) => {
     sex, pronouns, preferred_name,
     life_path_number, soul_card, life_path_card,
     working_tarot_card, season_of_life, current_intention,
+    custom_archetypes,
   } = req.body;
 
   const fields = [];
@@ -93,6 +95,11 @@ router.put('/', (req, res) => {
     params.push(JSON.stringify(active_archetypes));
   }
 
+  if (custom_archetypes !== undefined) {
+    fields.push('custom_archetypes = ?');
+    params.push(JSON.stringify(custom_archetypes));
+  }
+
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 
   fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -105,6 +112,7 @@ router.put('/', (req, res) => {
     ...updated,
     archetypes: parseJSON(updated.archetypes, []),
     active_archetypes: parseJSON(updated.active_archetypes, []),
+    custom_archetypes: parseJSON(updated.custom_archetypes, []),
   });
 });
 

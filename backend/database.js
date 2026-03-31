@@ -53,8 +53,9 @@ db.exec(`
     slider_light_deep           INTEGER DEFAULT 50,
     slider_conversational_poetic INTEGER DEFAULT 50,
     slider_encouraging_challenging INTEGER DEFAULT 50,
-    archetypes   TEXT NOT NULL DEFAULT '["Zen","Jungian","Stoic","Somatic","Taoist","Direct Friend"]',
+    archetypes   TEXT NOT NULL DEFAULT '["Zen","Jungian","Stoic","Somatic","Taoist","Direct Friend","Alan Watts"]',
     active_archetypes TEXT NOT NULL DEFAULT '["Zen","Jungian","Stoic","Direct Friend"]',
+    custom_archetypes TEXT NOT NULL DEFAULT '[]',
     language     TEXT DEFAULT 'en',
     updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -163,6 +164,7 @@ addColumnSafe('portrait', 'season_of_life', 'TEXT');
 addColumnSafe('portrait', 'current_intention', 'TEXT');
 addColumnSafe('portrait', 'sex', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
+addColumnSafe('portrait', 'custom_archetypes', "TEXT NOT NULL DEFAULT '[]'");
 
 addColumnSafe('users', 'onboarding_complete', 'INTEGER DEFAULT 0');
 addColumnSafe('users', 'avatar_path', 'TEXT');

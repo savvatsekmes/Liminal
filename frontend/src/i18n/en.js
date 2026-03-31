@@ -324,6 +324,7 @@ export default {
   'oracle.saveToJournal': '+ Save to journal',
   'oracle.askArchetype': 'Ask {archetype} anything\u2026',
   'oracle.send': 'Send \u203a',
+  'oracle.ask': 'Ask \u203a',
   'oracle.archetypeName': 'Name',
   'oracle.archetypeNamePlaceholder': 'e.g. Alan Watts, Master Roshi, Stoic Warrior',
   'oracle.archetypeDescription': 'Description (optional)',
@@ -592,6 +593,8 @@ export default {
   'archetype.somatic': 'Somatic',
   'archetype.taoist': 'Taoist',
   'archetype.directFriend': 'Direct Friend',
+  'archetype.sufi': 'Sufi',
+  'archetype.alanWatts': 'Alan Watts',
 
   // ── Mic ──
   'mic.dictate': 'Dictate',

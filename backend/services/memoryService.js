@@ -572,12 +572,24 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   const candorAsk = buildCandorInstruction(portrait);
   if (candorAsk) sections.push(candorAsk);
 
-  sections.push(
-    `You are ${archetype}. This person has asked you a direct question. ` +
-    `Draw on everything you know about them. Answer warmly, personally, and directly ` +
-    `in 2-4 prose paragraphs. No lists, no headers, no bullet points. ` +
-    `Speak directly to them using "you". Do not restate the question.`
-  );
+  // Check if this is a custom archetype with a user-defined prompt
+  const customPrompt = getCustomArchetypePrompt(portrait, archetype);
+  if (customPrompt) {
+    sections.push(
+      `You are ${archetype}. ${customPrompt}\n\n` +
+      `This person has asked you a direct question. ` +
+      `Draw on everything you know about them. Answer warmly, personally, and directly ` +
+      `in 2-4 prose paragraphs. No lists, no headers, no bullet points. ` +
+      `Speak directly to them using "you". Do not restate the question.`
+    );
+  } else {
+    sections.push(
+      `You are ${archetype}. This person has asked you a direct question. ` +
+      `Draw on everything you know about them. Answer warmly, personally, and directly ` +
+      `in 2-4 prose paragraphs. No lists, no headers, no bullet points. ` +
+      `Speak directly to them using "you". Do not restate the question.`
+    );
+  }
 
   const s = require('./settingsService');
   const lang = s.get('language') || portrait?.language || 'en';
@@ -601,13 +613,25 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
   const candorOracle = buildCandorInstruction(portrait);
   if (candorOracle) sections.push(candorOracle);
 
-  sections.push(
-    `You are ${archetype}. You are in an ongoing conversation with this person. ` +
-    `You know them deeply through their journal — their patterns, struggles, growth, and what they're moving toward. ` +
-    `Respond as ${archetype} would: in their voice, their wisdom tradition, their way of seeing. ` +
-    `Prose only — no bullet points, no lists, no headers. Be warm, direct, and personally resonant. ` +
-    `Speak to them as "you". Stay in character throughout.`
-  );
+  // Check if this is a custom archetype with a user-defined prompt
+  const customPrompt = getCustomArchetypePrompt(portrait, archetype);
+  if (customPrompt) {
+    sections.push(
+      `You are ${archetype}. ${customPrompt}\n\n` +
+      `You are in an ongoing conversation with this person. ` +
+      `You know them deeply through their journal — their patterns, struggles, growth, and what they're moving toward. ` +
+      `Prose only — no bullet points, no lists, no headers. Be warm, direct, and personally resonant. ` +
+      `Speak to them as "you". Stay in character throughout.`
+    );
+  } else {
+    sections.push(
+      `You are ${archetype}. You are in an ongoing conversation with this person. ` +
+      `You know them deeply through their journal — their patterns, struggles, growth, and what they're moving toward. ` +
+      `Respond as ${archetype} would: in their voice, their wisdom tradition, their way of seeing. ` +
+      `Prose only — no bullet points, no lists, no headers. Be warm, direct, and personally resonant. ` +
+      `Speak to them as "you". Stay in character throughout.`
+    );
+  }
 
   const s = require('./settingsService');
   const lang = s.get('language') || portrait?.language || 'en';
@@ -626,6 +650,17 @@ const LANGUAGE_NAMES = {
 
 function getLanguageName(code) {
   return LANGUAGE_NAMES[code] || code;
+}
+
+function getCustomArchetypePrompt(portrait, archetype) {
+  if (!portrait || !archetype) return null;
+  try {
+    const customs = JSON.parse(portrait.custom_archetypes || '[]');
+    const match = customs.find(c => c.name === archetype);
+    return match?.prompt || null;
+  } catch {
+    return null;
+  }
 }
 
 module.exports = {

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
@@ -28,6 +28,8 @@ import DoodleModal from '../components/DoodleModal';
 import { CardReading } from '../extensions/CardReading';
 import VersionsPanel from '../components/VersionsPanel';
 import { useResizable } from '../hooks/useResizable';
+import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
+import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import ResizeDivider from '../components/ResizeDivider';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -776,8 +778,45 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const ttsAudioRef = useRef(null);
+  const [contextPopup, setContextPopup] = useState(null);
+  const editorWrapRef = useRef(null);
+  const contextPopupRef = useRef(null);
 
   useEffect(() => { setSaveStatus('idle'); }, [note.id]);
+
+  // Close context popup on click outside
+  useEffect(() => {
+    if (!contextPopup) return;
+    function close(e) {
+      if (contextPopupRef.current && contextPopupRef.current.contains(e.target)) return;
+      setContextPopup(null);
+    }
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [contextPopup]);
+
+  const handleEditorContextMenu = useCallback((e) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+      setContextPopup(null);
+      return;
+    }
+    const text = sel.toString().trim();
+    if (editorWrapRef.current && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      if (!editorWrapRef.current.contains(range.commonAncestorContainer)) {
+        setContextPopup(null);
+        return;
+      }
+      const rootRect = editorWrapRef.current.getBoundingClientRect();
+      setContextPopup({
+        x: e.clientX - rootRect.left,
+        y: e.clientY - rootRect.top,
+        below: e.clientY > window.innerHeight * 0.6,
+        text,
+      });
+    }
+  }, []);
 
   async function handlePolish() {
     const ed = editorRef.current;
@@ -971,7 +1010,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px' }}>
+      <div ref={editorWrapRef} onContextMenu={handleEditorContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
         {note.type === 'quote' && (
           <QuoteEditor note={note} onChange={onChange} editor={editor} />
         )}
@@ -992,6 +1031,70 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
             editor.chain().focus('end').insertContent('<p></p>'.repeat(lines)).run();
           }}
         />
+
+        {/* Right-click read-aloud popup */}
+        {contextPopup && (
+          <div ref={contextPopupRef} style={{
+            position: 'absolute',
+            left: `${contextPopup.x}px`,
+            top: contextPopup.below ? `${contextPopup.y + 11}px` : `${contextPopup.y - 11}px`,
+            transform: contextPopup.below ? 'translate(0, 0)' : 'translate(0, -100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px',
+            zIndex: 100,
+            userSelect: 'none',
+            background: 'var(--white)',
+            borderRadius: '20px',
+            padding: '3px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
+          }}>
+            <div
+              style={{
+                color: 'var(--body)',
+                fontSize: '11px',
+                fontWeight: '500',
+                borderRadius: '16px',
+                padding: '5px 12px',
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                fontFamily: 'var(--font)',
+                transition: 'background 0.12s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+              onClick={() => {
+                const text = contextPopup.text;
+                setContextPopup(null);
+                (async () => {
+                  try {
+                    const res = await fetch('/api/tts/speak', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ text, exaggeration: 0.5 }),
+                    });
+                    if (res.ok) {
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const audio = new Audio(url);
+                      audio.onended = () => URL.revokeObjectURL(url);
+                      await audio.play();
+                      return;
+                    }
+                  } catch {}
+                  if (window.speechSynthesis) {
+                    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+                  }
+                })();
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <WaveformIcon playing={false} /> {t('common.readAloud')}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Polish + Mic — fixed footer */}
@@ -1191,17 +1294,83 @@ function formatVersionDate(isoStr) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + time;
 }
 
+
 function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersion, onClearPreview }) {
   const { t } = useLanguage();
   const hasContent = note?.body?.trim();
   const [readingAll, setReadingAll] = useState(false);
   const ttsAudioRef = useRef(null);
   const readingCancelledRef = useRef(false);
+  const [archetypeOpen, setArchetypeOpen] = useState(false);
+  const [selectedArchetype, setSelectedArchetype] = useState('Auto');
+  const archetypeRef = useRef(null);
+  const [mirrorCustomArchetypes, setMirrorCustomArchetypes] = useState([]);
+  const [contextPopup, setContextPopup] = useState(null);
+  const bodyRef = useRef(null);
+  const mirrorContextRef = useRef(null);
 
   useEffect(() => () => {
     readingCancelledRef.current = true;
     if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }, []);
+
+  // Load custom archetypes
+  useEffect(() => {
+    apiFetch('/api/portrait').then(r => r.json()).then(p => {
+      if (p) {
+        try {
+          const custom = Array.isArray(p.custom_archetypes) ? p.custom_archetypes : JSON.parse(p.custom_archetypes || '[]');
+          if (custom.length) setMirrorCustomArchetypes(custom);
+        } catch {}
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Close archetype popup on outside click
+  useEffect(() => {
+    if (!archetypeOpen) return;
+    function handleClick(e) {
+      if (archetypeRef.current && !archetypeRef.current.contains(e.target)) {
+        setArchetypeOpen(false);
+      }
+    }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [archetypeOpen]);
+
+  // Close context popup on click outside
+  useEffect(() => {
+    if (!contextPopup) return;
+    function close(e) {
+      if (mirrorContextRef.current && mirrorContextRef.current.contains(e.target)) return;
+      setContextPopup(null);
+    }
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [contextPopup]);
+
+  const handleContextMenu = useCallback((e) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+      setContextPopup(null);
+      return;
+    }
+    const text = sel.toString().trim();
+    if (bodyRef.current && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      if (!bodyRef.current.contains(range.commonAncestorContainer)) {
+        setContextPopup(null);
+        return;
+      }
+      const rootRect = bodyRef.current.closest('[style]')?.getBoundingClientRect() || { left: 0, top: 0 };
+      setContextPopup({
+        x: e.clientX - rootRect.left,
+        y: e.clientY - rootRect.top,
+        below: e.clientY > window.innerHeight * 0.6,
+        text,
+      });
+    }
   }, []);
 
   async function handleReadAll() {
@@ -1249,6 +1418,31 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
       setReadingAll(false);
     }
   }
+
+  function readSelectedText(text) {
+    setContextPopup(null);
+    (async () => {
+      try {
+        const res = await fetch('/api/tts/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, exaggeration: 0.5 }),
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.onended = () => URL.revokeObjectURL(url);
+          await audio.play();
+          return;
+        }
+      } catch {}
+      if (window.speechSynthesis) {
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+      }
+    })();
+  }
+
   const panelStyle = {
     width: '100%',
     height: '100%',
@@ -1256,6 +1450,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
+    position: 'relative',
   };
   const headerStyle = {
     padding: '0 18px',
@@ -1265,6 +1460,18 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+  };
+  const pillBtn = {
+    width: '36px',
+    height: '36px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '20px',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'color 0.15s, background 0.15s',
+    flexShrink: 0,
   };
 
   if (previewVersion) {
@@ -1303,7 +1510,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
       </div>
 
       {/* Blocks */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
+      <div ref={bodyRef} onContextMenu={handleContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
         {loading && (
           <div style={{ padding: '40px 24px', textAlign: 'center' }}>
             <div style={{ fontSize: '24px', color: 'var(--muted)', letterSpacing: '4px', animation: 'pulse 1.4s ease-in-out infinite' }}>· · ·</div>
@@ -1330,13 +1537,123 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         )}
 
         {blocks.map((block, i) => (
-          <MirrorBlock
-            key={i}
-            block={block}
-            ttsOnline={false}
-          />
+          <MirrorBlock key={i} block={block} />
         ))}
       </div>
+
+      {/* Right-click read-aloud popup */}
+      {contextPopup && (
+        <div ref={mirrorContextRef} style={{
+          position: 'absolute',
+          left: `${contextPopup.x}px`,
+          top: contextPopup.below ? `${contextPopup.y + 11}px` : `${contextPopup.y - 11}px`,
+          transform: contextPopup.below ? 'translate(0, 0)' : 'translate(0, -100%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '2px',
+          zIndex: 100,
+          userSelect: 'none',
+          background: 'var(--white)',
+          borderRadius: '20px',
+          padding: '3px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
+        }}>
+          <div
+            style={{
+              color: 'var(--body)',
+              fontSize: '11px',
+              fontWeight: '500',
+              borderRadius: '16px',
+              padding: '5px 12px',
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              fontFamily: 'var(--font)',
+              transition: 'background 0.12s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+            onClick={() => readSelectedText(contextPopup.text)}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <WaveformIcon playing={false} /> {t('common.readAloud')}
+          </div>
+        </div>
+      )}
+
+      {/* Archetype picker popup */}
+      {archetypeOpen && (
+        <div ref={archetypeRef} style={{
+          position: 'absolute',
+          bottom: '64px',
+          right: '18px',
+          background: 'var(--white)',
+          borderRadius: '12px',
+          padding: '6px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.06)',
+          zIndex: 50,
+          minWidth: '140px',
+        }}>
+          {BUILT_IN_ARCHETYPES.map((a) => (
+            <button
+              key={a.value}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                textAlign: 'left',
+                padding: '7px 14px',
+                fontSize: '12px',
+                color: selectedArchetype === a.value ? 'var(--strong)' : 'var(--body)',
+                fontWeight: selectedArchetype === a.value ? '600' : '400',
+                background: 'none',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font)',
+                transition: 'background 0.1s',
+              }}
+              onClick={() => { setSelectedArchetype(a.value); setArchetypeOpen(false); }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <ArchetypeAvatar archetype={a} size={18} color={selectedArchetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
+              <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
+            </button>
+          ))}
+          {mirrorCustomArchetypes.length > 0 && (
+            <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
+          )}
+          {mirrorCustomArchetypes.map((c) => (
+            <button
+              key={c.name}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                textAlign: 'left',
+                padding: '7px 14px',
+                fontSize: '12px',
+                color: selectedArchetype === c.name ? 'var(--strong)' : 'var(--body)',
+                fontWeight: selectedArchetype === c.name ? '600' : '400',
+                background: 'none',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font)',
+                transition: 'background 0.1s',
+              }}
+              onClick={() => { setSelectedArchetype(c.name); setArchetypeOpen(false); }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+              <span style={{ marginLeft: '8px' }}>{c.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Footer */}
       <div style={{
@@ -1355,24 +1672,41 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         >
           {loading ? t('notes.reflecting') : t('notes.reflect')}
         </button>
+
+        {/* Archetype picker button */}
+        <button
+          onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
+          title={t(BUILT_IN_ARCHETYPES.find(a => a.value === selectedArchetype)?.key || 'archetype.auto')}
+          type="button"
+          style={{
+            ...pillBtn,
+            background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+            color: selectedArchetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
+            boxShadow: archetypeOpen
+              ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+              : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+          }}
+        >
+          {(() => {
+            const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === selectedArchetype);
+            const custom = mirrorCustomArchetypes.find(a => a.name === selectedArchetype);
+            if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={selectedArchetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
+            if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+            return <ArchetypeIcon />;
+          })()}
+        </button>
+
+        {/* Read all button */}
         <button
           onClick={handleReadAll}
           title={readingAll ? t('common.stop') : t('common.readAloud')}
           type="button"
           disabled={blocks.length === 0 && !readingAll}
           style={{
-            width: '36px',
-            height: '36px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '20px',
-            border: 'none',
+            ...pillBtn,
             background: readingAll ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
             color: readingAll ? 'var(--strong)' : 'var(--muted)',
             cursor: (blocks.length === 0 && !readingAll) ? 'default' : 'pointer',
-            transition: 'color 0.15s, background 0.15s',
-            flexShrink: 0,
             opacity: (blocks.length === 0 && !readingAll) ? 0.35 : 1,
             boxShadow: readingAll
               ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
@@ -1412,6 +1746,24 @@ function WaveformIcon({ playing }) {
       <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
         {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
       </rect>
+    </svg>
+  );
+}
+
+function ArchetypeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="4.5" r="2.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3 14c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function NoteArchetypeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }

@@ -175,8 +175,15 @@ Return JSON with this shape:
 Rules: prose only, no bullets, bold sparingly (1-2 phrases max). Speak as one coherent voice — do not label which archetype you draw from. Show both sides. Speak directly using "you".
 Return ONLY the JSON object.`;
   } else {
-    // Single archetype voice
-    systemPrompt = `You are the ${archetype} voice in Liminal's reflection system.
+    // Single archetype voice — check for custom archetype prompt
+    let customContext = '';
+    try {
+      const customs = JSON.parse(portrait?.custom_archetypes || '[]');
+      const match = customs.find(c => c.name === archetype);
+      if (match?.prompt) customContext = `\nCharacter context: ${match.prompt}\n`;
+    } catch {}
+
+    systemPrompt = `You are the ${archetype} voice in Liminal's reflection system.${customContext}
 ${summary ? `Context about this person:\n${summary}\n` : ''}
 
 Respond to the journal entry below as the ${archetype} archetype — one block only, focused on the theme: "${blockTitle || 'this entry'}".

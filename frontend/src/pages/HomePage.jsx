@@ -3,6 +3,8 @@ import { apiFetch } from '../utils/api';
 import MicButton from '../components/MicButton';
 import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
+import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
+import ArchetypeAvatar from '../components/ArchetypeAvatar';
 
 // ── Suggested question pool ────────────────────────────────────────────────
 const QUESTION_POOL = [
@@ -28,7 +30,6 @@ const QUESTION_POOL = [
   'What does my gut say?',
 ];
 
-const BUILT_IN_ARCHETYPES = ['Zen', 'Jungian', 'Stoic', 'Somatic', 'Taoist', 'Direct Friend'];
 
 // ── Daily quote pool ────────────────────────────────────────────────────────
 const QUOTE_POOL = [
@@ -144,7 +145,7 @@ const s = {
   // Insights card
   insightsCard: {
     border: 'var(--border-style)',
-    borderRadius: '3px',
+    borderRadius: '16px',
     padding: '14px 20px',
     marginBottom: '28px',
     display: 'flex',
@@ -204,7 +205,7 @@ const s = {
     borderRadius: '16px',
     background: 'var(--white)',
     marginBottom: '14px',
-    overflow: 'hidden',
+    overflow: 'visible',
     boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   },
   textarea: {
@@ -230,40 +231,43 @@ const s = {
     padding: '8px 14px 12px',
     gap: '8px',
   },
-  archetypeRow: {
+  charBtn: {
+    width: '32px',
+    height: '32px',
     display: 'flex',
-    flexWrap: 'wrap',
-    gap: '5px',
     alignItems: 'center',
-    flex: 1,
-    minWidth: 0,
-  },
-  archPill: {
-    fontSize: '11px',
-    color: 'var(--muted)',
-    border: 'var(--border-style)',
+    justifyContent: 'center',
     borderRadius: '20px',
-    padding: '3px 10px',
+    border: 'none',
     cursor: 'pointer',
-    background: 'transparent',
-    fontFamily: 'var(--font)',
-    transition: 'background 0.12s, color 0.12s',
+    transition: 'color 0.15s, background 0.15s',
+    flexShrink: 0,
   },
-  archPillActive: {
-    background: 'var(--strong)',
-    color: 'var(--white)',
-    borderColor: 'var(--strong)',
-  },
-  customInput: {
-    fontSize: '11px',
-    padding: '3px 10px',
-    border: 'var(--border-style)',
-    borderRadius: '20px',
-    outline: 'none',
-    fontFamily: 'var(--font)',
-    color: 'var(--strong)',
-    width: '130px',
+  archetypePopup: {
+    position: 'absolute',
+    bottom: '42px',
+    right: 0,
     background: 'var(--white)',
+    borderRadius: '12px',
+    padding: '6px',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.06)',
+    zIndex: 50,
+    minWidth: '160px',
+  },
+  archetypeOption: {
+    display: 'flex',
+    alignItems: 'center',
+    width: '100%',
+    textAlign: 'left',
+    padding: '7px 14px',
+    fontSize: '12px',
+    color: 'var(--body)',
+    background: 'none',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: 'var(--font)',
+    transition: 'background 0.1s',
   },
   askBtn: {
     padding: '7px 16px',
@@ -283,7 +287,7 @@ const s = {
   responseCard: {
     marginTop: '24px',
     border: 'var(--border-style)',
-    borderRadius: '3px',
+    borderRadius: '16px',
     padding: '22px 24px',
     background: 'var(--near-white)',
   },
@@ -439,10 +443,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
   // Quick Ask state
   const [question, setQuestion] = useState('');
-  const [archetype, setArchetype] = useState('Direct Friend');
-  const [customArchetype, setCustomArchetype] = useState('');
-  const [showCustom, setShowCustom] = useState(false);
-  const [extraArchetypes, setExtraArchetypes] = useState([]);
+  const [archetype, setArchetype] = useState('Auto');
+  const [archetypeOpen, setArchetypeOpen] = useState(false);
+  const [customArchetypesList, setCustomArchetypesList] = useState([]);
+  const archetypeRef = useRef(null);
 
   // Response state
   const [answer, setAnswer] = useState(null);
@@ -507,9 +511,11 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       if (p) {
         try {
           const active = JSON.parse(p.active_archetypes || '[]');
-          const custom = active.filter((a) => !BUILT_IN_ARCHETYPES.includes(a));
-          if (custom.length) setExtraArchetypes(custom);
           if (active.length) setArchetype(active[0]);
+        } catch {}
+        try {
+          const custom = Array.isArray(p.custom_archetypes) ? p.custom_archetypes : JSON.parse(p.custom_archetypes || '[]');
+          if (custom.length) setCustomArchetypesList(custom);
         } catch {}
       }
     }).catch(() => {});
@@ -527,14 +533,22 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   }, [question]);
 
-  const allArchetypes = [...BUILT_IN_ARCHETYPES, ...extraArchetypes];
+  // Close archetype picker on outside click
+  useEffect(() => {
+    if (!archetypeOpen) return;
+    function handleClick(e) {
+      if (archetypeRef.current && !archetypeRef.current.contains(e.target)) {
+        setArchetypeOpen(false);
+      }
+    }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [archetypeOpen]);
 
   async function handleAsk() {
     const q = question.trim();
     if (!q || loading) return;
-    const activeArchetype = showCustom && customArchetype.trim()
-      ? customArchetype.trim()
-      : archetype;
+    const activeArchetype = archetype;
 
     setLoading(true);
     setAnswer(null);
@@ -569,9 +583,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
   async function handleRegen() {
     if (!answeredQuestion || loading) return;
-    const activeArchetype = showCustom && customArchetype.trim()
-      ? customArchetype.trim()
-      : archetype;
+    const activeArchetype = archetype;
 
     setLoading(true);
     setSaved(false);
@@ -800,34 +812,71 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             rows={2}
           />
           <div style={s.askCardFooter}>
-            {/* Archetype selector */}
-            <div style={s.archetypeRow}>
-              {allArchetypes.map((a) => (
-                <button
-                  key={a}
-                  style={{ ...s.archPill, ...(archetype === a && !showCustom ? s.archPillActive : {}) }}
-                  onClick={() => { setArchetype(a); setShowCustom(false); }}
-                >
-                  {a}
-                </button>
-              ))}
+            <div style={{ flex: 1 }} />
+            {/* Archetype picker button */}
+            <div style={{ position: 'relative' }} ref={archetypeRef}>
               <button
-                style={{ ...s.archPill, ...(showCustom ? s.archPillActive : {}) }}
-                onClick={() => setShowCustom((v) => !v)}
+                onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
+                title={archetype}
+                type="button"
+                style={{
+                  ...s.charBtn,
+                  background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                  color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
+                  boxShadow: archetypeOpen
+                    ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                    : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+                }}
               >
-                {t('home.custom')} ▾
+                {(() => {
+                  const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
+                  const custom = customArchetypesList.find(a => a.name === archetype);
+                  if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
+                  if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+                  return <ArchetypeIcon />;
+                })()}
               </button>
-              {showCustom && (
-                <input
-                  style={s.customInput}
-                  placeholder={t('home.customArchetypePlaceholder')}
-                  value={customArchetype}
-                  onChange={(e) => setCustomArchetype(e.target.value)}
-                  autoFocus
-                />
+              {archetypeOpen && (
+                <div style={s.archetypePopup}>
+                  {BUILT_IN_ARCHETYPES.map((a) => (
+                    <button
+                      key={a.value}
+                      style={{
+                        ...s.archetypeOption,
+                        fontWeight: archetype === a.value ? '600' : '400',
+                        color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
+                      }}
+                      onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
+                      <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
+                    </button>
+                  ))}
+                  {customArchetypesList.length > 0 && (
+                    <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
+                  )}
+                  {customArchetypesList.map((c) => (
+                    <button
+                      key={c.name}
+                      style={{
+                        ...s.archetypeOption,
+                        fontWeight: archetype === c.name ? '600' : '400',
+                        color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
+                      }}
+                      onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+                      <span style={{ marginLeft: '8px' }}>{c.name}</span>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-            {/* Mic + Send */}
+            {/* Mic */}
             <MicButton
               isRecording={isDictating}
               isProcessing={isDictatingProcessing}
@@ -926,6 +975,15 @@ function WaveformIcon({ playing }) {
       <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
         {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
       </rect>
+    </svg>
+  );
+}
+
+function ArchetypeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
