@@ -10,8 +10,10 @@ A journal for the in-between.
    - During install, check "Add to PATH"
    - Restart any open terminals after installing
 
-2. **Anthropic API key** — Get one at https://console.anthropic.com
-   (or use OpenAI / local Ollama — see configuration below)
+2. **An LLM provider** — pick one:
+   - **Ollama** (free, local) — Install from https://ollama.com, then `ollama pull llama3.1`
+   - **Anthropic** — Get an API key at https://console.anthropic.com
+   - **OpenAI** — Get an API key at https://platform.openai.com
 
 ---
 
@@ -44,13 +46,14 @@ Then open http://localhost:5173 in your browser.
 Edit `backend/.env`:
 
 ```env
-LLM_PROVIDER=claude          # claude | openai | ollama
-ANTHROPIC_API_KEY=sk-...     # your Anthropic key
+LLM_PROVIDER=ollama          # ollama | claude | openai
+OLLAMA_MODEL=llama3.1        # if using Ollama (default)
+ANTHROPIC_API_KEY=sk-...     # if using Claude
 OPENAI_API_KEY=              # if using OpenAI
-OLLAMA_MODEL=llama3.1        # if using Ollama
 ```
 
-Claude (claude-opus-4-6) is the default and recommended provider.
+Ollama is the default provider — free, local, no API key required.
+For cloud providers, add your API key and set `LLM_PROVIDER` accordingly.
 
 ---
 
