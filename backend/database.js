@@ -165,6 +165,8 @@ addColumnSafe('portrait', 'current_intention', 'TEXT');
 addColumnSafe('portrait', 'sex', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'custom_archetypes', "TEXT NOT NULL DEFAULT '[]'");
+addColumnSafe('portrait', 'slider_sky_weight', 'INTEGER DEFAULT 50');
+addColumnSafe('portrait', 'slider_portrait_weight', 'INTEGER DEFAULT 50');
 
 addColumnSafe('users', 'onboarding_complete', 'INTEGER DEFAULT 0');
 addColumnSafe('users', 'avatar_path', 'TEXT');
@@ -175,8 +177,10 @@ db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete =
 addColumnSafe('entries',         'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('notes',           'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('notes',           'title', "TEXT DEFAULT ''");
+addColumnSafe('notes',           'tags', "TEXT NOT NULL DEFAULT '[]'");
 addColumnSafe('life_context',    'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('oracle_sessions', 'tag',     'TEXT');
+addColumnSafe('oracle_sessions', 'tags',    "TEXT NOT NULL DEFAULT '[]'");
 
 addColumnSafe('entries', 'moon_phase', 'TEXT');
 addColumnSafe('entries', 'moon_sign',  'TEXT');
@@ -289,6 +293,19 @@ db.exec(`
     cache_key  TEXT UNIQUE,
     data       TEXT,
     cached_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+// Daily card cache
+db.exec(`
+  CREATE TABLE IF NOT EXISTS daily_cards (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    date       TEXT    NOT NULL,
+    deck       TEXT    NOT NULL,
+    card_data  TEXT    NOT NULL DEFAULT '{}',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, date)
   );
 `);
 

@@ -104,6 +104,9 @@ export function useEntries() {
     }
   }, []);
 
+  // Collect all unique tags across entries
+  const allTags = [...new Set(entries.flatMap(e => e.tags || []))].sort();
+
   return {
     entries,
     activeEntry,
@@ -113,5 +116,6 @@ export function useEntries() {
     deleteEntry,
     selectEntry,
     refreshEntries: fetchEntries,
+    allTags,
   };
 }

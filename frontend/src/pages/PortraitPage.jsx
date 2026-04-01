@@ -201,29 +201,29 @@ function AstroField({ label, value, missing }) {
 
 const tabBarStyle = {
   display: 'flex',
-  gap: '0',
-  borderBottom: '0.5px solid var(--border)',
-  marginBottom: '0',
-  flexShrink: 0,
-  padding: '0 48px',
+  gap: '4px',
+  marginBottom: '28px',
+  borderBottom: 'var(--border-style)',
+  paddingBottom: '0',
 };
 const tabStyle = {
-  fontSize: '10px',
+  padding: '8px 16px',
+  fontSize: '11px',
   fontWeight: '600',
-  letterSpacing: '0.14em',
+  letterSpacing: '0.05em',
   textTransform: 'uppercase',
   color: 'var(--muted)',
-  padding: '14px 20px',
-  cursor: 'pointer',
-  borderBottom: '1.5px solid transparent',
-  transition: 'color 0.15s, border-color 0.15s',
   background: 'none',
   border: 'none',
+  borderBottom: '2px solid transparent',
+  cursor: 'pointer',
   fontFamily: 'var(--font)',
+  transition: 'color 0.12s, border-color 0.12s',
+  marginBottom: '-1px',
 };
 const tabActiveStyle = {
   color: 'var(--strong)',
-  borderBottom: '1.5px solid var(--strong)',
+  borderBottomColor: 'var(--strong)',
 };
 
 export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded }) {
@@ -362,24 +362,10 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
   if (!portrait && pageTab === 'portrait') return <div style={{ padding: '40px', color: 'var(--muted)', fontSize: '13px' }}>{t('common.loading')}</div>;
 
-  // Sky or Cards tab — render SkyPage with its own internal tabs pre-selected
-  if (pageTab === 'sky' || pageTab === 'cards') {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-        <div style={tabBarStyle}>
-          {['portrait', 'sky', 'cards'].map(tb => (
-            <button key={tb} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>
-              {tb === 'portrait' ? 'Portrait' : tb === 'sky' ? 'Sky' : 'Cards'}
-            </button>
-          ))}
-        </div>
-        <SkyPage onNavigateEntry={onNavigateEntry} initialTab={pageTab === 'cards' ? 'cards' : 'sky'} hideTabBar />
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+  const oracleHeader = (
+    <div style={{ padding: '40px 48px 0' }}>
+      <div style={s.pageTitle}>The Oracle</div>
+      <div style={s.pageSubtitle}>Do not try and bend the spoon — that's impossible. Instead, only try to realise the truth: there is no spoon.</div>
       <div style={tabBarStyle}>
         {['portrait', 'sky', 'cards'].map(tb => (
           <button key={tb} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>
@@ -387,11 +373,25 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
           </button>
         ))}
       </div>
+    </div>
+  );
+
+  // Sky or Cards tab — render SkyPage with its own internal tabs pre-selected
+  if (pageTab === 'sky' || pageTab === 'cards') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        {oracleHeader}
+        <SkyPage onNavigateEntry={onNavigateEntry} initialTab={pageTab === 'cards' ? 'cards' : 'sky'} hideTabBar />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {oracleHeader}
     <div style={s.root}>
       {/* ── Left: form column ── */}
-      <div style={s.formCol}>
-      <div style={s.pageTitle}>{t('portrait.title')}</div>
-      <div style={s.pageSubtitle}>{t('portrait.subtitle')}</div>
+      <div style={{ ...s.formCol, paddingTop: '0' }}>
 
       <>
       {/* Personality */}

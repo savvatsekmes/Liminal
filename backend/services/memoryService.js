@@ -217,8 +217,20 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
 
   const sections = [];
 
-  // 1. Portrait
-  sections.push(buildPortraitSection(portrait));
+  const portraitWeight = portrait?.slider_portrait_weight ?? 50;
+  const skyWeight = portrait?.slider_sky_weight ?? 50;
+
+  // 1. Portrait (respects portrait weight)
+  if (portraitWeight > 0) {
+    const portraitSection = buildPortraitSection(portrait);
+    if (portraitWeight < 30) {
+      sections.push(`${portraitSection}\n\n(Note: The user prefers minimal emphasis on their profile in reflections. Reference it lightly.)`);
+    } else if (portraitWeight > 70) {
+      sections.push(`${portraitSection}\n\n(The user values their profile context highly. Weave it naturally into your reflections.)`);
+    } else {
+      sections.push(portraitSection);
+    }
+  }
 
   // 2. Memory (synthesized narrative from discrete items — includes pinned/manual + auto-extracted)
   if (memorySection) sections.push(memorySection);
@@ -238,11 +250,20 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     sections.push(`## RELEVANT PAST ENTRIES\nThese past entries are most relevant to what was just written:\n\n${pastContext}`);
   }
 
-  // 5. Sky context
-  try {
-    const { getSkyContext } = require('./skyService');
-    sections.push(`Sky context: ${getSkyContext()}`);
-  } catch (e) { /* skip if skyService unavailable */ }
+  // 5. Sky context (respects sky weight)
+  if (skyWeight > 0) {
+    try {
+      const { getSkyContext } = require('./skyService');
+      const skyCtx = getSkyContext();
+      if (skyWeight < 30) {
+        sections.push(`Sky context (background only): ${skyCtx}\n(Mention astrological context only if directly relevant to what the user wrote.)`);
+      } else if (skyWeight > 70) {
+        sections.push(`Sky context (important): ${skyCtx}\n(The user values astrological context. Actively weave moon phase, planetary positions, and their symbolic meaning into your reflections.)`);
+      } else {
+        sections.push(`Sky context: ${skyCtx}`);
+      }
+    } catch (e) { /* skip if skyService unavailable */ }
+  }
 
   // 6. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
   sections.push(buildMirrorInstructions(portrait, username));
@@ -568,12 +589,22 @@ Rules:
 async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
+  const skyWeight = portrait?.slider_sky_weight ?? 50;
 
   if (portrait) sections.push(buildPortraitSection(portrait));
   const memSection = await buildMemorySection(userId);
   if (memSection) sections.push(memSection);
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
+
+  if (skyWeight > 0) {
+    try {
+      const { getSkyContext } = require('./skyService');
+      sections.push(skyWeight > 70
+        ? `Sky context (important): ${getSkyContext()}`
+        : `Sky context: ${getSkyContext()}`);
+    } catch {}
+  }
 
   const candorAsk = buildCandorInstruction(portrait);
   if (candorAsk) sections.push(candorAsk);
@@ -609,12 +640,22 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
 async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
+  const skyWeight = portrait?.slider_sky_weight ?? 50;
 
   if (portrait) sections.push(buildPortraitSection(portrait));
   const memSection = await buildMemorySection(userId);
   if (memSection) sections.push(memSection);
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
+
+  if (skyWeight > 0) {
+    try {
+      const { getSkyContext } = require('./skyService');
+      sections.push(skyWeight > 70
+        ? `Sky context (important): ${getSkyContext()}`
+        : `Sky context: ${getSkyContext()}`);
+    } catch {}
+  }
 
   const candorOracle = buildCandorInstruction(portrait);
   if (candorOracle) sections.push(candorOracle);

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import Calendar from './Calendar';
+
+const ALL_TAG = '__all__';
 
 function ConfirmModal({ message, onConfirm, onCancel }) {
   const { t } = useLanguage();
@@ -62,16 +64,23 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
 const s = {
   root: {
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'row',
     height: '100%',
     overflow: 'hidden',
+  },
+  listCol: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    minWidth: 0,
   },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '0 12px',
-    height: '40px',
+    height: '44px',
     borderBottom: 'var(--border-style)',
     flexShrink: 0,
   },
@@ -87,14 +96,6 @@ const s = {
     alignItems: 'center',
     gap: '6px',
   },
-  newBtn: {
-    fontSize: '18px',
-    color: 'var(--muted)',
-    lineHeight: 1,
-    padding: '2px 4px',
-    borderRadius: '2px',
-    transition: 'color 0.15s',
-  },
   calToggle: {
     fontSize: '11px',
     color: 'var(--muted)',
@@ -104,6 +105,8 @@ const s = {
     lineHeight: 1.4,
     transition: 'color 0.15s, background 0.15s',
     cursor: 'pointer',
+    background: 'none',
+    fontFamily: 'var(--font)',
   },
   search: {
     margin: '8px 10px',
@@ -115,6 +118,22 @@ const s = {
     width: 'calc(100% - 20px)',
     color: 'var(--strong)',
     outline: 'none',
+    flexShrink: 0,
+    fontFamily: 'var(--font)',
+  },
+  addBtn: {
+    margin: '0 10px 8px',
+    padding: '7px 0',
+    fontSize: '11px',
+    fontFamily: 'var(--font)',
+    color: 'var(--muted)',
+    background: 'transparent',
+    border: '1.5px dashed var(--border)',
+    borderRadius: '10px',
+    width: 'calc(100% - 20px)',
+    cursor: 'pointer',
+    letterSpacing: '0.03em',
+    transition: 'background 0.15s, color 0.15s',
     flexShrink: 0,
   },
   list: {
@@ -140,7 +159,6 @@ const s = {
     color: 'var(--muted)',
     marginBottom: '2px',
   },
-  itemDateActive: {},
   itemTitle: {
     fontSize: '12px',
     color: 'var(--strong)',
@@ -150,13 +168,25 @@ const s = {
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
   },
-  itemTitleActive: {},
   empty: {
     padding: '24px 12px',
     fontSize: '12px',
     color: 'var(--muted)',
     textAlign: 'center',
     lineHeight: '1.6',
+  },
+  tagStrip: {
+    width: '76px',
+    flexShrink: 0,
+    borderLeft: 'var(--border-style)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    background: 'var(--near-white)',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    padding: '16px 6px',
+    gap: '4px',
   },
 };
 
@@ -171,12 +201,20 @@ function formatEntryDate(dateStr) {
   }
 }
 
-export default function EntryList({ entries, activeId, onSelect, onNew, onDelete }) {
+export default function EntryList({ entries, activeId, onSelect, onNew, onDelete, allTags = [], onDeleteTag }) {
   const { t } = useLanguage();
   const [search, setSearch] = useState('');
   const [showCal, setShowCal] = useState(true);
-  const [hoverNew, setHoverNew] = useState(false);
-  const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
+
+  const [confirmModal, setConfirmModal] = useState(null);
+  const [filterTag, setFilterTag] = useState(ALL_TAG);
+  const [addingTag, setAddingTag] = useState(false);
+  const [newTagInput, setNewTagInput] = useState('');
+  const tagInputRef = useRef(null);
+
+  useEffect(() => {
+    if (addingTag) tagInputRef.current?.focus();
+  }, [addingTag]);
 
   function confirmDelete(id, title) {
     setConfirmModal({
@@ -185,66 +223,154 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
     });
   }
 
-  const filtered = search
-    ? entries.filter(
-        (e) =>
-          e.title.toLowerCase().includes(search.toLowerCase()) ||
-          (e.body_text || '').toLowerCase().includes(search.toLowerCase())
-      )
-    : entries;
+  function handleDeleteTag(tag) {
+    setConfirmModal({
+      message: `Remove tag "${tag}" from all entries?`,
+      onConfirm: () => {
+        onDeleteTag?.(tag);
+        if (filterTag === tag) setFilterTag(ALL_TAG);
+        setConfirmModal(null);
+      },
+    });
+  }
+
+  // Filter by tag first, then by search
+  let filtered = filterTag === ALL_TAG
+    ? entries
+    : entries.filter(e => (e.tags || []).includes(filterTag));
+
+  if (search) {
+    filtered = filtered.filter(
+      (e) =>
+        e.title.toLowerCase().includes(search.toLowerCase()) ||
+        (e.body_text || '').toLowerCase().includes(search.toLowerCase())
+    );
+  }
 
   return (
     <div style={s.root}>
-      <div style={s.header}>
-        <span style={s.headerTitle}>{t('nav.journal')}</span>
-        <div style={s.headerRight}>
-          <button
-            style={{ ...s.calToggle, ...(showCal ? { color: 'var(--strong)', background: 'var(--panel-bg)' } : {}) }}
-            onClick={() => setShowCal(v => !v)}
-            title={t('journal.calendar')}
-          >
-            {t('journal.calendar')}
-          </button>
-          <button
-            style={{ ...s.newBtn, ...(hoverNew ? { color: 'var(--strong)' } : {}) }}
-            onMouseEnter={() => setHoverNew(true)}
-            onMouseLeave={() => setHoverNew(false)}
-            onClick={onNew}
-            title={t('journal.newEntry')}
-            aria-label={t('journal.newEntry')}
-          >
-            +
-          </button>
+      {/* List column */}
+      <div style={s.listCol}>
+        <div style={s.header}>
+          <span style={s.headerTitle}>
+            {filterTag !== ALL_TAG ? filterTag : t('nav.journal')}
+          </span>
+          <div style={s.headerRight}>
+            <button
+              style={{ ...s.calToggle, ...(showCal ? { color: 'var(--strong)', background: 'var(--panel-bg)' } : {}) }}
+              onClick={() => setShowCal(v => !v)}
+              title={t('journal.calendar')}
+            >
+              {t('journal.calendar')}
+            </button>
+          </div>
+        </div>
+
+        {showCal && (
+          <Calendar items={filtered} activeId={activeId} onSelect={onSelect} />
+        )}
+
+        <input
+          style={s.search}
+          placeholder={t('common.search')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label={t('common.search')}
+        />
+
+        <button
+          style={s.addBtn}
+          onClick={onNew}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--strong)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
+        >
+          + {t('journal.newEntry')}
+        </button>
+
+        <div style={s.list}>
+          {filtered.length === 0 && (
+            <div style={s.empty}>
+              {search ? t('journal.noMatch') : t('journal.noEntries')}
+            </div>
+          )}
+          {filtered.map((entry) => (
+            <EntryItem
+              key={entry.id}
+              entry={entry}
+              active={entry.id === activeId}
+              onClick={() => onSelect(entry)}
+              onDelete={onDelete ? () => confirmDelete(entry.id, entry.title) : null}
+            />
+          ))}
         </div>
       </div>
 
-      {showCal && (
-        <Calendar items={entries} activeId={activeId} onSelect={onSelect} />
-      )}
+      {/* Tag strip */}
+      <div style={s.tagStrip}>
+        <TagPill
+          label={t('notes.typeAll')}
+          active={filterTag === ALL_TAG}
+          onClick={() => setFilterTag(ALL_TAG)}
+        />
 
-      <input
-        style={s.search}
-        placeholder={t('common.search')}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        aria-label={t('common.search')}
-      />
-
-      <div style={s.list}>
-        {filtered.length === 0 && (
-          <div style={s.empty}>
-            {search ? t('journal.noMatch') : t('journal.noEntries')}
-          </div>
-        )}
-        {filtered.map((entry) => (
-          <EntryItem
-            key={entry.id}
-            entry={entry}
-            active={entry.id === activeId}
-            onClick={() => onSelect(entry)}
-            onDelete={onDelete ? () => confirmDelete(entry.id, entry.title) : null}
+        {allTags.map((tag) => (
+          <TagCustomPill
+            key={tag}
+            label={tag}
+            active={filterTag === tag}
+            onClick={() => setFilterTag(tag)}
+            onDelete={() => handleDeleteTag(tag)}
           />
         ))}
+
+        {addingTag ? (
+          <input
+            ref={tagInputRef}
+            value={newTagInput}
+            onChange={(e) => setNewTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newTagInput.trim()) {
+                setFilterTag(newTagInput.trim());
+                setNewTagInput('');
+                setAddingTag(false);
+              }
+              if (e.key === 'Escape') { setAddingTag(false); setNewTagInput(''); }
+            }}
+            onBlur={() => { if (!newTagInput.trim()) setAddingTag(false); }}
+            placeholder="tag…"
+            maxLength={30}
+            style={{
+              width: '62px',
+              padding: '4px 6px',
+              fontSize: '11px',
+              borderRadius: '20px',
+              border: '1px solid var(--border)',
+              textAlign: 'center',
+              outline: 'none',
+              fontFamily: 'var(--font)',
+            }}
+          />
+        ) : (
+          <button
+            onClick={() => setAddingTag(true)}
+            title="New tag"
+            style={{
+              width: '62px',
+              padding: '4px 0',
+              fontSize: '14px',
+              color: 'var(--muted)',
+              border: '1px dashed var(--border)',
+              borderRadius: '20px',
+              background: 'none',
+              cursor: 'pointer',
+              fontFamily: 'var(--font)',
+            }}
+          >
+            +
+          </button>
+        )}
+
+        <div style={{ flex: 1 }} />
       </div>
 
       {confirmModal && (
@@ -253,6 +379,95 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal(null)}
         />
+      )}
+    </div>
+  );
+}
+
+function TagPill({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: '62px',
+        padding: '5px 4px',
+        fontSize: '10px',
+        fontWeight: active ? '600' : '400',
+        letterSpacing: '0.03em',
+        borderRadius: '20px',
+        border: active ? '1px solid var(--strong)' : '1px solid var(--border)',
+        background: active ? 'var(--strong)' : 'transparent',
+        color: active ? 'var(--white)' : 'var(--body)',
+        cursor: 'pointer',
+        textAlign: 'center',
+        transition: 'all 0.12s',
+        flexShrink: 0,
+        fontFamily: 'var(--font)',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function TagCustomPill({ label, active, onClick, onDelete }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        width: '62px',
+        borderRadius: '20px',
+        border: active ? '1px solid var(--strong)' : '1px solid var(--border)',
+        background: active ? 'var(--strong)' : 'transparent',
+        overflow: 'hidden',
+        transition: 'all 0.12s',
+        flexShrink: 0,
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <button
+        onClick={onClick}
+        style={{
+          flex: 1,
+          padding: '5px 0 5px 4px',
+          fontSize: '10px',
+          fontWeight: active ? '600' : '400',
+          letterSpacing: '0.03em',
+          background: 'none',
+          border: 'none',
+          color: active ? 'var(--white)' : 'var(--body)',
+          cursor: 'pointer',
+          textAlign: 'center',
+          fontFamily: 'var(--font)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+        }}
+        title={label}
+      >
+        {label}
+      </button>
+      {hover && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="Delete tag"
+          style={{
+            padding: '5px 5px 5px 2px',
+            fontSize: '9px',
+            background: 'none',
+            border: 'none',
+            color: active ? 'rgba(255,255,255,0.6)' : 'var(--muted)',
+            cursor: 'pointer',
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          ×
+        </button>
       )}
     </div>
   );
@@ -275,10 +490,10 @@ function EntryItem({ entry, active, onClick, onDelete }) {
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
     >
-      <div style={{ ...s.itemDate, ...(active ? s.itemDateActive : {}) }}>
+      <div style={{ ...s.itemDate }}>
         {formatEntryDate(entry.date || entry.created_at)}
       </div>
-      <div style={{ ...s.itemTitle, ...(active ? s.itemTitleActive : {}), paddingRight: hover ? '18px' : '0' }}>
+      <div style={{ ...s.itemTitle, paddingRight: hover ? '18px' : '0' }}>
         {entry.title || 'Untitled'}
       </div>
       {hover && onDelete && (

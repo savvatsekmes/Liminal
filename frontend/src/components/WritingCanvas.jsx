@@ -20,7 +20,6 @@ import History from '@tiptap/extension-history';
 import Placeholder from '@tiptap/extension-placeholder';
 import Code from '@tiptap/extension-code';
 import Blockquote from '../extensions/Blockquote';
-import TagBar from './TagBar';
 import VersionsPanel from './VersionsPanel';
 import CardPullModal from './CardPullModal';
 import DoodleModal from './DoodleModal';
@@ -155,6 +154,7 @@ export default function WritingCanvas({
   onVersionPreview,
   previewVersionId,
   isFirstSession,
+  allTags = [],
 }) {
   const { t } = useLanguage();
   const saveTimer = useRef(null);
@@ -548,21 +548,11 @@ export default function WritingCanvas({
 
         <span style={s.wordCount}>{t('common.words', { count: words })}</span>
 
-        <button
-          style={{ ...s.toolbarBtn, fontSize: '12px', width: 'auto', padding: '0 10px' }}
-          onClick={onNew}
-          title={t('journal.newEntry')}
-        >
-          + {t('journal.newEntry')}
-        </button>
       </div>
 
-      {/* Tag bar */}
+      {/* Tag selector */}
       {entry && (
-        <TagBar
-          tags={entry.tags || []}
-          onTagsChange={(tags) => onUpdate({ tags })}
-        />
+        <TagSelector tags={entry.tags || []} allTags={allTags} onTagsChange={(tags) => onUpdate({ tags })} />
       )}
 
       {/* Entry title + meta */}
@@ -845,5 +835,95 @@ function WaveformIcon({ playing }) {
         {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
       </rect>
     </svg>
+  );
+}
+
+function TagSelector({ tags, allTags, onTagsChange }) {
+  const [adding, setAdding] = useState(false);
+  const [newTag, setNewTag] = useState('');
+
+  function toggleTag(tag) {
+    onTagsChange(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]);
+  }
+
+  function addTag() {
+    const clean = newTag.trim().toLowerCase();
+    if (clean && !tags.includes(clean)) onTagsChange([...tags, clean]);
+    setNewTag('');
+    setAdding(false);
+  }
+
+  const displayTags = [...new Set([...allTags, ...tags])].sort();
+
+  const pillBase = {
+    fontSize: '10px',
+    padding: '3px 9px',
+    borderRadius: '20px',
+    border: '1px solid var(--border)',
+    background: 'transparent',
+    color: 'var(--muted)',
+    cursor: 'pointer',
+    transition: 'all 0.12s',
+    fontFamily: 'var(--font)',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  };
+
+  const pillActive = {
+    border: '1px solid var(--strong)',
+    background: 'var(--strong)',
+    color: 'var(--white)',
+    fontWeight: '600',
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '5px',
+      padding: '6px 32px',
+      borderBottom: 'var(--border-style)',
+      flexWrap: 'wrap',
+      flexShrink: 0,
+    }}>
+      {displayTags.map((tag) => (
+        <button
+          key={tag}
+          style={{ ...pillBase, ...(tags.includes(tag) ? pillActive : {}) }}
+          onClick={() => toggleTag(tag)}
+        >
+          {tag}
+        </button>
+      ))}
+      {adding ? (
+        <input
+          autoFocus
+          value={newTag}
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') addTag(); if (e.key === 'Escape') { setAdding(false); setNewTag(''); } }}
+          onBlur={addTag}
+          placeholder="tag…"
+          style={{
+            fontSize: '10px',
+            padding: '3px 8px',
+            border: '1px solid var(--border)',
+            borderRadius: '20px',
+            background: 'var(--white)',
+            color: 'var(--strong)',
+            outline: 'none',
+            width: '70px',
+            fontFamily: 'var(--font)',
+          }}
+        />
+      ) : (
+        <button
+          style={{ ...pillBase, border: '1px dashed var(--border)' }}
+          onClick={() => setAdding(true)}
+          title="Add tag"
+        >
+          +
+        </button>
+      )}
+    </div>
   );
 }

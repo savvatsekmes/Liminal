@@ -139,7 +139,7 @@ const styles = {
 export default function Layout({ children, activeView, onViewChange, onLogout, avatarUrl, username }) {
   const { t, lang, setLanguage } = useLanguage();
   const [entryListOpen, setEntryListOpen] = useState(true);
-  const [entryListWidth, startEntryDrag] = useResizable(240, { min: 160, max: 480 });
+  const [entryListWidth, startEntryDrag] = useResizable(296, { min: 220, max: 480 });
   // Mirror split as percentage (0–100) of content area
   const [mirrorPct, setMirrorPct] = useState(50);
   const contentRef = useRef(null);

@@ -222,6 +222,8 @@ export default function MemoryPage() {
       .then((p) => {
         const vals = {};
         for (const { key } of SLIDER_AXES) vals[key] = p[key] ?? 50;
+        vals.slider_sky_weight = p.slider_sky_weight ?? 50;
+        vals.slider_portrait_weight = p.slider_portrait_weight ?? 50;
         setSliders(vals);
         setCustomArchetypes(p.custom_archetypes || []);
       })
@@ -394,6 +396,47 @@ export default function MemoryPage() {
               )}
             </div>
           ))}
+          {/* Woo Woo section */}
+          <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: '28px', marginBottom: '16px' }}>
+            Woo Woo
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <div style={s.sliderRow}>
+              <span style={s.sliderLabel}>Off</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                style={s.slider}
+                value={sliders.slider_portrait_weight ?? 50}
+                onChange={(e) => setSlider('slider_portrait_weight', Number(e.target.value))}
+              />
+              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Full</span>
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
+              Portrait weight — how much your MBTI, enneagram, birth chart, and profile shape responses
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <div style={s.sliderRow}>
+              <span style={s.sliderLabel}>Off</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                style={s.slider}
+                value={sliders.slider_sky_weight ?? 50}
+                onChange={(e) => setSlider('slider_sky_weight', Number(e.target.value))}
+              />
+              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Full</span>
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
+              Sky weight — how much moon phase, planetary positions, and retrogrades colour reflections
+            </div>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
             <button
               style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', opacity: savingSliders ? 0.5 : 1 }}

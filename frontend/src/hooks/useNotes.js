@@ -1,48 +1,69 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { apiFetch } from '../utils/api';
 
 const API = '/api/notes';
 
 export function useNotes() {
-  const [notes, setNotes] = useState([]);
+  const [allNotes, setAllNotes] = useState([]);
   const [activeNote, setActiveNote] = useState(null);
-  const [filterType, setFilterType] = useState('all');
-  const [filterCustomTag, setFilterCustomTag] = useState(null);
+  const [activeFilters, setActiveFilters] = useState([]); // empty = show all
   const [customTags, setCustomTags] = useState([]);
   const [loading, setLoading] = useState(false);
   const saveTimers = useRef({});
 
-  const fetchNotes = useCallback(async (type = filterType, customTag = filterCustomTag) => {
-    const params = new URLSearchParams();
-    if (type && type !== 'all') params.set('type', type);
-    if (type === 'custom' && customTag) params.set('custom_tag', customTag);
-    const res = await apiFetch(`${API}?${params}`);
+  // Collect all unique tags across notes
+  const allTags = useMemo(() =>
+    [...new Set(allNotes.flatMap(n => n.tags || []))].sort()
+  , [allNotes]);
+
+  // Client-side filtered list — check note.tags array
+  const notes = useMemo(() => {
+    if (activeFilters.length === 0) return allNotes;
+    return allNotes.filter((n) =>
+      (n.tags || []).some(tag => activeFilters.includes(tag))
+    );
+  }, [allNotes, activeFilters]);
+
+  const fetchNotes = useCallback(async () => {
+    const res = await apiFetch(API);
     const data = await res.json();
-    setNotes(data);
-    // Keep active note in sync
+    setAllNotes(data);
     setActiveNote((prev) => {
-      if (!prev) return prev;
-      return data.find((n) => n.id === prev.id) || null;
+      if (!prev) return data[0] || null;
+      return data.find((n) => n.id === prev.id) || data[0] || null;
     });
-  }, [filterType, filterCustomTag]);
+  }, []);
 
   const fetchCustomTags = useCallback(async () => {
     const res = await apiFetch(`${API}/custom-tags`);
     setCustomTags(await res.json());
   }, []);
 
-  useEffect(() => {
-    fetchNotes(filterType, filterCustomTag);
-  }, [filterType, filterCustomTag]);
+  useEffect(() => { fetchNotes(); }, []);
+  useEffect(() => { fetchCustomTags(); }, []);
 
+  // Auto-select first note when filters change and active note is no longer visible
   useEffect(() => {
-    fetchCustomTags();
-  }, []);
+    if (activeNote && !notes.find((n) => n.id === activeNote.id)) {
+      setActiveNote(notes[0] || null);
+    }
+  }, [notes]);
 
-  async function createNote(type = 'idea', customTag = null) {
+  function toggleFilter(key) {
+    setActiveFilters((prev) =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  }
+
+  function clearFilters() {
+    setActiveFilters([]);
+  }
+
+  async function createNote(type = 'none', customTag = null, tags = []) {
     const body = {
       type,
       body: '',
+      tags,
       ...(type === 'custom' && customTag ? { custom_tag: customTag } : {}),
     };
     const res = await apiFetch(API, {
@@ -51,7 +72,7 @@ export function useNotes() {
       body: JSON.stringify(body),
     });
     const note = await res.json();
-    setNotes((prev) => [note, ...prev]);
+    setAllNotes((prev) => [note, ...prev]);
     setActiveNote(note);
     if (type === 'custom' && customTag) {
       setCustomTags((prev) => prev.includes(customTag) ? prev : [...prev, customTag].sort());
@@ -60,7 +81,7 @@ export function useNotes() {
   }
 
   function updateNoteLocal(id, fields) {
-    setNotes((prev) => prev.map((n) => n.id === id ? { ...n, ...fields } : n));
+    setAllNotes((prev) => prev.map((n) => n.id === id ? { ...n, ...fields } : n));
     setActiveNote((prev) => prev?.id === id ? { ...prev, ...fields } : prev);
   }
 
@@ -85,13 +106,16 @@ export function useNotes() {
     clearTimeout(saveTimers.current[id]);
     delete saveTimers.current[id];
     await apiFetch(`${API}/${id}`, { method: 'DELETE' });
-    setNotes((prev) => prev.filter((n) => n.id !== id));
-    setActiveNote((prev) => prev?.id === id ? null : prev);
+    setAllNotes((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+      setActiveNote((cur) => cur?.id === id ? (next[0] || null) : cur);
+      return next;
+    });
   }
 
   async function deleteCustomTag(tag) {
     await apiFetch(`${API}/custom-tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
-    setNotes((prev) => prev.map((n) =>
+    setAllNotes((prev) => prev.map((n) =>
       n.type === 'custom' && n.custom_tag === tag
         ? { ...n, type: 'none', custom_tag: null }
         : n
@@ -102,27 +126,18 @@ export function useNotes() {
         : prev
     );
     setCustomTags((prev) => prev.filter((t) => t !== tag));
-    if (filterType === 'custom' && filterCustomTag === tag) {
-      setFilterType('none');
-      setFilterCustomTag(null);
-    }
+    setActiveFilters((prev) => prev.filter(k => k !== `custom:${tag}`));
   }
 
   function selectNote(note) {
     setActiveNote(note);
   }
 
-  function changeFilter(type, customTag = null) {
-    setFilterType(type);
-    setFilterCustomTag(customTag);
-    setActiveNote(null);
-  }
-
   return {
     notes,
     activeNote,
-    filterType,
-    filterCustomTag,
+    activeFilters,
+    allTags,
     customTags,
     loading,
     createNote,
@@ -130,7 +145,8 @@ export function useNotes() {
     deleteNote,
     deleteCustomTag,
     selectNote,
-    changeFilter,
+    toggleFilter,
+    clearFilters,
     refreshCustomTags: fetchCustomTags,
   };
 }

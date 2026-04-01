@@ -511,7 +511,7 @@ function formatSessionDate(dateStr) {
   if (!dateStr) return '';
   try {
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
   } catch { return ''; }
 }
 
@@ -519,6 +519,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
   const { t } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [showCal, setShowCal] = useState(true);
+  const [search, setSearch] = useState('');
   const [currentSession, setCurrentSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [archetype, setArchetype] = useState('Zen');
@@ -532,11 +533,11 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
   const [newArchetypeName, setNewArchetypeName] = useState('');
   const [newArchetypeDesc, setNewArchetypeDesc] = useState('');
 
-  // Tags
-  const [oracleTags, setOracleTags] = useState([]);
-  const [filterTag, setFilterTag] = useState(ALL_TAG);
+  // Tags — multi-select filter
+  const [activeFilters, setActiveFilters] = useState([]);
   const [addingTag, setAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
+  const allSessionTags = [...new Set(sessions.flatMap(s => s.tags || []))].sort();
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
 
   // Per-message TTS state
@@ -572,8 +573,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       apiFetch('/api/oracle/sessions').then((r) => r.json()),
       apiFetch('/api/portrait').then((r) => r.json()),
       fetch('/api/tts/status').then((r) => r.json()),
-      apiFetch('/api/oracle/tags').then((r) => r.json()),
-    ]).then(([sessionsData, portrait, ttsData, tagsData]) => {
+    ]).then(([sessionsData, portrait, ttsData]) => {
       if (Array.isArray(sessionsData)) {
         setSessions(sessionsData);
         const targetId = initialSessionId || (sessionsData.length > 0 ? sessionsData[0].id : null);
@@ -595,7 +595,6 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
         } catch {}
       }
       setTtsOnline(ttsData.online);
-      if (Array.isArray(tagsData)) setOracleTags(tagsData);
     }).catch(() => {});
   }, []);
 
@@ -737,24 +736,50 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     setConfirmModal({ message, onConfirm });
   }
 
+  function toggleFilter(key) {
+    setActiveFilters((prev) =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  }
+
+  function clearFilters() {
+    setActiveFilters([]);
+  }
+
   async function handleAddTag() {
-    const tag = newTagInput.trim();
-    if (!tag) return;
-    setOracleTags((prev) => prev.includes(tag) ? prev : [...prev, tag].sort());
+    const tag = newTagInput.trim().toLowerCase();
+    if (!tag || !currentSession) return;
+    const newTags = (currentSession.tags || []).includes(tag) ? currentSession.tags : [...(currentSession.tags || []), tag];
+    await apiFetch(`/api/oracle/sessions/${currentSession.id}/tags`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: newTags }),
+    });
+    setCurrentSession((s) => s ? { ...s, tags: newTags } : s);
+    setSessions((prev) => prev.map((s) => s.id === currentSession.id ? { ...s, tags: newTags } : s));
     setNewTagInput('');
     setAddingTag(false);
-    setFilterTag(tag);
   }
 
   async function handleDeleteTag(tag) {
     openConfirm(t('oracle.deleteTagConfirm', { tag }), async () => {
-      await apiFetch(`/api/oracle/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
-      setSessions((prev) => prev.map((s) => s.tag === tag ? { ...s, tag: null } : s));
-      if (currentSession?.tag === tag) {
-        setCurrentSession((s) => s ? { ...s, tag: null } : s);
+      // Remove tag from all sessions
+      const affected = sessions.filter(s => (s.tags || []).includes(tag));
+      for (const sess of affected) {
+        const newTags = (sess.tags || []).filter(t => t !== tag);
+        await apiFetch(`/api/oracle/sessions/${sess.id}/tags`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tags: newTags }),
+        });
       }
-      setOracleTags((prev) => prev.filter((t) => t !== tag));
-      if (filterTag === tag) setFilterTag(ALL_TAG);
+      setSessions((prev) => prev.map((s) => ({
+        ...s, tags: (s.tags || []).filter(t => t !== tag)
+      })));
+      if ((currentSession?.tags || []).includes(tag)) {
+        setCurrentSession((s) => s ? { ...s, tags: (s.tags || []).filter(t => t !== tag) } : s);
+      }
+      setActiveFilters((prev) => prev.filter(k => k !== tag));
       setConfirmModal(null);
     });
   }
@@ -774,20 +799,15 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     );
   }
 
-  async function handleSessionTagChange(tag) {
+  async function handleSessionTagsChange(tags) {
     if (!currentSession) return;
-    const newTag = tag || null;
-    await apiFetch(`/api/oracle/sessions/${currentSession.id}/tag`, {
+    await apiFetch(`/api/oracle/sessions/${currentSession.id}/tags`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag: newTag }),
+      body: JSON.stringify({ tags }),
     });
-    setCurrentSession((s) => s ? { ...s, tag: newTag } : s);
-    setSessions((prev) => prev.map((s) => s.id === currentSession.id ? { ...s, tag: newTag } : s));
-    // Add to tags list if new
-    if (newTag && !oracleTags.includes(newTag)) {
-      setOracleTags((prev) => [...prev, newTag].sort());
-    }
+    setCurrentSession((s) => s ? { ...s, tags } : s);
+    setSessions((prev) => prev.map((s) => s.id === currentSession.id ? { ...s, tags } : s));
   }
 
   async function handleCreateArchetype() {
@@ -879,9 +899,13 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
   const showEmpty = !loading && messages.length === 0;
 
-  const filteredSessions = filterTag === ALL_TAG
+  const filteredSessions = activeFilters.length === 0
     ? sessions
-    : sessions.filter((s) => s.tag === filterTag);
+    : sessions.filter((s) => (s.tags || []).some(t => activeFilters.includes(t)));
+
+  const searchedSessions = search
+    ? filteredSessions.filter(s => (s.first_message || s.title || '').toLowerCase().includes(search.toLowerCase()))
+    : filteredSessions;
 
   return (
     <div style={s.root}>
@@ -908,7 +932,6 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
             >
               {t('journal.calendar')}
             </button>
-            <button style={s.sidebarNew} onClick={handleNewConversation} title={t('oracle.newConversation')}>+</button>
           </div>
         </div>
         {showCal && (
@@ -920,10 +943,35 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
             titleField="first_message"
           />
         )}
+        <input
+          style={{
+            margin: '8px 10px', padding: '5px 10px', fontSize: '12px',
+            border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
+            width: 'calc(100% - 20px)', color: 'var(--strong)', outline: 'none',
+            flexShrink: 0, fontFamily: 'var(--font)',
+          }}
+          placeholder={t('common.search')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button
+          style={{
+            margin: '0 10px 8px', padding: '7px 0', fontSize: '11px',
+            fontFamily: 'var(--font)', color: 'var(--muted)', background: 'transparent',
+            border: '1.5px dashed var(--border)', borderRadius: '10px',
+            width: 'calc(100% - 20px)', cursor: 'pointer', letterSpacing: '0.03em',
+            transition: 'background 0.15s, color 0.15s', flexShrink: 0,
+          }}
+          onClick={handleNewConversation}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--strong)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
+        >
+          + {t('oracle.newConversation')}
+        </button>
         <div style={s.sidebarList}>
-          {filteredSessions.length === 0 ? (
+          {searchedSessions.length === 0 ? (
             <div style={s.sidebarEmpty}>{t('oracle.noConversations')}</div>
-          ) : filteredSessions.map((sess) => {
+          ) : searchedSessions.map((sess) => {
             const active = currentSession?.id === sess.id;
             return (
               <SidebarItem
@@ -940,9 +988,10 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
       {/* Tag strip */}
       <TagStrip
-        tags={oracleTags}
-        filterTag={filterTag}
-        onFilter={setFilterTag}
+        tags={allSessionTags}
+        activeFilters={activeFilters}
+        onToggle={toggleFilter}
+        onClear={clearFilters}
         addingTag={addingTag}
         newTagInput={newTagInput}
         onAddingTag={setAddingTag}
@@ -958,31 +1007,14 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
       {/* Main chat area */}
       <div style={s.mainArea}>
-      {/* Header */}
-      <div style={s.header}>
-        <span style={s.headerTitle}>{t('oracle.title')}</span>
-        <div style={s.headerRight}>
-          {currentSession && (
-            <select
-              style={s.sessionTagSelector}
-              value={currentSession.tag || ''}
-              onChange={(e) => handleSessionTagChange(e.target.value)}
-              title={t('oracle.tagConversation')}
-            >
-              <option value="">{t('oracle.noTag')}</option>
-              {oracleTags.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-              {oracleTags.length === 0 && (
-                <option disabled>{t('oracle.createTagsHint')}</option>
-              )}
-            </select>
-          )}
-          <button style={s.headerBtn} onClick={handleNewConversation}>
-            {t('oracle.clear')}
-          </button>
-        </div>
-      </div>
+      {/* Session tag selector */}
+      {currentSession && (
+        <SessionTagSelector
+          tags={currentSession.tags || []}
+          allTags={allSessionTags}
+          onTagsChange={handleSessionTagsChange}
+        />
+      )}
 
       {/* Messages */}
       {showEmpty ? (
@@ -1244,7 +1276,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
 // ── Tag strip ───────────────────────────────────────────────────────────────
 
-function TagStrip({ tags, filterTag, onFilter, addingTag, newTagInput, onAddingTag, onNewTagInput, onAddTag, onDeleteTag }) {
+function TagStrip({ tags, activeFilters, onToggle, onClear, addingTag, newTagInput, onAddingTag, onNewTagInput, onAddTag, onDeleteTag }) {
   const { t } = useLanguage();
   const inputRef = useRef(null);
 
@@ -1257,8 +1289,8 @@ function TagStrip({ tags, filterTag, onFilter, addingTag, newTagInput, onAddingT
       {/* "All" pill */}
       <TagFilterPill
         label={t('oracle.allTag')}
-        active={filterTag === ALL_TAG}
-        onClick={() => onFilter(ALL_TAG)}
+        active={activeFilters.length === 0}
+        onClick={onClear}
       />
 
       {tags.length > 0 && (
@@ -1269,8 +1301,8 @@ function TagStrip({ tags, filterTag, onFilter, addingTag, newTagInput, onAddingT
         <TagCustomPill
           key={tag}
           label={tag}
-          active={filterTag === tag}
-          onClick={() => onFilter(tag)}
+          active={activeFilters.includes(tag)}
+          onClick={() => onToggle(tag)}
           onDelete={() => onDeleteTag(tag)}
         />
       ))}
@@ -1430,7 +1462,7 @@ function SidebarItem({ sess, active, onClick, onDelete }) {
       onMouseLeave={() => setHover(false)}
     >
       <div style={{ ...s.sidebarItemMeta, ...(active ? s.sidebarItemMetaActive : {}), paddingRight: '18px' }}>
-        {sess.archetype} · {formatSessionDate(sess.created_at)}
+        {sess.archetype}{(sess.tags || []).length > 0 ? ' · ' + (sess.tags || []).join(' · ') : ''} · {formatSessionDate(sess.created_at)}
       </div>
       <div style={{ ...s.sidebarItemTitle, ...(active ? s.sidebarItemTitleActive : {}) }}>
         {(sess.first_message || sess.title || t('oracle.newConversation')).slice(0, 60)}
@@ -1483,5 +1515,95 @@ function WaveformIcon({ playing }) {
         {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
       </rect>
     </svg>
+  );
+}
+
+function SessionTagSelector({ tags, allTags, onTagsChange }) {
+  const [adding, setAdding] = useState(false);
+  const [newTag, setNewTag] = useState('');
+
+  function toggleTag(tag) {
+    onTagsChange(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]);
+  }
+
+  function addTag() {
+    const clean = newTag.trim().toLowerCase();
+    if (clean && !tags.includes(clean)) onTagsChange([...tags, clean]);
+    setNewTag('');
+    setAdding(false);
+  }
+
+  const displayTags = [...new Set([...allTags, ...tags])].sort();
+
+  const pillBase = {
+    fontSize: '10px',
+    padding: '3px 9px',
+    borderRadius: '20px',
+    border: '1px solid var(--border)',
+    background: 'transparent',
+    color: 'var(--muted)',
+    cursor: 'pointer',
+    transition: 'all 0.12s',
+    fontFamily: 'var(--font)',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  };
+
+  const pillActive = {
+    border: '1px solid var(--strong)',
+    background: 'var(--strong)',
+    color: 'var(--white)',
+    fontWeight: '600',
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '5px',
+      padding: '6px 24px',
+      borderBottom: 'var(--border-style)',
+      flexWrap: 'wrap',
+      flexShrink: 0,
+    }}>
+      {displayTags.map((tag) => (
+        <button
+          key={tag}
+          style={{ ...pillBase, ...(tags.includes(tag) ? pillActive : {}) }}
+          onClick={() => toggleTag(tag)}
+        >
+          {tag}
+        </button>
+      ))}
+      {adding ? (
+        <input
+          autoFocus
+          value={newTag}
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') addTag(); if (e.key === 'Escape') { setAdding(false); setNewTag(''); } }}
+          onBlur={addTag}
+          placeholder="tag…"
+          style={{
+            fontSize: '10px',
+            padding: '3px 8px',
+            border: '1px solid var(--border)',
+            borderRadius: '20px',
+            background: 'var(--white)',
+            color: 'var(--strong)',
+            outline: 'none',
+            width: '70px',
+            fontFamily: 'var(--font)',
+          }}
+        />
+      ) : (
+        <button
+          style={{ ...pillBase, border: '1px dashed var(--border)' }}
+          onClick={() => setAdding(true)}
+          title="Add tag"
+        >
+          +
+        </button>
+      )}
+    </div>
   );
 }

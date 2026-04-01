@@ -35,6 +35,8 @@ router.put('/', (req, res) => {
     slider_encouraging_challenging,
     slider_character_influence,
     slider_candor,
+    slider_sky_weight,
+    slider_portrait_weight,
     archetypes,
     active_archetypes,
     language,
@@ -70,6 +72,8 @@ router.put('/', (req, res) => {
     slider_encouraging_challenging,
     slider_character_influence,
     slider_candor,
+    slider_sky_weight,
+    slider_portrait_weight,
     life_path_number,
   };
 

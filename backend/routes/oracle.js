@@ -7,34 +7,31 @@ const memory = require('../services/memoryService');
 
 router.use(requireAuth);
 
+function parseTags(raw) {
+  try { return JSON.parse(raw || '[]'); } catch { return []; }
+}
+function sessionRow(row) {
+  if (!row) return null;
+  return { ...row, tags: parseTags(row.tags) };
+}
+
 // ── GET /api/oracle/sessions ───────────────────────────────────────────────
 router.get('/sessions', (req, res) => {
-  const { tag } = req.query;
-  const conditions = ['s.user_id = ?'];
-  const params = [req.userId];
-
-  if (tag === '__untagged__') {
-    conditions.push('(s.tag IS NULL OR s.tag = \'\')');
-  } else if (tag) {
-    conditions.push('s.tag = ?');
-    params.push(tag);
-  }
-
   const sessions = db.prepare(`
     SELECT
-      s.id, s.archetype, s.title, s.tag, s.created_at,
+      s.id, s.archetype, s.title, s.tag, s.tags, s.created_at,
       COUNT(m.id) AS message_count,
       (SELECT content FROM oracle_messages
        WHERE session_id = s.id AND role = 'user'
        ORDER BY created_at ASC LIMIT 1) AS first_message
     FROM oracle_sessions s
     LEFT JOIN oracle_messages m ON m.session_id = s.id
-    WHERE ${conditions.join(' AND ')}
+    WHERE s.user_id = ?
     GROUP BY s.id
     ORDER BY s.created_at DESC
     LIMIT 50
-  `).all(...params);
-  res.json(sessions);
+  `).all(req.userId);
+  res.json(sessions.map(sessionRow));
 });
 
 // ── GET /api/oracle/tags ───────────────────────────────────────────────────
@@ -60,6 +57,17 @@ router.put('/sessions/:id/tag', (req, res) => {
 
   const { tag } = req.body;
   db.prepare('UPDATE oracle_sessions SET tag = ? WHERE id = ?').run(tag || null, session.id);
+  res.json({ success: true });
+});
+
+// ── PUT /api/oracle/sessions/:id/tags ─────────────────────────────────────
+router.put('/sessions/:id/tags', (req, res) => {
+  const session = db.prepare('SELECT id FROM oracle_sessions WHERE id = ? AND user_id = ?')
+    .get(req.params.id, req.userId);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  const { tags } = req.body;
+  db.prepare('UPDATE oracle_sessions SET tags = ? WHERE id = ?').run(JSON.stringify(tags || []), session.id);
   res.json({ success: true });
 });
 
@@ -96,7 +104,7 @@ router.post('/sessions', (req, res) => {
     'INSERT INTO oracle_sessions (user_id, archetype) VALUES (?, ?)'
   ).run(req.userId, archetype);
   const session = db.prepare('SELECT * FROM oracle_sessions WHERE id = ?').get(result.lastInsertRowid);
-  res.json(session);
+  res.json(sessionRow(session));
 });
 
 // ── GET /api/oracle/sessions/:id ──────────────────────────────────────────
@@ -110,7 +118,7 @@ router.get('/sessions/:id', (req, res) => {
     'SELECT * FROM oracle_messages WHERE session_id = ? ORDER BY created_at ASC'
   ).all(session.id);
 
-  res.json({ ...session, messages });
+  res.json({ ...sessionRow(session), messages });
 });
 
 // ── POST /api/oracle/sessions/:id/messages ────────────────────────────────

@@ -34,6 +34,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     deleteEntry,
     selectEntry,
     refreshEntries,
+    allTags,
   } = useEntries();
 
   const {
@@ -75,6 +76,14 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     await selectEntry(entry);
   }
 
+  async function handleDeleteTag(tag) {
+    // Remove tag from all entries that have it
+    const tagged = entries.filter(e => (e.tags || []).includes(tag));
+    for (const entry of tagged) {
+      await updateEntry(entry.id, { tags: (entry.tags || []).filter(t => t !== tag) });
+    }
+  }
+
   async function handleReflect() {
     if (!activeEntry) return;
     await reflect(activeEntry);
@@ -90,6 +99,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             onSelect={handleSelect}
             onNew={handleNew}
             onDelete={deleteEntry}
+            allTags={allTags}
+            onDeleteTag={handleDeleteTag}
           />
         ),
 
@@ -102,6 +113,10 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNavigateToNote={(id) => { setPendingNoteId(id); setActiveView('notes'); }}
               onNavigateToOracle={(id) => { setPendingSessionId(id); setActiveView('oracle'); }}
               onNavigateToSky={() => { setPendingPortraitTab('sky'); setActiveView('portrait'); }}
+              onNavigateToCards={() => { setPendingPortraitTab('cards'); setActiveView('portrait'); }}
+              onNewEntry={() => { createEntry(); setActiveView('journal'); }}
+              onNewNote={() => setActiveView('notes')}
+              onNewConversation={() => setActiveView('oracle')}
             />
           );
           if (activeView === 'oracle') return <OraclePage initialSessionId={pendingSessionId} onSessionSelected={() => setPendingSessionId(null)} />;
@@ -120,6 +135,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onVersionPreview={setPreviewVersion}
               previewVersionId={previewVersion?.id}
               isFirstSession={isFirstSession}
+              allTags={allTags}
             />
           );
         },

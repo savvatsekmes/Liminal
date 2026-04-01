@@ -7,29 +7,18 @@ const { buildImageContext } = require('./images');
 
 router.use(requireAuth);
 
+function parseTags(raw) {
+  try { return JSON.parse(raw || '[]'); } catch { return []; }
+}
+function noteRow(row) {
+  if (!row) return null;
+  return { ...row, tags: parseTags(row.tags) };
+}
+
 // ── GET /api/notes ────────────────────────────────────────────────────────────
-// Optional ?type=quote or ?type=custom&custom_tag=MyTag
 router.get('/', (req, res) => {
-  const { type, custom_tag } = req.query;
-
-  let query = 'SELECT * FROM notes';
-  const params = [];
-  const conditions = [`user_id = ?`];
-  params.push(req.userId);
-
-  if (type && type !== 'all') {
-    conditions.push('type = ?');
-    params.push(type);
-    if (type === 'custom' && custom_tag) {
-      conditions.push('custom_tag = ?');
-      params.push(custom_tag);
-    }
-  }
-
-  query += ' WHERE ' + conditions.join(' AND ');
-  query += ' ORDER BY created_at DESC';
-
-  res.json(db.prepare(query).all(...params));
+  const rows = db.prepare('SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
+  res.json(rows.map(noteRow));
 });
 
 // ── GET /api/notes/custom-tags ────────────────────────────────────────────────
@@ -52,15 +41,15 @@ router.delete('/custom-tags/:tag', (req, res) => {
 
 // ── POST /api/notes ───────────────────────────────────────────────────────────
 router.post('/', (req, res) => {
-  const { type = 'idea', body = '', attribution, target_date, custom_tag } = req.body;
+  const { type = 'idea', body = '', attribution, target_date, custom_tag, tags = [] } = req.body;
   const result = db
     .prepare(
-      `INSERT INTO notes (type, body, attribution, target_date, custom_tag, user_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO notes (type, body, attribution, target_date, custom_tag, tags, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(type, body, attribution || null, target_date || null, custom_tag || null, req.userId);
+    .run(type, body, attribution || null, target_date || null, custom_tag || null, JSON.stringify(tags), req.userId);
 
-  res.status(201).json(db.prepare('SELECT * FROM notes WHERE id = ?').get(result.lastInsertRowid));
+  res.status(201).json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(result.lastInsertRowid)));
 });
 
 // ── PUT /api/notes/:id ────────────────────────────────────────────────────────
@@ -69,7 +58,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Note not found' });
 
 
-  const { type, body, attribution, target_date, custom_tag } = req.body;
+  const { type, body, attribution, target_date, custom_tag, tags } = req.body;
   const fields = [];
   const params = [];
 
@@ -78,6 +67,7 @@ router.put('/:id', (req, res) => {
   if (attribution !== undefined) { fields.push('attribution = ?'); params.push(attribution || null); }
   if (target_date !== undefined) { fields.push('target_date = ?'); params.push(target_date || null); }
   if (custom_tag !== undefined)  { fields.push('custom_tag = ?');  params.push(custom_tag || null); }
+  if (tags !== undefined)        { fields.push('tags = ?');        params.push(JSON.stringify(tags)); }
   if (req.body.title !== undefined) { fields.push('title = ?');    params.push(req.body.title); }
 
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
@@ -86,7 +76,7 @@ router.put('/:id', (req, res) => {
   params.push(req.params.id, req.userId);
 
   db.prepare(`UPDATE notes SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...params);
-  res.json(db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id));
+  res.json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id)));
 });
 
 // ── DELETE /api/notes/:id ─────────────────────────────────────────────────────
@@ -160,7 +150,7 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
     'UPDATE notes SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?'
   ).run(version.body, req.params.id, req.userId);
 
-  res.json(db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id));
+  res.json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id)));
 });
 
 // ── POST /api/notes/:id/reflect ───────────────────────────────────────────────

@@ -173,7 +173,12 @@ const s = {
     background: 'var(--border)',
     alignSelf: 'stretch',
   },
-  // Moon card
+  // Moon + Daily Card row
+  moonCardRow: {
+    display: 'flex',
+    gap: '16px',
+    marginBottom: '28px',
+  },
   moonCard: {
     display: 'flex',
     alignItems: 'center',
@@ -181,13 +186,14 @@ const s = {
     border: 'var(--border-style)',
     borderRadius: '16px',
     padding: '16px 20px',
-    marginBottom: '28px',
     background: 'var(--near-white)',
     cursor: 'pointer',
     transition: 'border-color 0.15s',
+    flex: 1,
+    minWidth: 0,
   },
   moonInfo: {
-    flex: 1,
+    flex: 2,
     minWidth: 0,
   },
   moonPhase: {
@@ -208,11 +214,128 @@ const s = {
     lineHeight: '1.5',
     marginTop: '4px',
   },
+  // Daily card panel
+  dailyCardPanel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    border: 'var(--border-style)',
+    borderRadius: '16px',
+    padding: '16px 20px',
+    background: 'var(--near-white)',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s',
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyFlipContainer: {
+    width: 80,
+    height: 137,
+    perspective: '800px',
+    flexShrink: 0,
+  },
+  dailyFlipInner: {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    transformStyle: 'preserve-3d',
+    transition: 'transform 0.7s ease',
+  },
+  dailyFlipFace: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backfaceVisibility: 'hidden',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+  },
+  dailyCardImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  },
+  dailyOracleCard: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '8px 6px',
+    background: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+    color: '#d4af37',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+  },
+  dailyOracleDiamond: {
+    width: 10,
+    height: 10,
+    background: '#d4af37',
+    transform: 'rotate(45deg)',
+    marginBottom: '6px',
+    flexShrink: 0,
+  },
+  dailyOracleName: {
+    fontSize: '8px',
+    fontWeight: '700',
+    letterSpacing: '0.05em',
+    lineHeight: '1.3',
+  },
+  dailyCardInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyCardLabel: {
+    fontSize: '9px',
+    fontWeight: '700',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+    marginBottom: '2px',
+  },
+  dailyCardName: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--strong)',
+    marginBottom: '4px',
+    lineHeight: '1.3',
+  },
+  dailyCardInsight: {
+    fontSize: '10px',
+    color: 'var(--body)',
+    fontStyle: 'italic',
+    lineHeight: '1.5',
+  },
   moonArrow: {
     fontSize: '22px',
     color: 'var(--muted)',
     flexShrink: 0,
     lineHeight: 1,
+  },
+  newLinkInline: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    cursor: 'pointer',
+    background: 'none',
+    border: 'none',
+    fontFamily: 'var(--font)',
+    padding: '0 4px',
+    flexShrink: 0,
+    textAlign: 'left',
+  },
+  newLinkValue: {
+    fontSize: '16px',
+    fontWeight: '700',
+    color: 'var(--strong)',
+    lineHeight: 1,
+  },
+  newLinkLabel: {
+    fontSize: '10px',
+    color: 'var(--muted)',
+    letterSpacing: '0.04em',
   },
   // Quick Ask
   sectionTitle: {
@@ -457,7 +580,7 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky }) {
+export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNewEntry, onNewNote, onNewConversation }) {
   const { t } = useLanguage();
   const [displayName, setDisplayName] = useState(username || '');
 
@@ -468,8 +591,12 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     }).catch(() => {});
   }, []);
 
-  // Moon
+  // Moon & sky
   const [moon, setMoon] = useState(null);
+
+  // Daily card
+  const [dailyCard, setDailyCard] = useState(null);
+  const [cardFlipped, setCardFlipped] = useState(false);
 
   // Stats
   const [entryCount, setEntryCount] = useState(null);
@@ -570,6 +697,13 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
     apiFetch('/api/sky/current').then(r => r.json()).then(data => {
       if (data?.moon) setMoon(data.moon);
+    }).catch(() => {});
+
+    apiFetch('/api/cards/daily').then(r => r.json()).then(card => {
+      if (card?.name) {
+        setDailyCard(card);
+        setTimeout(() => setCardFlipped(true), 800);
+      }
     }).catch(() => {});
   }, []);
 
@@ -756,25 +890,75 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           </div>
         ); })()}
 
-        {/* Moon phase widget */}
-        {moon && (
-          <div
-            style={s.moonCard}
-            onClick={() => onNavigateToSky?.()}
-            title="View Sky"
-          >
-            <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
-            <div style={s.moonInfo}>
-              <div style={s.moonPhase}>{moon.phase}</div>
-              <div style={s.moonDetail}>
-                {moon.illumination != null && <span>{Math.round(moon.illumination)}% illuminated</span>}
-                {moon.moonSign && <span> &middot; Moon in {moon.moonSign}</span>}
+        {/* Moon + Daily Card row */}
+        <div style={s.moonCardRow}>
+          {/* Moon panel → Sky */}
+          {moon && (
+            <div
+              style={s.moonCard}
+              onClick={() => onNavigateToSky?.()}
+              title="View Sky"
+            >
+              <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
+              <div style={s.moonInfo}>
+                <div style={s.moonPhase}>{moon.phase}</div>
+                <div style={s.moonDetail}>
+                  {moon.illumination != null && <span>{Math.round(moon.illumination)}% illuminated</span>}
+                  {moon.moonSign && <span> &middot; Moon in {moon.moonSign}</span>}
+                </div>
+                {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
               </div>
-              {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
+              <span style={s.moonArrow}>&rsaquo;</span>
             </div>
-            <span style={s.moonArrow}>&rsaquo;</span>
-          </div>
-        )}
+          )}
+
+          {/* Daily Card → Cards */}
+          {dailyCard && (
+            <div
+              style={s.dailyCardPanel}
+              onClick={() => onNavigateToCards?.()}
+              title="View Cards"
+            >
+              <div style={s.dailyFlipContainer}>
+                <div style={{
+                  ...s.dailyFlipInner,
+                  transform: cardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                }}>
+                  <div style={s.dailyFlipFace}>
+                    <img src="/cards/card-back.png" alt="Card back" style={s.dailyCardImg} />
+                  </div>
+                  <div style={{ ...s.dailyFlipFace, transform: 'rotateY(180deg)' }}>
+                    {dailyCard.image ? (
+                      <img
+                        src={dailyCard.image}
+                        alt={dailyCard.name}
+                        style={{
+                          ...s.dailyCardImg,
+                          transform: dailyCard.reversed ? 'rotate(180deg)' : 'none',
+                        }}
+                      />
+                    ) : (
+                      <div style={s.dailyOracleCard}>
+                        <div style={s.dailyOracleDiamond} />
+                        <div style={s.dailyOracleName}>{dailyCard.name}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div style={s.dailyCardInfo}>
+                <div style={s.dailyCardLabel}>Daily Card</div>
+                <div style={s.dailyCardName}>
+                  {dailyCard.name}{dailyCard.reversed ? ' (Reversed)' : ''}
+                </div>
+                {dailyCard.insight && (
+                  <div style={s.dailyCardInsight}>{dailyCard.insight}</div>
+                )}
+              </div>
+              <span style={s.moonArrow}>&rsaquo;</span>
+            </div>
+          )}
+        </div>
 
         {/* Insights card */}
         <div style={s.sectionTitle}>{t('nav.journal')}</div>
@@ -803,6 +987,12 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               </div>
             </>
           )}
+          <div style={{ flex: 1 }} />
+          <div style={s.insightDivider} />
+          <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewEntry?.(); }}>
+            <span style={s.newLinkValue}>+ New</span>
+            <span style={s.newLinkLabel}>Journal</span>
+          </button>
         </div>
 
         {/* Notes card */}
@@ -832,6 +1022,12 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               </div>
             </>
           )}
+          <div style={{ flex: 1 }} />
+          <div style={s.insightDivider} />
+          <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewNote?.(); }}>
+            <span style={s.newLinkValue}>+ New</span>
+            <span style={s.newLinkLabel}>Note</span>
+          </button>
         </div>
 
         {/* Oracle card */}
@@ -861,6 +1057,12 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               </div>
             </>
           )}
+          <div style={{ flex: 1 }} />
+          <div style={s.insightDivider} />
+          <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}>
+            <span style={s.newLinkValue}>+ New</span>
+            <span style={s.newLinkLabel}>Conversation</span>
+          </button>
         </div>
 
         {/* Quick Ask */}
@@ -1057,7 +1259,7 @@ function ArchetypeIcon() {
 }
 
 function MoonPhaseSVGSmall({ illumination = 50, phase = '' }) {
-  const size = 44;
+  const size = 80;
   const r = size / 2 - 2;
   const cx = size / 2;
   const cy = size / 2;

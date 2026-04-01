@@ -59,7 +59,7 @@ const TYPE_META = {
 
 function formatDate(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
 }
 
 export default function NotesPage({ initialNoteId, onNoteSelected }) {
@@ -67,15 +67,16 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
   const {
     notes,
     activeNote,
-    filterType,
-    filterCustomTag,
+    activeFilters,
+    allTags,
     customTags,
     createNote,
     scheduleUpdate,
     deleteNote,
     deleteCustomTag,
     selectNote,
-    changeFilter,
+    toggleFilter,
+    clearFilters,
     refreshCustomTags,
   } = useNotes();
 
@@ -89,13 +90,14 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
   const [showNewTagInput, setShowNewTagInput] = useState(false);
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
   const [showCal, setShowCal] = useState(true);
+  const [search, setSearch] = useState('');
   const [reflectBlocks, setReflectBlocks] = useState([]);
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState(null);
   const [previewVersion, setPreviewVersion] = useState(null);
   const newTagRef = useRef(null);
 
-  const [noteListWidth, startNoteListDrag] = useResizable(210, { min: 140, max: 380 });
+  const [noteListWidth, startNoteListDrag] = useResizable(220, { min: 180, max: 380 });
   // Mirror split as percentage of editor+mirror area
   const [mirrorPct, setMirrorPct] = useState(50);
   const editorMirrorRef = useRef(null);
@@ -150,18 +152,17 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
   }
 
   function handleCreateNote() {
-    const type = filterType === 'all' ? 'idea' : filterType;
-    const customTag = filterType === 'custom' ? filterCustomTag : null;
-    createNote(type, customTag);
+    // New note gets current active filters as its tags
+    const tags = activeFilters.length > 0 ? [...activeFilters] : [];
+    createNote('none', null, tags);
   }
 
   function handleNewCustomTag(e) {
     if (e.key === 'Enter' && newTagInput.trim()) {
-      const tag = newTagInput.trim();
+      const tag = newTagInput.trim().toLowerCase();
       setNewTagInput('');
       setShowNewTagInput(false);
-      createNote('custom', tag).then(refreshCustomTags);
-      changeFilter('custom', tag);
+      createNote('none', null, [tag]);
     }
     if (e.key === 'Escape') {
       setNewTagInput('');
@@ -169,11 +170,28 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
     }
   }
 
+  function handleDeleteTag(tag) {
+    // Remove tag from all notes that have it
+    for (const note of notes) {
+      if ((note.tags || []).includes(tag)) {
+        scheduleUpdate(note.id, { tags: (note.tags || []).filter(t => t !== tag) });
+      }
+    }
+    if (activeFilters.includes(tag)) toggleFilter(tag);
+  }
+
   function openConfirm(message, onConfirm) {
     setConfirmModal({ message, onConfirm });
   }
 
-  const activeIsCustom = filterType === 'custom';
+  const isAllActive = activeFilters.length === 0;
+
+  const filteredNotes = search
+    ? notes.filter(n =>
+        (n.title || '').toLowerCase().includes(search.toLowerCase()) ||
+        (n.body || '').replace(/<[^>]+>/g, ' ').toLowerCase().includes(search.toLowerCase())
+      )
+    : notes;
 
   return (
     <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', minWidth: 0 }}>
@@ -191,14 +209,13 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 14px 10px',
+          padding: '0 12px',
+          height: '44px',
           borderBottom: 'var(--border-style)',
           flexShrink: 0,
         }}>
           <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            {filterType === 'custom' && filterCustomTag
-              ? filterCustomTag
-              : filterType === 'all' ? t('notes.title') : filterType.charAt(0).toUpperCase() + filterType.slice(1) + 's'}
+            {t('notes.title')}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
@@ -219,13 +236,6 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
             >
               {t('journal.calendar')}
             </button>
-            <button
-              onClick={handleCreateNote}
-              title={t('notes.newNote')}
-              style={{ fontSize: '18px', color: 'var(--muted)', lineHeight: 1 }}
-            >
-              +
-            </button>
           </div>
         </div>
 
@@ -238,14 +248,41 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           />
         )}
 
+        <input
+          style={{
+            margin: '8px 10px', padding: '5px 10px', fontSize: '12px',
+            border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
+            width: 'calc(100% - 20px)', color: 'var(--strong)', outline: 'none',
+            flexShrink: 0, fontFamily: 'var(--font)',
+          }}
+          placeholder={t('common.search')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+
+        <button
+          style={{
+            margin: '0 10px 8px', padding: '7px 0', fontSize: '11px',
+            fontFamily: 'var(--font)', color: 'var(--muted)', background: 'transparent',
+            border: '1.5px dashed var(--border)', borderRadius: '10px',
+            width: 'calc(100% - 20px)', cursor: 'pointer', letterSpacing: '0.03em',
+            transition: 'background 0.15s, color 0.15s', flexShrink: 0,
+          }}
+          onClick={handleCreateNote}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--strong)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
+        >
+          + {t('notes.newNote')}
+        </button>
+
         {/* Note items */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-          {notes.length === 0 && (
+          {filteredNotes.length === 0 && (
             <div style={{ padding: '24px 14px', fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>
               {t('notes.noNotes')}
             </div>
           )}
-          {notes.map((note) => (
+          {filteredNotes.map((note) => (
             <NoteListItem
               key={note.id}
               note={note}
@@ -274,27 +311,33 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           <TypePill
             key={type}
             label={t(labelKey)}
-            active={filterType === type && !activeIsCustom}
-            onClick={() => changeFilter(type)}
+            active={type === 'all' ? isAllActive : activeFilters.includes(type)}
+            onClick={() => type === 'all' ? clearFilters() : toggleFilter(type)}
           />
         ))}
 
-        {customTags.length > 0 && (
-          <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
-        )}
-
-        {customTags.map((tag) => (
-          <CustomTagPill
-            key={tag}
-            label={tag}
-            active={filterType === 'custom' && filterCustomTag === tag}
-            onClick={() => changeFilter('custom', tag)}
-            onDelete={() => openConfirm(
-              t('notes.deleteTagConfirm', { tag }),
-              () => deleteCustomTag(tag)
-            )}
-          />
-        ))}
+        {(() => {
+          const builtInSet = new Set(BUILT_IN_TYPES.map(b => b.type));
+          const extraTags = allTags.filter(t => !builtInSet.has(t));
+          if (extraTags.length === 0) return null;
+          return (
+            <>
+              <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
+              {extraTags.map((tag) => (
+                <CustomTagPill
+                  key={tag}
+                  label={tag}
+                  active={activeFilters.includes(tag)}
+                  onClick={() => toggleFilter(tag)}
+                  onDelete={() => openConfirm(
+                    t('notes.deleteTagConfirm', { tag }),
+                    () => handleDeleteTag(tag)
+                  )}
+                />
+              ))}
+            </>
+          );
+        })()}
 
         {showNewTagInput ? (
           <input
@@ -588,13 +631,8 @@ function NoteListItem({ note, active, onClick, onDelete }) {
         position: 'relative',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px' }}>
-        <span style={{ fontSize: '10px', color: 'var(--muted)' }}>
-          {note.type === 'custom' && note.custom_tag ? note.custom_tag : note.type}
-        </span>
-        <span style={{ fontSize: '10px', color: 'var(--border)', marginLeft: 'auto' }}>
-          {formatDate(note.created_at)}
-        </span>
+      <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '2px' }}>
+        {(note.tags || []).length > 0 ? (note.tags || []).join(' · ') + ' · ' : ''}{formatDate(note.created_at)}
       </div>
       <div style={{
         fontSize: '12px',
@@ -651,8 +689,11 @@ const TYPE_LABEL_KEYS = {
 
 function TypeSelector({ note, customTags, onChange }) {
   const { t } = useLanguage();
-  function selectType(type, customTag = null) {
-    onChange(note.id, { type, custom_tag: customTag });
+  const tags = note.tags || [];
+
+  function toggleTag(tag) {
+    const next = tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag];
+    onChange(note.id, { tags: next });
   }
 
   const pillBase = {
@@ -679,12 +720,12 @@ function TypeSelector({ note, customTags, onChange }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', flex: 1, marginRight: '16px' }}>
       {BUILT_IN_NOTE_TYPES.map((typ) => {
-        const active = note.type === typ;
+        const active = tags.includes(typ);
         return (
           <button
             key={typ}
             style={{ ...pillBase, ...(active ? pillActive : {}) }}
-            onClick={() => selectType(typ)}
+            onClick={() => toggleTag(typ)}
           >
             {t(TYPE_LABEL_KEYS[typ])}
           </button>
@@ -696,12 +737,12 @@ function TypeSelector({ note, customTags, onChange }) {
       )}
 
       {customTags.map((tag) => {
-        const active = note.type === 'custom' && note.custom_tag === tag;
+        const active = tags.includes(tag);
         return (
           <button
             key={tag}
             style={{ ...pillBase, ...(active ? pillActive : {}) }}
-            onClick={() => selectType('custom', tag)}
+            onClick={() => toggleTag(tag)}
           >
             {tag}
           </button>
@@ -790,14 +831,14 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle 
       >
         ◷
       </button>
-      <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
-        {t('common.words', { count: words })}
-      </span>
       {saveStatus !== 'idle' && (
         <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
           {saveStatus === 'saving' ? t('common.saving') : '✓ ' + t('common.saved')}
         </span>
       )}
+      <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
+        {t('common.words', { count: words })}
+      </span>
     </div>
   );
 }
@@ -1113,16 +1154,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
 
       {/* Scrollable content */}
       <div ref={editorWrapRef} onContextMenu={handleEditorContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
-        {note.type === 'quote' && (
-          <QuoteEditor note={note} onChange={onChange} editor={editor} />
-        )}
-        {note.type === 'goal' && (
-          <GoalEditor note={note} onChange={onChange} editor={editor} />
-        )}
-        {(note.type === 'idea' || note.type === 'reflection' || note.type === 'dream' ||
-          note.type === 'gratitude' || note.type === 'custom' || note.type === 'none') && (
-          <DefaultEditor note={note} editor={editor} />
-        )}
+        <DefaultEditor note={note} editor={editor} />
         <div
           style={{ height: '240px', cursor: 'text' }}
           onMouseDown={(e) => {
@@ -1848,7 +1880,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
 // ── DefaultEditor ─────────────────────────────────────────────────────────────
 
 function DefaultEditor({ note, editor }) {
-  const className = note.type === 'dream' ? 'note-editor-dream' : 'note-editor-default';
+  const className = 'note-editor-default';
   return (
     <div className={className} style={{ fontSize: '15px', lineHeight: '1.8' }}>
       <EditorContent editor={editor} />

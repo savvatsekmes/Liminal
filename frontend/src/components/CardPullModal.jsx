@@ -253,91 +253,125 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
       .catch(() => {});
   }, []);
 
-  function handlePull() {
-    if (!decksData || !deck || !spreadId) return;
+  const [pulling, setPulling] = useState(false);
+
+  async function handlePull() {
+    if (!decksData || !deck || !spreadId || pulling) return;
 
     const spread = decksData.spreads.find(s => s.id === spreadId);
     if (!spread) return;
 
     const deckCards = deck === 'tarot' ? decksData.tarot : decksData.oracle;
+    const numCards = spread.cardCount === 0 ? 6 : spread.cardCount;
 
-    // Free-pull mode: pull one card at a time
-    if (spread.cardCount === 0) {
-      const shuffled = shuffle(deckCards);
-      shuffledDeckRef.current = shuffled;
-      drawIndexRef.current = 1;
-
-      const card = shuffled[0];
-      const drawn = [{
-        ...card,
-        position: `${t('cards.positionCard')} 1`,
-        reversed: deck === 'tarot' ? Math.random() < 0.5 : false,
-      }];
-
-      setPulledCards(drawn);
-      setFlipped([false]);
-      setReading(null);
-      setTimeout(() => {
-        setFlipped([true]);
-      }, 400);
-      return;
-    }
-
-    // Normal spread mode
-    const shuffled = shuffle(deckCards);
-    const drawn = shuffled.slice(0, spread.cardCount).map((card, i) => ({
-      ...card,
-      position: t(spread.positions[i].labelKey),
-      reversed: deck === 'tarot' ? Math.random() < 0.5 : false,
-    }));
-
-    setPulledCards(drawn);
-    setFlipped(new Array(drawn.length).fill(false));
+    setPulling(true);
     setReading(null);
-    shuffledDeckRef.current = null;
 
-    // Flip cards one by one with staggered delay
-    drawn.forEach((_, i) => {
-      setTimeout(() => {
-        setFlipped(prev => {
-          const next = [...prev];
-          next[i] = true;
-          return next;
+    try {
+      const res = await apiFetch('/api/cards/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deck, spread: spreadId, count: numCards }),
+      });
+      const data = await res.json();
+      if (!data.cards?.length) throw new Error('No cards returned');
+      const cards = data.cards.map((card, i) => {
+        const fullCard = deckCards.find(c => c.id === card.id) || card;
+        const isReversed = deck === 'tarot' ? !!card.reversed : false;
+        return {
+          ...fullCard,
+          reversed: isReversed,
+          reversed_meaning: fullCard.reversed,
+          position: card.position ? t(card.position) : (spread.cardCount === 0 ? `${t('cards.positionCard')} ${i + 1}` : t(spread.positions[i]?.labelKey)),
+          image: fullCard.image || card.image,
+        };
+      });
+
+      if (spread.cardCount === 0) {
+        shuffledDeckRef.current = cards.length > 1 ? cards : null;
+        drawIndexRef.current = 1;
+        setPulledCards([cards[0]]);
+        setFlipped([false]);
+        setTimeout(() => setFlipped([true]), 400);
+      } else {
+        setPulledCards(cards);
+        setFlipped(new Array(cards.length).fill(false));
+        shuffledDeckRef.current = null;
+        cards.forEach((_, i) => {
+          setTimeout(() => {
+            setFlipped(prev => { const next = [...prev]; next[i] = true; return next; });
+          }, 400 + i * 350);
         });
-      }, 400 + i * 350);
-    });
+      }
+    } catch (err) {
+      console.error('[cards] pull error, falling back to random:', err);
+      const deckCards2 = deck === 'tarot' ? decksData.tarot : decksData.oracle;
+      if (spread.cardCount === 0) {
+        const shuffled = shuffle(deckCards2);
+        shuffledDeckRef.current = shuffled;
+        drawIndexRef.current = 1;
+        setPulledCards([{ ...shuffled[0], position: `${t('cards.positionCard')} 1`, reversed: deck === 'tarot' ? Math.random() < 0.5 : false }]);
+        setFlipped([false]);
+        setTimeout(() => setFlipped([true]), 400);
+      } else {
+        const shuffled = shuffle(deckCards2);
+        const drawn = shuffled.slice(0, spread.cardCount).map((card, i) => ({
+          ...card, position: t(spread.positions[i].labelKey), reversed: deck === 'tarot' ? Math.random() < 0.5 : false,
+        }));
+        setPulledCards(drawn);
+        setFlipped(new Array(drawn.length).fill(false));
+        shuffledDeckRef.current = null;
+        drawn.forEach((_, i) => {
+          setTimeout(() => { setFlipped(prev => { const next = [...prev]; next[i] = true; return next; }); }, 400 + i * 350);
+        });
+      }
+    } finally {
+      setPulling(false);
+    }
   }
 
-  function handlePullAnother() {
-    if (!shuffledDeckRef.current || !pulledCards) return;
+  async function handlePullAnother() {
+    if (!pulledCards || pulling) return;
     const spread = decksData?.spreads.find(s => s.id === spreadId);
     const maxCards = spread?.maxCards || 12;
     if (pulledCards.length >= maxCards) return;
 
-    const idx = drawIndexRef.current;
-    if (idx >= shuffledDeckRef.current.length) return; // deck exhausted
+    const deckCards = deck === 'tarot' ? decksData.tarot : decksData.oracle;
 
-    const card = shuffledDeckRef.current[idx];
-    drawIndexRef.current = idx + 1;
+    if (shuffledDeckRef.current && drawIndexRef.current < shuffledDeckRef.current.length) {
+      const card = shuffledDeckRef.current[drawIndexRef.current];
+      drawIndexRef.current += 1;
+      const fullCard = deckCards.find(c => c.id === card.id) || card;
+      const newCard = { ...fullCard, reversed: deck === 'tarot' ? !!card.reversed : false, reversed_meaning: fullCard.reversed, position: `${t('cards.positionCard')} ${pulledCards.length + 1}`, image: fullCard.image || card.image };
+      setPulledCards(prev => [...prev, newCard]);
+      setFlipped(prev => [...prev, false]);
+      setReading(null);
+      setTimeout(() => { setFlipped(prev => { const next = [...prev]; next[next.length - 1] = true; return next; }); }, 400);
+      return;
+    }
 
-    const newCard = {
-      ...card,
-      position: `${t('cards.positionCard')} ${pulledCards.length + 1}`,
-      reversed: deck === 'tarot' ? Math.random() < 0.5 : false,
-    };
-
-    setPulledCards(prev => [...prev, newCard]);
-    setFlipped(prev => [...prev, false]);
-    setReading(null);
-
-    // Flip the new card after a short delay
-    setTimeout(() => {
-      setFlipped(prev => {
-        const next = [...prev];
-        next[next.length - 1] = true;
-        return next;
+    setPulling(true);
+    try {
+      const res = await apiFetch('/api/cards/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deck, spread: spreadId, count: 1 }),
       });
-    }, 400);
+      const data = await res.json();
+      if (data.cards?.length) {
+        const card = data.cards[0];
+        const fullCard = deckCards.find(c => c.id === card.id) || card;
+        const newCard = { ...fullCard, reversed: deck === 'tarot' ? !!card.reversed : false, reversed_meaning: fullCard.reversed, position: `${t('cards.positionCard')} ${pulledCards.length + 1}`, image: fullCard.image || card.image };
+        setPulledCards(prev => [...prev, newCard]);
+        setFlipped(prev => [...prev, false]);
+        setReading(null);
+        setTimeout(() => { setFlipped(prev => { const next = [...prev]; next[next.length - 1] = true; return next; }); }, 400);
+      }
+    } catch (err) {
+      console.error('[cards] pull another error:', err);
+    } finally {
+      setPulling(false);
+    }
   }
 
   async function handleGenerateReading() {
@@ -347,9 +381,9 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
     const cardsPayload = pulledCards.map(c => ({
       name: c.name,
       position: c.position,
-      reversed: c.reversed,
+      reversed: !!c.reversed,
       uprightMeaning: c.upright || c.meaning,
-      reversedMeaning: c.reversed ? c.reversed_meaning || c.reversed : undefined,
+      reversedMeaning: c.reversed_meaning || undefined,
     }));
 
     try {
@@ -485,8 +519,8 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
 
               {/* Step 3: Pull button */}
               {deck && spreadId && (
-                <button style={s.actionBtn} onClick={handlePull}>
-                  {t('cards.pull')}
+                <button style={{ ...s.actionBtn, opacity: pulling ? 0.5 : 1 }} onClick={handlePull} disabled={pulling}>
+                  {pulling ? 'Drawing…' : t('cards.pull')}
                 </button>
               )}
             </>
