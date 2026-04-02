@@ -136,7 +136,7 @@ const styles = {
   },
 };
 
-export default function Layout({ children, activeView, onViewChange, onLogout, avatarUrl, username }) {
+export default function Layout({ children, activeView, onViewChange, onLogout, onLock, avatarUrl, username }) {
   const { t, lang, setLanguage } = useLanguage();
   const [entryListOpen, setEntryListOpen] = useState(true);
   const [entryListWidth, startEntryDrag] = useResizable(296, { min: 220, max: 480 });
@@ -228,6 +228,33 @@ export default function Layout({ children, activeView, onViewChange, onLogout, a
           onClick={() => onViewChange('memory')}
         />
         <div style={styles.sidebarSpacer} />
+
+        {/* Lock button */}
+        <button
+          onClick={onLock}
+          title="Lock"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '6px',
+            marginBottom: '8px',
+            color: 'var(--muted)',
+            fontSize: '16px',
+            lineHeight: 1,
+            transition: 'color 0.15s',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--strong)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--muted)'; }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </button>
 
         {/* User avatar + popout */}
         <div style={{ position: 'relative' }} ref={popoutRef}>

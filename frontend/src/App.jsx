@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Layout from './components/Layout';
+import LockScreen from './components/LockScreen';
 import EntryList from './components/EntryList';
 import WritingCanvas from './components/WritingCanvas';
 import MirrorPanel from './components/MirrorPanel';
@@ -19,8 +20,28 @@ import { LanguageProvider } from './i18n/LanguageContext';
 // ── Authenticated shell ───────────────────────────────────────────────────────
 // Mounted only after auth is confirmed — ensures hooks fetch with valid token.
 
+const LOCK_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
 function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange }) {
   const [activeView, setActiveView] = useState(isFirstSession ? 'journal' : 'home');
+  const [locked, setLocked] = useState(false);
+  const lockTimerRef = useRef(null);
+
+  const resetLockTimer = useCallback(() => {
+    if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+    lockTimerRef.current = setTimeout(() => setLocked(true), LOCK_TIMEOUT);
+  }, []);
+
+  useEffect(() => {
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove'];
+    const handler = () => { if (!locked) resetLockTimer(); };
+    events.forEach(e => window.addEventListener(e, handler, { passive: true }));
+    resetLockTimer();
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handler));
+      if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+    };
+  }, [locked, resetLockTimer]);
   const [previewVersion, setPreviewVersion] = useState(null);
   const [pendingNoteId, setPendingNoteId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
@@ -90,7 +111,9 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   }
 
   return (
-    <Layout activeView={activeView} onViewChange={setActiveView} onLogout={onLogout} avatarUrl={avatarUrl} username={username}>
+    <>
+    {locked && <LockScreen username={username} onUnlock={() => { setLocked(false); resetLockTimer(); }} />}
+    <Layout activeView={activeView} onViewChange={setActiveView} onLogout={onLogout} onLock={() => setLocked(true)} avatarUrl={avatarUrl} username={username}>
       {{
         entryList: (
           <EntryList
@@ -159,6 +182,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
         ),
       }}
     </Layout>
+    </>
   );
 }
 
