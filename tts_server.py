@@ -148,7 +148,7 @@ def split_into_chunks(text: str) -> list[str]:
 # cudagraphs-manual is the faster branch default but fails on many PyTorch/CUDA
 # version combos with cudaErrorStreamCaptureInvalidated during capture.
 # "eager" is stable; bfloat16 on both t3+conds.t3 still gives a speed boost.
-_T3_PARAMS = {"generate_token_backend": "cudagraphs-manual"} if DEVICE.startswith("cuda") else {}
+_T3_PARAMS = {"generate_token_backend": "eager"} if DEVICE.startswith("cuda") else {}
 
 def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature):
     try:

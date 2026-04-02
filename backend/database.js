@@ -309,6 +309,19 @@ db.exec(`
   );
 `);
 
+// Home cache (pulse, insight, etc.)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS home_cache (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    cache_key   TEXT    NOT NULL,
+    data        TEXT    NOT NULL DEFAULT '{}',
+    entry_hash  TEXT    DEFAULT '',
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, cache_key)
+  );
+`);
+
 // YouTube transcript cache
 db.exec(`
   CREATE TABLE IF NOT EXISTS youtube_transcripts (

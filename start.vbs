@@ -2,7 +2,7 @@ Set fso   = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 baseDir  = fso.GetParentFolderName(WScript.ScriptFullName)
-nodeDir  = "C:\Users\Savva Tsekmes\AppData\Local\Logi\LogiPluginService\PluginHosts\node22\node"
+nodeDir  = "C:\Program Files\nodejs"
 python   = "C:\Users\Savva Tsekmes\AppData\Local\Programs\Python\Python313\python.exe"
 
 backendLog  = baseDir & "\backend.log"

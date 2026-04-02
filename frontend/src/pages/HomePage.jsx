@@ -31,69 +31,96 @@ const QUESTION_POOL = [
 ];
 
 
+// ── Quick Ask rotating prompts ──────────────────────────────────────────────
+const QUICK_ASK_PROMPTS = [
+  "What's sitting with you today?",
+  "What do you need to say out loud?",
+  "What are you not telling yourself?",
+  "What's the thing you keep circling around?",
+  "What would the wisest version of you say right now?",
+  "What does your body need today?",
+  "What are you avoiding?",
+  "What's asking for your attention?",
+  "What would you tell a close friend in your position?",
+  "Where are you being hardest on yourself?",
+  "What's ready to be released?",
+  "What are you pretending not to know?",
+  "What feels unfinished?",
+  "What small thing would make today feel more like yours?",
+  "What pattern keeps showing up?",
+  "What is fear telling you right now?",
+  "What would courage look like today?",
+  "What's the question beneath the question?",
+  "What do you need more of right now?",
+  "What are you grateful for that you haven't said out loud?",
+];
+
+function getDailyPrompt() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((now - start) / 86400000);
+  return QUICK_ASK_PROMPTS[dayOfYear % QUICK_ASK_PROMPTS.length];
+}
+
 // ── Daily quote pool ────────────────────────────────────────────────────────
 const QUOTE_POOL = [
-  { text: 'The present moment always will have been.', author: 'Eckhart Tolle' },
-  { text: 'Out beyond ideas of wrongdoing and rightdoing, there is a field. I\'ll meet you there.', author: 'Rumi' },
+  // Personal & Family
+  { text: 'This is not a melomacarouna. This is a dry biscuit.', author: 'Elisabet' },
+  { text: "It's been years, and just one day he appears at your doorstep, you let him in, and he tells a story about where he's been all those years he's been gone, then the wind will blow him away again....", author: '' },
+  { text: 'BUT YOU WERE NOT HERE, I ALONE OCCUPY THE DARKNESS', author: '' },
+  // Wisdom & Philosophy
+  { text: 'You must take your opponent into a deep dark forest where 2+2=5, and the path leading out is only wide enough for one.', author: 'Mikhail Tal' },
+  { text: "Love says I'm everything. Wisdom says I'm nothing. Between the 2 my life flows.", author: '' },
+  { text: 'The perfect man employs his mind as a mirror — grasping nothing, refusing nothing, receiving but not keeping.', author: 'Jiddu Krishnamurti' },
+  { text: 'The more I learn, the less I know.', author: 'Socrates' },
+  { text: 'Truth is not what you want it to be; it is what it is, and you must bend to its power or live a lie.', author: 'Miyamoto Musashi' },
+  { text: 'The mind and what is are not two separate processes.', author: 'J. Krishnamurti' },
+  { text: 'The meaning of life is just to be alive. It is so plain and so obvious and so simple. And yet, everybody rushes around in a great panic as if it were necessary to achieve something beyond themselves.', author: 'Alan Watts' },
+  { text: 'At the edge of expectation. Assumptions become belief.', author: 'Andrei Jikh' },
+  { text: 'You Will Know Them by Their Fruits.', author: 'Matthew' },
+  { text: 'Beware that, when fighting monsters, you yourself do not become a monster. For when you gaze long into the abyss, the abyss gazes also into you.', author: 'Friedrich Nietzsche' },
+  { text: 'The thing we tell of can never be found by seeking, yet only seekers find it.', author: 'Bayazid Bastami' },
+  { text: 'Om is the bow.', author: '' },
+  { text: 'Wake up, grow up, clean up, show up.', author: 'Ken Wilber' },
+  { text: 'We must master the art of peace in addition to the art of war.', author: 'Master Roshi' },
+  { text: "However necessary it may be to say 'I' and 'mine' for the practical purposes of everyday life, our Ego in fact is nothing but a name for what is really only a sequence of observed behaviours.", author: 'Ananda Coomaraswamy' },
+  { text: 'Each wave is born and is going to die, but the water is free from birth and death.', author: 'Thich Nhat Hanh' },
+  { text: 'The intuitive mind is a sacred gift and the rational mind is a faithful servant. We have created a society that honors the servant and has forgotten the gift.', author: 'Albert Einstein' },
+  { text: "When the opponent expands, I contract. When he contracts, I expand. And when there is an opportunity, I do not hit — it hits all by itself.", author: 'Bruce Lee' },
+  { text: "Here is my secret: I don't mind what happens.", author: 'J. Krishnamurti' },
+  { text: 'If you can only be tall because someone else is on their knees, then you have a serious problem.', author: 'Toni Morrison' },
+  { text: 'Be careful not to wear spiritualism as a badge to decorate your ego.', author: '' },
+  { text: 'Thou canst not stir a flower without troubling of a star.', author: 'Francis Thompson' },
+  { text: 'Trust in God, but tie your camel.', author: 'Prophet Muhammad' },
+  { text: 'Awakened One, listen without distraction. Do not let your thoughts wander.', author: '' },
+  { text: 'Meaning is a jumper that you have to knit yourself.', author: '' },
+  { text: 'We spin cocoons around ourselves and get possessed by our possessions.', author: '' },
+  { text: 'The forest was shrinking but the trees kept voting for the axe. For the axe was clever and convinced the trees that because his handle was wood he was one of them.', author: '' },
+  { text: 'Hard times create strong men. Strong men create good times. Good times create weak men. And weak men create hard times.', author: 'G. Michael Hopf' },
+  { text: 'Be like a tree. Let the dead leaves drop.', author: 'Rumi' },
+  { text: 'Never make a permanent decision from a temporary emotion.', author: '' },
+  { text: 'The places where you have the biggest challenges in your life become the places where you have the most to give.', author: 'Tracy McMillan' },
+  { text: 'Wake up. To see the farm is to leave it.', author: '' },
+  { text: 'All we ever want is the clues. Let people fill in the gaps.', author: '' },
+  { text: 'What you seek is seeking you.', author: 'Rumi' },
+  { text: 'Do not consider painful what is good for you.', author: 'Euripides' },
+  { text: 'When the power of love overcomes the love of power, the world will know peace.', author: 'Jimi Hendrix' },
+  { text: 'REALITY is coupled PERCEPTION & PERCEPTION can be MEDIATED & MANIPULATED', author: '' },
+  { text: 'But war, organised war, is not a human instinct. It is a highly planned and cooperative form of theft.', author: '' },
+  { text: 'Do not go where the path may lead. Go instead where there is no path and leave a trail.', author: 'Ralph Waldo Emerson' },
+  // From the curated pool
+  { text: 'No snowflake ever falls in the wrong place.', author: 'Zen proverb' },
+  { text: 'The only way out is through.', author: 'Robert Frost' },
   { text: 'You are not a drop in the ocean. You are the entire ocean in a drop.', author: 'Rumi' },
-  { text: 'Sell your cleverness and buy bewilderment.', author: 'Rumi' },
+  { text: 'The privilege of a lifetime is to become who you truly are.', author: 'Carl Jung' },
   { text: 'The wound is the place where the light enters you.', author: 'Rumi' },
-  { text: 'Yesterday I was clever, so I wanted to change the world. Today I am wise, so I am changing myself.', author: 'Rumi' },
-  { text: 'Do not be satisfied with the stories that come before you. Unfold your own myth.', author: 'Rumi' },
-  { text: 'The bird of the soul sits alone on the branch of love, singing.', author: 'Farid ud-Din Attar' },
-  { text: 'The secret is not far — it is closer than your own breath.', author: 'Farid ud-Din Attar' },
-  { text: 'Even after all this time the sun never says to the earth, "You owe me." Look what happens with a love like that — it lights the whole sky.', author: 'Hafiz' },
-  { text: 'I wish I could show you, when you are lonely or in darkness, the astonishing light of your own being.', author: 'Hafiz' },
-  { text: 'The heart is the thousand-stringed instrument that can only be tuned with love.', author: 'Hafiz' },
-  { text: 'Not Christian or Jew or Muslim, not Hindu, Buddhist, sufi, or zen. Not any religion or cultural system... I belong to the beloved.', author: 'Rumi' },
-  { text: 'What you are looking for is already in you.', author: 'Thich Nhat Hanh' },
-  { text: 'The most precious gift we can offer anyone is our attention.', author: 'Thich Nhat Hanh' },
-  { text: 'Feelings come and go like clouds in a windy sky. Conscious breathing is my anchor.', author: 'Thich Nhat Hanh' },
-  { text: 'The present moment is the only moment available to us, and it is the door to all moments.', author: 'Thich Nhat Hanh' },
-  { text: 'Nothing is so strong as gentleness, nothing so gentle as real strength.', author: 'Francis de Sales' },
-  { text: 'When you realize there is nothing lacking, the whole world belongs to you.', author: 'Lao Tzu' },
-  { text: 'To the mind that is still, the whole universe surrenders.', author: 'Lao Tzu' },
-  { text: 'Knowing others is intelligence; knowing yourself is true wisdom. Mastering others is strength; mastering yourself is true power.', author: 'Lao Tzu' },
-  { text: 'Nature does not hurry, yet everything is accomplished.', author: 'Lao Tzu' },
-  { text: 'A journey of a thousand miles begins with a single step.', author: 'Lao Tzu' },
-  { text: 'The usefulness of a cup is in its emptiness.', author: 'Lao Tzu' },
-  { text: 'To the sage, now is enough. Always.', author: 'Zhuangzi' },
-  { text: 'Flow with whatever may happen, and let your mind be free. Stay centered by accepting whatever you are doing. This is the ultimate.', author: 'Zhuangzi' },
-  { text: 'The true man breathes with his heels; the vulgar man breathes with his throat.', author: 'Zhuangzi' },
-  { text: 'Before enlightenment, chop wood, carry water. After enlightenment, chop wood, carry water.', author: 'Zen Proverb' },
-  { text: 'The obstacle is the path.', author: 'Zen Proverb' },
-  { text: 'If you understand, things are just as they are. If you do not understand, things are just as they are.', author: 'Zen Proverb' },
-  { text: 'Sit, walk, or run — but don\'t wobble.', author: 'Zen Proverb' },
-  { text: 'No snowflake ever falls in the wrong place.', author: 'Zen Proverb' },
-  { text: 'To study the self is to forget the self.', author: 'Dogen' },
-  { text: 'Being is not empty. Emptiness is not being. This is the absolute ground of all reality.', author: 'Dogen' },
-  { text: 'Think not-thinking.', author: 'Dogen' },
-  { text: 'The most important thing is to find out what is the most important thing.', author: 'Shunryu Suzuki' },
-  { text: 'In the beginner\'s mind there are many possibilities, but in the expert\'s mind there are few.', author: 'Shunryu Suzuki' },
-  { text: 'Each of you is perfect the way you are... and you can use a little improvement.', author: 'Shunryu Suzuki' },
-  { text: 'The nature of mind is like water. If you do not disturb it, it will become clear.', author: 'Chögyam Trungpa' },
-  { text: 'The bad news is you\'re falling through the air, nothing to hang on to, no parachute. The good news is there\'s no ground.', author: 'Chögyam Trungpa' },
-  { text: 'Chaos should be regarded as extremely good news.', author: 'Chögyam Trungpa' },
-  { text: 'You are the sky. Everything else is just the weather.', author: 'Pema Chödrön' },
-  { text: 'Nothing ever goes away until it has taught us what we need to know.', author: 'Pema Chödrön' },
-  { text: 'Feelings like disappointment, embarrassment, irritation, resentment, anger, jealousy, and fear... are moments that tell us where it is that we\'re holding back.', author: 'Pema Chödrön' },
-  { text: 'When we protect ourselves so we won\'t feel pain, that protection becomes like armor, like armor that imprisons the softness of the heart.', author: 'Pema Chödrön' },
-  { text: 'Rest in natural great peace this exhausted mind, beaten helpless by karma and neurotic thought.', author: 'Nyoshul Khen Rinpoche' },
-  { text: 'The nature of mind is the nature of Buddha. There is no Buddha other than one\'s own mind.', author: 'Milarepa' },
-  { text: 'Do not dwell in the past, do not dream of the future, concentrate the mind on the present moment.', author: 'Attributed to the Buddha' },
-  { text: 'Everything arises and passes away. When you see this, you are above sorrow.', author: 'Attributed to the Buddha' },
-  { text: 'Peace comes from within. Do not seek it without.', author: 'Attributed to the Buddha' },
-  { text: 'Awakening is not a future event. It is the recognition of what is already and always the case.', author: 'Adyashanti' },
-  { text: 'The truth is that you already are what you are seeking.', author: 'Adyashanti' },
-  { text: 'Enlightenment is a destructive process. It has nothing to do with becoming better or being happier. Enlightenment is the crumbling away of untruth.', author: 'Adyashanti' },
-  { text: 'The willingness to question what we think we know is the beginning of wisdom.', author: 'Adyashanti' },
-  { text: 'Let go of all ideas and images in your mind. They come and go and aren\'t even generated by you. So why pay so much attention to them?', author: 'Mooji' },
-  { text: 'Don\'t try to steer the river.', author: 'Deepak Chopra' },
-  { text: 'Silence is the language of God; all else is poor translation.', author: 'Rumi' },
-  { text: 'What is it you plan to do with your one wild and precious life?', author: 'Mary Oliver' },
-  { text: 'Tell me, what is it you plan to do with your one wild and precious life?', author: 'Mary Oliver' },
-  { text: 'You do not have to be good. You do not have to walk on your knees for a hundred miles through the desert, repenting.', author: 'Mary Oliver' },
-  { text: 'The cure for pain is in the pain.', author: 'Rumi' },
+  { text: 'Between stimulus and response there is a space.', author: 'Viktor Frankl' },
+  { text: 'Be patient toward all that is unsolved in your heart.', author: 'Rainer Maria Rilke' },
+  { text: 'The cave you fear to enter holds the treasure you seek.', author: 'Joseph Campbell' },
+  { text: 'What we are looking for is what is looking.', author: 'Francis of Assisi' },
+  { text: 'The only journey is the one within.', author: 'Rainer Maria Rilke' },
+  { text: 'Sit. Feast on your life.', author: 'Derek Walcott' },
+  { text: 'What is essential is invisible to the eye.', author: 'Antoine de Saint-Exupéry' },
 ];
 
 function getDailyQuote() {
@@ -111,7 +138,7 @@ const s = {
     padding: '48px 48px 80px',
   },
   inner: {
-    maxWidth: '800px',
+    maxWidth: '100%',
   },
   greeting: {
     fontSize: '20px',
@@ -125,41 +152,100 @@ const s = {
     marginBottom: '24px',
   },
   quoteBlock: {
-    marginBottom: '36px',
+    marginBottom: '24px',
     paddingLeft: '14px',
     borderLeft: '2px solid var(--border)',
   },
   quoteText: {
-    fontSize: '13px',
+    fontSize: '14px',
     fontStyle: 'italic',
-    color: 'var(--body)',
-    lineHeight: '1.7',
+    color: '#555555',
+    lineHeight: '1.8',
     display: 'block',
-    marginBottom: '5px',
+    marginBottom: '4px',
   },
-  quoteAuthor: {
-    fontSize: '11px',
-    color: 'var(--muted)',
-    letterSpacing: '0.03em',
-  },
-  // Insights card
-  insightsCard: {
-    border: 'var(--border-style)',
-    borderRadius: '16px',
-    padding: '14px 20px',
-    marginBottom: '28px',
+  // Activity + Portrait row
+  activityPortraitRow: {
     display: 'flex',
-    gap: '24px',
-    background: 'var(--near-white)',
+    gap: '16px',
+    marginBottom: '28px',
   },
+  beveledSquare: {
+    flex: '0 0 70%',
+    background: 'var(--near-white)',
+    border: 'none',
+    borderRadius: '16px',
+    padding: '20px 28px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-evenly',
+    gap: '0',
+    minWidth: 0,
+    boxSizing: 'border-box',
+  },
+  beveledRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '20px',
+    padding: '12px 0',
+  },
+  beveledRowBorder: {
+    borderTop: 'var(--border-style)',
+  },
+  beveledRowLabel: {
+    fontSize: '9px',
+    fontWeight: '700',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+    width: '160px',
+    flexShrink: 0,
+    borderRight: '1px solid var(--border)',
+    paddingRight: '20px',
+    alignSelf: 'stretch',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  // Insights card (used inside beveled)
   insightStat: {
     display: 'flex',
     flexDirection: 'column',
     gap: '2px',
+    width: '12%',
+    flexShrink: 0,
+  },
+  insightStatDays: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    width: '15%',
+    flexShrink: 0,
+  },
+  insightDividerDays: {
+    width: '1px',
+    background: 'var(--border)',
+    alignSelf: 'stretch',
+    minHeight: '28px',
+    marginLeft: '20px',
+    flexShrink: 0,
+  },
+  insightStatRight: {
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '2px',
+    marginLeft: 'auto',
+    width: '40%',
+    flexShrink: 0,
+    borderLeft: '1px solid var(--border)',
+    borderRight: '1px solid var(--border)',
+    paddingLeft: '20px',
+    paddingRight: '20px',
+    alignSelf: 'stretch',
   },
   insightValue: {
-    fontSize: '16px',
-    fontWeight: '700',
+    fontSize: '14px',
+    fontWeight: '600',
     color: 'var(--strong)',
     lineHeight: 1,
   },
@@ -172,6 +258,30 @@ const s = {
     width: '1px',
     background: 'var(--border)',
     alignSelf: 'stretch',
+    minHeight: '28px',
+  },
+  newLinkInline: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    cursor: 'pointer',
+    background: 'none',
+    border: 'none',
+    fontFamily: 'var(--font)',
+    padding: '0 4px',
+    flexShrink: 0,
+    textAlign: 'left',
+  },
+  newLinkValue: {
+    fontSize: '16px',
+    fontWeight: '700',
+    color: 'var(--strong)',
+    lineHeight: 1,
+  },
+  newLinkLabel: {
+    fontSize: '10px',
+    color: 'var(--muted)',
+    letterSpacing: '0.04em',
   },
   // Moon + Daily Card row
   moonCardRow: {
@@ -183,12 +293,10 @@ const s = {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
-    border: 'var(--border-style)',
+    border: 'none',
     borderRadius: '16px',
     padding: '16px 20px',
     background: 'var(--near-white)',
-    cursor: 'pointer',
-    transition: 'border-color 0.15s',
     flex: 1,
     minWidth: 0,
   },
@@ -219,12 +327,10 @@ const s = {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
-    border: 'var(--border-style)',
+    border: 'none',
     borderRadius: '16px',
     padding: '16px 20px',
     background: 'var(--near-white)',
-    cursor: 'pointer',
-    transition: 'border-color 0.15s',
     flex: 1,
     minWidth: 0,
   },
@@ -302,11 +408,88 @@ const s = {
     marginBottom: '4px',
     lineHeight: '1.3',
   },
+  dailyCardMeaning: {
+    fontSize: '10px',
+    color: 'var(--muted)',
+    lineHeight: '1.5',
+    marginBottom: '4px',
+  },
+  dailyCardDivider: {
+    width: '1px',
+    background: 'var(--border)',
+    alignSelf: 'stretch',
+  },
+  dailyCardReading: {
+    flex: 2,
+    fontSize: '11px',
+    color: 'var(--body)',
+    fontStyle: 'italic',
+    lineHeight: '1.6',
+    minWidth: 0,
+  },
+  cardActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    marginTop: '8px',
+  },
+  cardActionBtn: {
+    fontSize: '11px',
+    fontFamily: 'var(--font)',
+    color: 'var(--muted)',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    transition: 'color 0.15s',
+    letterSpacing: '0.02em',
+  },
+  cardSpeakBtn: {
+    marginTop: '6px',
+    alignSelf: 'flex-start',
+    fontSize: '9px',
+    fontFamily: 'var(--font)',
+    letterSpacing: '0.04em',
+    color: 'var(--muted)',
+    background: 'none',
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
+    padding: '3px 10px',
+    cursor: 'pointer',
+    transition: 'color 0.15s, border-color 0.15s',
+  },
   dailyCardInsight: {
     fontSize: '10px',
     color: 'var(--body)',
     fontStyle: 'italic',
     lineHeight: '1.5',
+  },
+  moonDivider: {
+    width: '1px',
+    background: 'var(--border)',
+    alignSelf: 'stretch',
+  },
+  conditionsInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    flex: 2,
+    minWidth: 0,
+  },
+  conditionRow: {
+    display: 'flex',
+    gap: '6px',
+    fontSize: '11px',
+    lineHeight: '1.4',
+  },
+  conditionPlanet: {
+    fontWeight: '600',
+    color: 'var(--strong)',
+    width: '52px',
+    flexShrink: 0,
+  },
+  conditionSign: {
+    color: 'var(--muted)',
   },
   moonArrow: {
     fontSize: '22px',
@@ -314,28 +497,63 @@ const s = {
     flexShrink: 0,
     lineHeight: 1,
   },
-  newLinkInline: {
+  moonArrowLink: {
+    fontSize: '22px',
+    color: 'var(--muted)',
+    flexShrink: 0,
+    lineHeight: 1,
+    cursor: 'pointer',
+    transition: 'color 0.15s',
+    padding: '4px',
+  },
+  // Portrait pill
+  portraitPill: {
+    flex: 1,
+    background: 'var(--near-white)',
+    border: 'none',
+    borderRadius: '16px',
+    padding: '20px 28px',
+    cursor: 'pointer',
+    transition: 'opacity 0.15s',
+    minWidth: 0,
+    boxSizing: 'border-box',
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'center',
+  },
+  portraitContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  portraitHeader: {
+    marginBottom: '14px',
+  },
+  portraitLabel: {
+    fontSize: '9px',
+    fontWeight: '700',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+  },
+  portraitGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '10px 16px',
+  },
+  portraitItem: {
     display: 'flex',
     flexDirection: 'column',
     gap: '2px',
-    cursor: 'pointer',
-    background: 'none',
-    border: 'none',
-    fontFamily: 'var(--font)',
-    padding: '0 4px',
-    flexShrink: 0,
-    textAlign: 'left',
   },
-  newLinkValue: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: 'var(--strong)',
-    lineHeight: 1,
-  },
-  newLinkLabel: {
+  portraitItemLabel: {
     fontSize: '10px',
     color: 'var(--muted)',
     letterSpacing: '0.04em',
+  },
+  portraitItemValue: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--strong)',
   },
   // Quick Ask
   sectionTitle: {
@@ -545,6 +763,177 @@ const s = {
     borderRadius: '50%',
     background: 'var(--muted)',
   },
+  // Pulse
+  pulseBlock: {
+    marginBottom: '24px',
+    paddingLeft: '14px',
+    borderLeft: '2px solid var(--border)',
+  },
+  pulseText: {
+    fontSize: '14px',
+    fontStyle: 'italic',
+    color: '#555555',
+    lineHeight: '1.8',
+    marginBottom: '4px',
+  },
+  pulseAttribution: {
+    fontSize: '11px',
+    color: 'var(--muted)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  pulseSpeaker: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--muted)',
+    cursor: 'pointer',
+    padding: '2px',
+    transition: 'color 0.15s',
+  },
+  // Themes + Rhythm row
+  themesRhythmRow: {
+    display: 'flex',
+    gap: '16px',
+    marginBottom: '28px',
+  },
+  themesRhythmPill: {
+    background: 'var(--near-white)',
+    border: 'none',
+    borderRadius: '16px',
+    padding: '20px 28px',
+  },
+  themesHalf: {
+    flex: '0 0 39%',
+    minWidth: 0,
+  },
+  rhythmHalf: {
+    flex: 1,
+    minWidth: 0,
+  },
+  themesHeader: {
+    marginBottom: '10px',
+  },
+  themesLabel: {
+    fontSize: '9px',
+    fontWeight: '700',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+  },
+  themesPeriod: {
+    fontSize: '9px',
+    color: 'var(--muted)',
+    opacity: 0.6,
+  },
+  themesRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+  themePill: {
+    padding: '4px 14px',
+    border: '1px solid var(--border)',
+    borderRadius: '20px',
+    fontSize: '11px',
+    color: 'var(--body)',
+    background: 'transparent',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s, color 0.15s',
+  },
+  // Insight
+  insightBlock: {
+    marginBottom: '24px',
+    paddingLeft: '14px',
+    borderLeft: '2px solid var(--border)',
+  },
+  insightHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '6px',
+  },
+  insightRefresh: {
+    fontSize: '10px',
+    fontFamily: 'var(--font)',
+    color: 'var(--muted)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: 0,
+    transition: 'color 0.15s',
+  },
+  insightBody: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+  },
+  insightText: {
+    fontSize: '14px',
+    fontStyle: 'italic',
+    color: '#555555',
+    lineHeight: '1.8',
+    flex: 1,
+  },
+  // Rhythm (inside combined pill)
+  rhythmHeader: {
+    marginBottom: '10px',
+  },
+  rhythmLabel: {
+    fontSize: '9px',
+    fontWeight: '700',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+  },
+  rhythmPeriod: {
+    fontSize: '9px',
+    color: 'var(--muted)',
+    opacity: 0.6,
+  },
+  rhythmRow: {
+    display: 'flex',
+    gap: '5px',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  rhythmRows: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+  },
+  rhythmDot: {
+    width: '7px',
+    height: '7px',
+    borderRadius: '50%',
+  },
+  // Sky widget
+  skyWidget: {
+    marginBottom: '28px',
+  },
+  skyWidgetHeader: {
+    marginBottom: '10px',
+  },
+  skyWidgetLabel: {
+    fontSize: '9px',
+    fontWeight: '700',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+  },
+  skyWidgetBody: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    border: 'var(--border-style)',
+    borderRadius: '16px',
+    padding: '14px 20px',
+    background: 'var(--near-white)',
+  },
+  skyWidgetInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
 };
 
 function getGreeting(t) {
@@ -580,7 +969,7 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNewEntry, onNewNote, onNewConversation }) {
+export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNewEntry, onNewNote, onNewConversation }) {
   const { t } = useLanguage();
   const [displayName, setDisplayName] = useState(username || '');
 
@@ -593,6 +982,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
   // Moon & sky
   const [moon, setMoon] = useState(null);
+  const [conditions, setConditions] = useState(null);
+
+  // Portrait calculated data
+  const [portrait, setPortrait] = useState(null);
 
   // Daily card
   const [dailyCard, setDailyCard] = useState(null);
@@ -630,9 +1023,29 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [ttsOnline, setTtsOnline] = useState(false);
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
+  const [cardPlaying, setCardPlaying] = useState(false);
+  const cardAudioRef = useRef(null);
+  const [cardSaved, setCardSaved] = useState(false);
+
+  // Pulse, Insight, Themes, Rhythm
+  const [pulse, setPulse] = useState(null);
+  const [pulseDays, setPulseDays] = useState('');
+  const [insight, setInsight] = useState(null);
+  const [themes, setThemes] = useState([]);
+  const [rhythm, setRhythm] = useState([]);
+  const [insightPlaying, setInsightPlaying] = useState(false);
+  const insightAudioRef = useRef(null);
+  const [pulsePlaying, setPulsePlaying] = useState(false);
+  const pulseAudioRef = useRef(null);
+  const [quotePlaying, setQuotePlaying] = useState(false);
+  const quoteAudioRef = useRef(null);
+  const [quoteSaved, setQuoteSaved] = useState(false);
+  const [pulseSaved, setPulseSaved] = useState(false);
+  const [insightSaved, setInsightSaved] = useState(false);
 
   // Suggested questions — pick 4 once per session
   const suggested = useMemo(() => pickRandom(QUESTION_POOL, 4), []);
+  const dailyPrompt = useMemo(() => getDailyPrompt(), []);
 
   const textareaRef = useRef(null);
   const { isRecording: isDictating, isProcessing: isDictatingProcessing, toggle: toggleDictation } = useDictation((text) => {
@@ -680,6 +1093,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
     apiFetch('/api/portrait').then((r) => r.json()).then((p) => {
       if (p) {
+        setPortrait(p);
         try {
           const active = JSON.parse(p.active_archetypes || '[]');
           if (active.length) setArchetype(active[0]);
@@ -697,13 +1111,43 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
     apiFetch('/api/sky/current').then(r => r.json()).then(data => {
       if (data?.moon) setMoon(data.moon);
+      if (data?.conditions) setConditions(data.conditions);
     }).catch(() => {});
 
     apiFetch('/api/cards/daily').then(r => r.json()).then(card => {
       if (card?.name) {
+        // If cached card is missing the reading, refresh it
+        if (!card.reading) {
+          return apiFetch('/api/cards/daily?refresh=1').then(r => r.json()).then(fresh => {
+            if (fresh?.name) {
+              setDailyCard(fresh);
+              setTimeout(() => setCardFlipped(true), 800);
+            }
+          });
+        }
         setDailyCard(card);
         setTimeout(() => setCardFlipped(true), 800);
       }
+    }).catch(() => {});
+
+    // Pulse
+    apiFetch('/api/home/pulse').then(r => r.json()).then(data => {
+      if (data?.pulse) { setPulse(data.pulse); setPulseDays(data.daysLabel || ''); }
+    }).catch(() => {});
+
+    // Themes
+    apiFetch('/api/home/themes').then(r => r.json()).then(data => {
+      if (data?.themes?.length >= 3) setThemes(data.themes);
+    }).catch(() => {});
+
+    // Insight
+    apiFetch('/api/home/insight').then(r => r.json()).then(data => {
+      if (data?.insight) setInsight(data.insight);
+    }).catch(() => {});
+
+    // Rhythm
+    apiFetch('/api/home/rhythm').then(r => r.json()).then(data => {
+      if (data?.rhythm) setRhythm(data.rhythm);
     }).catch(() => {});
   }, []);
 
@@ -808,6 +1252,37 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     } catch {}
   }
 
+  async function handleSaveCardToJournal(e) {
+    e.stopPropagation();
+    if (!dailyCard || cardSaved) return;
+
+    const encode = (str) => { try { return btoa(unescape(encodeURIComponent(str || ''))); } catch { return ''; } };
+
+    const cardData = [{
+      name: dailyCard.name,
+      image: dailyCard.image || null,
+      position: 'Daily Card',
+      reversed: dailyCard.reversed || false,
+      upright: dailyCard.meaning || '',
+      meaning: dailyCard.meaning || '',
+      reversed_meaning: '',
+    }];
+
+    const reading = dailyCard.reading || dailyCard.insight || '';
+    const title = `Daily Card — ${dailyCard.name}${dailyCard.reversed ? ' (Reversed)' : ''}`;
+    const cardHtml = `<div data-card-reading data-cards="${encode(JSON.stringify(cardData))}" data-reading="${encode(reading)}" data-deck-type="${dailyCard.deck || 'tarot'}" data-spread-name="Daily Card"></div>`;
+    const body = cardHtml;
+
+    try {
+      await apiFetch('/api/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, body }),
+      });
+      setCardSaved(true);
+    } catch {}
+  }
+
   function stopAudio() {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -815,6 +1290,117 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     setPlaying(false);
+  }
+
+  async function speakText(text, audioRef, setPlayingState) {
+    if (!text) return;
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    setPlayingState(prev => {
+      if (prev) return false; // was playing, just stop
+      // Start playing
+      (async () => {
+        if (ttsOnline) {
+          try {
+            setPlayingState(true);
+            const res = await fetch('/api/tts/speak', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+            });
+            if (res.ok) {
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const audio = new Audio(url);
+              audioRef.current = audio;
+              audio.onended = () => { setPlayingState(false); URL.revokeObjectURL(url); };
+              audio.onerror = () => setPlayingState(false);
+              await audio.play();
+              return;
+            }
+          } catch {}
+        }
+        if (window.speechSynthesis) {
+          const utt = new SpeechSynthesisUtterance(text);
+          utt.onend = () => setPlayingState(false);
+          utt.onerror = () => setPlayingState(false);
+          window.speechSynthesis.speak(utt);
+          setPlayingState(true);
+        }
+      })();
+      return true;
+    });
+  }
+
+  function handleQuoteSpeak(text) { speakText(text, quoteAudioRef, setQuotePlaying); }
+  async function handleSaveQuote(q) {
+    if (quoteSaved) return;
+    const title = q.author ? `"${q.text.slice(0, 50)}…" — ${q.author}` : `"${q.text.slice(0, 60)}…"`;
+    const body = `<p><em>"${q.text}"</em></p>${q.author ? `<p>— ${q.author}</p>` : ''}`;
+    try {
+      await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      setQuoteSaved(true);
+    } catch {}
+  }
+  async function handleSavePulse() {
+    if (pulseSaved || !pulse) return;
+    const title = `Pulse — ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`;
+    const body = `<p><em>"${pulse}"</em></p><p><small>— from your last entry, ${pulseDays}</small></p>`;
+    try {
+      await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      setPulseSaved(true);
+    } catch {}
+  }
+  function handlePulseSpeak() { speakText(pulse, pulseAudioRef, setPulsePlaying); }
+  function handleInsightSpeak() { speakText(insight, insightAudioRef, setInsightPlaying); }
+  async function handleSaveInsight() {
+    if (insightSaved || !insight) return;
+    const title = `Insight — ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`;
+    const body = `<p><em>"${insight}"</em></p>`;
+    try {
+      await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      setInsightSaved(true);
+    } catch {}
+  }
+
+
+  async function handleCardSpeak(e) {
+    e.stopPropagation(); // don't navigate to cards page
+    if (cardPlaying) {
+      if (cardAudioRef.current) { cardAudioRef.current.pause(); cardAudioRef.current = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setCardPlaying(false);
+      return;
+    }
+    const text = dailyCard?.reading || dailyCard?.insight;
+    if (!text) return;
+
+    if (ttsOnline) {
+      try {
+        setCardPlaying(true);
+        const res = await fetch('/api/tts/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          cardAudioRef.current = audio;
+          audio.onended = () => { setCardPlaying(false); URL.revokeObjectURL(url); };
+          audio.onerror = () => setCardPlaying(false);
+          await audio.play();
+          return;
+        }
+      } catch {}
+    }
+    if (window.speechSynthesis) {
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.onend = () => setCardPlaying(false);
+      utt.onerror = () => setCardPlaying(false);
+      window.speechSynthesis.speak(utt);
+      setCardPlaying(true);
+    }
   }
 
   async function handleSpeak() {
@@ -886,7 +1472,26 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         {(() => { const q = getDailyQuote(); return (
           <div style={s.quoteBlock}>
             <span style={s.quoteText}>"{q.text}"</span>
-            <span style={s.quoteAuthor}>— {q.author}</span>
+            <span style={s.pulseAttribution}>
+              {q.author && <span>— {q.author}</span>}
+              <button style={s.pulseSpeaker} onClick={() => handleQuoteSpeak(q.text)} title="Read aloud">
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
+                  <rect x="1" y={quotePlaying ? 2 : 4} width="2" height={quotePlaying ? 10 : 6} rx="1" fill="currentColor">
+                    {quotePlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="4.5" y={quotePlaying ? 0 : 2} width="2" height={quotePlaying ? 14 : 10} rx="1" fill="currentColor">
+                    {quotePlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="8" y={quotePlaying ? 3 : 4} width="2" height={quotePlaying ? 8 : 6} rx="1" fill="currentColor">
+                    {quotePlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="11.5" y={quotePlaying ? 1 : 3} width="2" height={quotePlaying ? 12 : 8} rx="1" fill="currentColor">
+                    {quotePlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+                  </rect>
+                </svg>
+              </button>
+              <button style={s.cardActionBtn} onClick={() => handleSaveQuote(q)}>{quoteSaved ? '✓ Saved' : '+ Save to journal'}</button>
+            </span>
           </div>
         ); })()}
 
@@ -894,11 +1499,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         <div style={s.moonCardRow}>
           {/* Moon panel → Sky */}
           {moon && (
-            <div
-              style={s.moonCard}
-              onClick={() => onNavigateToSky?.()}
-              title="View Sky"
-            >
+            <div style={s.moonCard}>
               <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
               <div style={s.moonInfo}>
                 <div style={s.moonPhase}>{moon.phase}</div>
@@ -908,17 +1509,29 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 </div>
                 {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
               </div>
-              <span style={s.moonArrow}>&rsaquo;</span>
+              {conditions && conditions.length > 0 && (
+                <>
+                  <div style={s.moonDivider} />
+                  <div style={s.conditionsInfo}>
+                    {conditions.map((c) => (
+                      <div key={c.planet} style={s.conditionRow}>
+                        <span style={s.conditionPlanet}>{c.planet}</span>
+                        <span style={s.conditionSign}>
+                          {c.sign}
+                          {c.retrograde ? ' ℞' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <span style={s.moonArrowLink} onClick={() => onNavigateToSky?.()} title="View Sky">&rsaquo;</span>
             </div>
           )}
 
           {/* Daily Card → Cards */}
           {dailyCard && (
-            <div
-              style={s.dailyCardPanel}
-              onClick={() => onNavigateToCards?.()}
-              title="View Cards"
-            >
+            <div style={s.dailyCardPanel}>
               <div style={s.dailyFlipContainer}>
                 <div style={{
                   ...s.dailyFlipInner,
@@ -951,119 +1564,332 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 <div style={s.dailyCardName}>
                   {dailyCard.name}{dailyCard.reversed ? ' (Reversed)' : ''}
                 </div>
-                {dailyCard.insight && (
-                  <div style={s.dailyCardInsight}>{dailyCard.insight}</div>
-                )}
               </div>
-              <span style={s.moonArrow}>&rsaquo;</span>
+              {(dailyCard.reading || dailyCard.insight) && (
+                <>
+                  <div style={s.dailyCardDivider} />
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 4, minWidth: 0 }}>
+                    <div style={s.dailyCardReading}>
+                      {(dailyCard.reading || dailyCard.insight)}
+                    </div>
+                    <div style={s.cardActions}>
+                      <button
+                        style={{ ...s.cardActionBtn, color: cardPlaying ? 'var(--strong)' : 'var(--muted)' }}
+                        onClick={handleCardSpeak}
+                        title="Read aloud"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
+                          <rect x="1" y={cardPlaying ? 2 : 4} width="2" height={cardPlaying ? 10 : 6} rx="1" fill="currentColor">
+                            {cardPlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+                          </rect>
+                          <rect x="4.5" y={cardPlaying ? 0 : 2} width="2" height={cardPlaying ? 14 : 10} rx="1" fill="currentColor">
+                            {cardPlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+                          </rect>
+                          <rect x="8" y={cardPlaying ? 3 : 4} width="2" height={cardPlaying ? 8 : 6} rx="1" fill="currentColor">
+                            {cardPlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+                          </rect>
+                          <rect x="11.5" y={cardPlaying ? 1 : 3} width="2" height={cardPlaying ? 12 : 8} rx="1" fill="currentColor">
+                            {cardPlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+                          </rect>
+                        </svg>
+                      </button>
+                      <button
+                        style={s.cardActionBtn}
+                        onClick={handleSaveCardToJournal}
+                        title="Save to journal"
+                      >
+                        {cardSaved ? '✓ Saved' : '+ Save to journal'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+              <span style={s.moonArrowLink} onClick={() => onNavigateToCards?.()} title="View Cards">&rsaquo;</span>
             </div>
           )}
         </div>
 
-        {/* Insights card */}
-        <div style={s.sectionTitle}>{t('nav.journal')}</div>
-        <div style={s.insightsCard}>
-          <div style={s.insightStat}>
-            <span style={s.insightValue}>{entryCount ?? '—'}</span>
-            <span style={s.insightLabel}>{t('home.entriesWritten')}</span>
+        {/* Pulse */}
+        {pulse && (
+          <div style={s.pulseBlock}>
+            <div style={s.pulseText}>"{pulse}"</div>
+            <div style={s.pulseAttribution}>
+              <span>— from your last entry, {pulseDays}</span>
+              <button style={s.pulseSpeaker} onClick={handlePulseSpeak} title="Read aloud">
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
+                  <rect x="1" y={pulsePlaying ? 2 : 4} width="2" height={pulsePlaying ? 10 : 6} rx="1" fill="currentColor">
+                    {pulsePlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="4.5" y={pulsePlaying ? 0 : 2} width="2" height={pulsePlaying ? 14 : 10} rx="1" fill="currentColor">
+                    {pulsePlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="8" y={pulsePlaying ? 3 : 4} width="2" height={pulsePlaying ? 8 : 6} rx="1" fill="currentColor">
+                    {pulsePlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="11.5" y={pulsePlaying ? 1 : 3} width="2" height={pulsePlaying ? 12 : 8} rx="1" fill="currentColor">
+                    {pulsePlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+                  </rect>
+                </svg>
+              </button>
+              <button style={s.cardActionBtn} onClick={handleSavePulse}>{pulseSaved ? '✓ Saved' : '+ Save to journal'}</button>
+            </div>
           </div>
-          <div style={s.insightDivider} />
-          <div style={s.insightStat}>
-            <span style={s.insightValue}>{lastEntryDate ? formatRelativeDate(lastEntryDate, t) : '—'}</span>
-            <span style={s.insightLabel}>{t('home.lastWritten')}</span>
-          </div>
-          {latestEntryTitle && (
-            <>
-              <div style={s.insightDivider} />
-              <div
-                style={{ ...s.insightStat, cursor: 'pointer' }}
-                onClick={() => onNavigateToEntry?.(latestEntryId)}
-                title={t('home.openInJournal')}
-              >
-                <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
-                  {latestEntryTitle.slice(0, 36)}{latestEntryTitle.length > 36 ? '…' : ''}
-                </span>
-                <span style={s.insightLabel}>{t('home.latestEntry')}</span>
+        )}
+
+        {/* Activity + Portrait row */}
+        <div style={s.activityPortraitRow}>
+        <div style={s.beveledSquare}>
+            {/* Journal row */}
+            <div style={s.beveledRow}>
+              <span style={s.beveledRowLabel}>{t('nav.journal')}</span>
+              <div style={s.insightStat}>
+                <span style={s.insightValue}>{entryCount ?? '—'}</span>
+                <span style={s.insightLabel}>{t('home.entriesWritten')}</span>
               </div>
-            </>
+              <div style={s.insightDividerDays} />
+              <div style={s.insightStatDays}>
+                <span style={s.insightValue}>{lastEntryDate ? formatRelativeDate(lastEntryDate, t) : '—'}</span>
+                <span style={s.insightLabel}>{t('home.lastWritten')}</span>
+              </div>
+              {latestEntryTitle ? (
+                <div
+                  style={{ ...s.insightStatRight, cursor: 'pointer' }}
+                  onClick={() => onNavigateToEntry?.(latestEntryId)}
+                  title={t('home.openInJournal')}
+                >
+                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
+                    {latestEntryTitle.slice(0, 30)}{latestEntryTitle.length > 30 ? '…' : ''}
+                  </span>
+                  <span style={s.insightLabel}>{t('home.latestEntry')}</span>
+                </div>
+              ) : (
+                <div style={s.insightStatRight} />
+              )}
+              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewEntry?.(); }}>
+                <span style={s.newLinkValue}>+</span>
+                <span style={s.newLinkLabel}>New</span>
+              </button>
+            </div>
+
+            {/* Notes row */}
+            <div style={{ ...s.beveledRow, ...s.beveledRowBorder }}>
+              <span style={s.beveledRowLabel}>{t('nav.notes')}</span>
+              <div style={s.insightStat}>
+                <span style={s.insightValue}>{noteCount ?? '—'}</span>
+                <span style={s.insightLabel}>{t('home.notesWritten')}</span>
+              </div>
+              <div style={s.insightDividerDays} />
+              <div style={s.insightStatDays}>
+                <span style={s.insightValue}>{lastNoteDate ? formatRelativeDate(lastNoteDate, t) : '—'}</span>
+                <span style={s.insightLabel}>{t('home.lastWritten')}</span>
+              </div>
+              {latestNoteTitle ? (
+                <div
+                  style={{ ...s.insightStatRight, cursor: 'pointer' }}
+                  onClick={() => onNavigateToNote?.(latestNoteId)}
+                  title={t('home.openInNotes')}
+                >
+                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
+                    {latestNoteTitle.slice(0, 30)}{latestNoteTitle.length > 30 ? '…' : ''}
+                  </span>
+                  <span style={s.insightLabel}>{t('home.latestNote')}</span>
+                </div>
+              ) : (
+                <div style={s.insightStatRight} />
+              )}
+              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewNote?.(); }}>
+                <span style={s.newLinkValue}>+</span>
+                <span style={s.newLinkLabel}>New</span>
+              </button>
+            </div>
+
+            {/* Oracle row */}
+            <div style={{ ...s.beveledRow, ...s.beveledRowBorder }}>
+              <span style={s.beveledRowLabel}>{t('nav.oracle')}</span>
+              <div style={s.insightStat}>
+                <span style={s.insightValue}>{oracleCount ?? '—'}</span>
+                <span style={s.insightLabel}>{t('home.conversations')}</span>
+              </div>
+              <div style={s.insightDividerDays} />
+              <div style={s.insightStatDays}>
+                <span style={s.insightValue}>{lastOracleDate ? formatRelativeDate(lastOracleDate, t) : '—'}</span>
+                <span style={s.insightLabel}>{t('home.lastConversation')}</span>
+              </div>
+              {latestOraclePreview ? (
+                <div
+                  style={{ ...s.insightStatRight, cursor: 'pointer' }}
+                  onClick={() => onNavigateToOracle?.(latestOracleSessionId)}
+                  title={t('home.openInOracle')}
+                >
+                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
+                    {latestOraclePreview.slice(0, 30)}{latestOraclePreview.length > 30 ? '…' : ''}
+                  </span>
+                  <span style={s.insightLabel}>{t('home.latestConversation')}</span>
+                </div>
+              ) : (
+                <div style={s.insightStatRight} />
+              )}
+              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}>
+                <span style={s.newLinkValue}>+</span>
+                <span style={s.newLinkLabel}>New</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Portrait pill */}
+          {portrait?.birth_date && (
+            <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>
+              <div style={s.portraitContent}>
+                <div style={s.portraitHeader}>
+                  <span style={s.portraitLabel}>Your Portrait</span>
+                </div>
+                <div style={s.portraitGrid}>
+                {portrait.sun_sign && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span>
+                    <span style={s.portraitItemLabel}>Sun</span>
+                  </div>
+                )}
+                {portrait.moon_sign && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span>
+                    <span style={s.portraitItemLabel}>Moon</span>
+                  </div>
+                )}
+                {portrait.rising_sign && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span>
+                    <span style={s.portraitItemLabel}>Rising</span>
+                  </div>
+                )}
+                {portrait.chinese_zodiac && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span>
+                    <span style={s.portraitItemLabel}>Chinese Zodiac</span>
+                  </div>
+                )}
+                {portrait.life_path_number != null && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>{portrait.life_path_number}</span>
+                    <span style={s.portraitItemLabel}>Life Path</span>
+                  </div>
+                )}
+                {portrait.soul_card && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>{portrait.soul_card}</span>
+                    <span style={s.portraitItemLabel}>Soul Card</span>
+                  </div>
+                )}
+                {portrait.life_path_card && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>{portrait.life_path_card}</span>
+                    <span style={s.portraitItemLabel}>Life Path Card</span>
+                  </div>
+                )}
+                {portrait.mbti && (
+                  <div style={s.portraitItem}>
+                    <span style={s.portraitItemValue}>{portrait.mbti}</span>
+                    <span style={s.portraitItemLabel}>MBTI</span>
+                  </div>
+                )}
+                </div>
+              </div>
+              <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
+            </div>
           )}
-          <div style={{ flex: 1 }} />
-          <div style={s.insightDivider} />
-          <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewEntry?.(); }}>
-            <span style={s.newLinkValue}>+ New</span>
-            <span style={s.newLinkLabel}>Journal</span>
-          </button>
         </div>
 
-        {/* Notes card */}
-        <div style={s.sectionTitle}>{t('nav.notes')}</div>
-        <div style={s.insightsCard}>
-          <div style={s.insightStat}>
-            <span style={s.insightValue}>{noteCount ?? '—'}</span>
-            <span style={s.insightLabel}>{t('home.notesWritten')}</span>
+        {/* Insight block */}
+        {insight && (
+          <div style={s.insightBlock}>
+            <div style={s.insightText}>"{insight}"</div>
+            <div style={s.pulseAttribution}>
+              <span>— insight</span>
+              <button style={s.pulseSpeaker} onClick={handleInsightSpeak} title="Read aloud">
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
+                  <rect x="1" y={insightPlaying ? 2 : 4} width="2" height={insightPlaying ? 10 : 6} rx="1" fill="currentColor">
+                    {insightPlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="4.5" y={insightPlaying ? 0 : 2} width="2" height={insightPlaying ? 14 : 10} rx="1" fill="currentColor">
+                    {insightPlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="8" y={insightPlaying ? 3 : 4} width="2" height={insightPlaying ? 8 : 6} rx="1" fill="currentColor">
+                    {insightPlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="11.5" y={insightPlaying ? 1 : 3} width="2" height={insightPlaying ? 12 : 8} rx="1" fill="currentColor">
+                    {insightPlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+                  </rect>
+                </svg>
+              </button>
+              <button style={s.cardActionBtn} onClick={handleSaveInsight}>{insightSaved ? '✓ Saved' : '+ Save to journal'}</button>
+            </div>
           </div>
-          <div style={s.insightDivider} />
-          <div style={s.insightStat}>
-            <span style={s.insightValue}>{lastNoteDate ? formatRelativeDate(lastNoteDate, t) : '—'}</span>
-            <span style={s.insightLabel}>{t('home.lastWritten')}</span>
-          </div>
-          {latestNoteTitle && (
-            <>
-              <div style={s.insightDivider} />
-              <div
-                style={{ ...s.insightStat, cursor: 'pointer' }}
-                onClick={() => onNavigateToNote?.(latestNoteId)}
-                title={t('home.openInNotes')}
-              >
-                <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
-                  {latestNoteTitle.slice(0, 36)}{latestNoteTitle.length > 36 ? '…' : ''}
-                </span>
-                <span style={s.insightLabel}>{t('home.latestNote')}</span>
-              </div>
-            </>
-          )}
-          <div style={{ flex: 1 }} />
-          <div style={s.insightDivider} />
-          <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewNote?.(); }}>
-            <span style={s.newLinkValue}>+ New</span>
-            <span style={s.newLinkLabel}>Note</span>
-          </button>
-        </div>
+        )}
 
-        {/* Oracle card */}
-        <div style={s.sectionTitle}>{t('nav.oracle')}</div>
-        <div style={s.insightsCard}>
-          <div style={s.insightStat}>
-            <span style={s.insightValue}>{oracleCount ?? '—'}</span>
-            <span style={s.insightLabel}>{t('home.conversations')}</span>
-          </div>
-          <div style={s.insightDivider} />
-          <div style={s.insightStat}>
-            <span style={s.insightValue}>{lastOracleDate ? formatRelativeDate(lastOracleDate, t) : '—'}</span>
-            <span style={s.insightLabel}>{t('home.lastConversation')}</span>
-          </div>
-          {latestOraclePreview && (
-            <>
-              <div style={s.insightDivider} />
-              <div
-                style={{ ...s.insightStat, cursor: 'pointer' }}
-                onClick={() => onNavigateToOracle?.(latestOracleSessionId)}
-                title={t('home.openInOracle')}
-              >
-                <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
-                  {latestOraclePreview.slice(0, 36)}{latestOraclePreview.length > 36 ? '…' : ''}
-                </span>
-                <span style={s.insightLabel}>{t('home.latestConversation')}</span>
+        {/* Recurring Themes + Your Rhythm — combined pill */}
+        {(themes.length >= 3 || rhythm.length > 0) && (
+          <div style={s.themesRhythmRow}>
+            {/* Recurring Themes pill */}
+            <div style={{ ...s.themesRhythmPill, ...s.themesHalf }}>
+              <div style={s.themesHeader}>
+                <span style={s.themesLabel}>Recurring Themes</span>
+                <span style={s.themesPeriod}> ·  this month</span>
               </div>
-            </>
-          )}
-          <div style={{ flex: 1 }} />
-          <div style={s.insightDivider} />
-          <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}>
-            <span style={s.newLinkValue}>+ New</span>
-            <span style={s.newLinkLabel}>Conversation</span>
-          </button>
-        </div>
+              {themes.length >= 3 ? (
+                <div style={s.themesRow}>
+                  {themes.map(({ tag, count }) => {
+                    const maxCount = themes[0]?.count || 1;
+                    const scale = 0.85 + 0.15 * (count / maxCount);
+                    return (
+                      <span
+                        key={tag}
+                        style={{ ...s.themePill, fontSize: `${11 * scale}px` }}
+                        title={`${count} entries`}
+                      >
+                        {tag}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>Not enough data yet</span>
+              )}
+            </div>
+
+            {/* Your Rhythm pill */}
+            <div style={{ ...s.themesRhythmPill, ...s.rhythmHalf }}>
+              <div style={s.rhythmHeader}>
+                <span style={s.rhythmLabel}>Your Rhythm</span>
+                <span style={s.rhythmPeriod}> ·  last 210 days</span>
+              </div>
+              {rhythm.length > 0 ? (
+                <div style={s.rhythmRows}>
+                  {[0, 1, 2].map(row => {
+                    const third = Math.ceil(rhythm.length / 3);
+                    const slice = rhythm.slice(row * third, (row + 1) * third);
+                    return (
+                      <div key={row} style={s.rhythmRow}>
+                        {slice.map((day) => (
+                          <div
+                            key={day.date}
+                            style={{
+                              ...s.rhythmDot,
+                              background: day.wrote ? 'var(--strong)' : 'transparent',
+                              border: day.wrote ? '1.5px solid var(--strong)' : '1.5px solid var(--border)',
+                            }}
+                            title={`${day.date}${day.title ? ' — ' + day.title : ''}`}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>No entries yet</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Quick Ask */}
         <div style={s.sectionTitle}>{t('home.quickAsk')}</div>
@@ -1073,7 +1899,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           <textarea
             ref={textareaRef}
             style={s.textarea}
-            placeholder={t('home.askPlaceholder')}
+            placeholder={dailyPrompt}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {

@@ -463,7 +463,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
         {/* Calculated results */}
         {portrait.birth_date && (
-          <div style={{ marginTop: '20px', padding: '16px 20px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--near-white)' }}>
+          <div style={{ marginTop: '20px', padding: '16px 20px', border: 'none', borderRadius: '16px', background: 'var(--near-white)' }}>
             <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '12px' }}>
               {t('portrait.calculated')}
             </div>

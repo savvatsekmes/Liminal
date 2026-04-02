@@ -30,6 +30,7 @@ app.use('/api/images',   require('./routes/images'));
 app.use('/api/memories', require('./routes/memories'));
 app.use('/api/cards',    require('./routes/cards'));
 app.use('/api/sky',      require('./routes/sky'));
+app.use('/api/home',     require('./routes/home'));
 
 // ── JSON error handler (prevents HTML 500 pages) ─────────────────────────────
 // Must be registered AFTER all routes.

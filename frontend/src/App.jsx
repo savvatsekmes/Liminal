@@ -114,6 +114,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNavigateToOracle={(id) => { setPendingSessionId(id); setActiveView('oracle'); }}
               onNavigateToSky={() => { setPendingPortraitTab('sky'); setActiveView('portrait'); }}
               onNavigateToCards={() => { setPendingPortraitTab('cards'); setActiveView('portrait'); }}
+              onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); setActiveView('portrait'); }}
               onNewEntry={() => { createEntry(); setActiveView('journal'); }}
               onNewNote={() => setActiveView('notes')}
               onNewConversation={() => setActiveView('oracle')}

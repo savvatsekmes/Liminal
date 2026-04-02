@@ -25,12 +25,14 @@ router.get('/decks', (req, res) => {
 router.get('/daily', async (req, res) => {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-  // Check cache
-  const cached = db.prepare(
-    'SELECT card_data FROM daily_cards WHERE user_id = ? AND date = ?'
-  ).get(req.userId, today);
-  if (cached) {
-    return res.json(JSON.parse(cached.card_data));
+  // Check cache (skip with ?refresh=1)
+  if (!req.query.refresh) {
+    const cached = db.prepare(
+      'SELECT card_data FROM daily_cards WHERE user_id = ? AND date = ?'
+    ).get(req.userId, today);
+    if (cached) {
+      return res.json(JSON.parse(cached.card_data));
+    }
   }
 
   // Pick a random deck (tarot or oracle)
@@ -57,23 +59,37 @@ router.get('/daily', async (req, res) => {
     meaning: reversed ? (raw.reversed || raw.meaning || '') : (raw.upright || raw.meaning || ''),
   };
 
-  // Generate a short daily insight via LLM
+  // Generate a personalized daily reading via LLM
   try {
     const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
     let context = '';
     if (portrait) {
       if (portrait.preferred_name) context += `Name: ${portrait.preferred_name}. `;
+      if (portrait.mbti) context += `MBTI: ${portrait.mbti}. `;
       if (portrait.current_intention) context += `Current intention: ${portrait.current_intention}. `;
       if (portrait.season_of_life) context += `Season of life: ${portrait.season_of_life}. `;
     }
 
-    const systemPrompt = 'You are a warm, concise oracle guide. Write daily card insights that are personal, grounding, and poetic. No greeting or sign-off. Plain text only.';
-    const userMessage = `The user drew "${card.name}"${reversed ? ' (reversed)' : ''} as their daily card. Meaning: "${card.meaning}". ${context}Write a 2-3 sentence daily insight.`;
-    const insight = await llm.call(systemPrompt, userMessage, { maxTokens: 200 });
-    card.insight = insight.trim();
+    // Recent journal entries for personal context
+    const recentEntries = db.prepare(
+      "SELECT title, body_text FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 3"
+    ).all(req.userId);
+    const journalContext = recentEntries
+      .map(e => `${e.title || 'Untitled'}: ${(e.body_text || '').slice(0, 150)}`)
+      .join('\n');
+
+    const systemPrompt = 'You are a warm, intuitive oracle reader. You give personalised daily card readings that connect the card\'s energy to the person\'s life. Do NOT repeat or paraphrase the card\'s textbook meaning — instead, weave it into specific, actionable guidance for their day. Be poetic but grounded. No greeting or sign-off. Plain text only, 3-4 sentences.';
+    const userMessage = `Card: "${card.name}"${reversed ? ' (reversed)' : ''}. Meaning: "${card.meaning}".
+
+${context ? `About the person: ${context}` : ''}
+${journalContext ? `Recent journal entries:\n${journalContext}` : ''}
+
+Write a personalised daily reading for this person based on this card. Focus on what this card means for their day ahead — don't just restate the meaning.`;
+    const insight = await llm.call(systemPrompt, userMessage, { maxTokens: 300 });
+    card.reading = insight.trim();
   } catch (err) {
-    console.error('[cards/daily] LLM insight failed:', err.message);
-    card.insight = card.meaning;
+    console.error('[cards/daily] LLM reading failed:', err.message);
+    card.reading = '';
   }
 
   // Cache for today

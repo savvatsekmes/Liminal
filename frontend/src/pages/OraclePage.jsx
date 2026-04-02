@@ -945,7 +945,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
         )}
         <input
           style={{
-            margin: '8px 10px', padding: '5px 10px', fontSize: '12px',
+            margin: '3px 10px', padding: '5px 10px', fontSize: '12px',
             border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
             width: 'calc(100% - 20px)', color: 'var(--strong)', outline: 'none',
             flexShrink: 0, fontFamily: 'var(--font)',
