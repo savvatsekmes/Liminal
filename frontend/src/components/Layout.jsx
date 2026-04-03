@@ -205,7 +205,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
         />
         <SidebarButton
           label={t('nav.notes')}
-          icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>}
+          icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10z" fill="var(--white)"/><polyline points="12 4 12 10 16 10"/><path d="M16 2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="var(--white)"/><polyline points="16 2 16 8 22 8"/><line x1="10" y1="13" x2="18" y2="13"/><line x1="10" y1="17" x2="15" y2="17"/></svg>}
           active={activeView === 'notes'}
           onClick={() => onViewChange('notes')}
         />
@@ -217,7 +217,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
         />
         <SidebarButton
           label={t('nav.portrait')}
-          icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="11" r="6.5"/><path d="M6.5 17.5h11" strokeWidth="2"/><path d="M7.5 19.5h9" strokeWidth="2"/><path d="M16 4l.8-2.2.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2L14 4.8z" fill="currentColor" strokeWidth="0"/><path d="M7.5 2.5l.5-1.5.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5z" fill="currentColor" strokeWidth="0"/><path d="M19.5 9l.5-1.5.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5L18 9.5z" fill="currentColor" strokeWidth="0"/></svg>}
+          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M19 9l1.2-3 1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2z" fill="currentColor" strokeWidth="0"/><circle cx="12" cy="11" r="6.5" fill="var(--white)"/><path d="M6.5 17.5h11" strokeWidth="2"/><path d="M7.5 19.5h9" strokeWidth="2"/><path d="M12.5 3.5l1.5-4 1.5 4 4 1.5-4 1.5-1.5 4-1.5-4-4-1.5z" fill="currentColor" strokeWidth="0"/><path d="M6 1.5l1.2-3 1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2z" fill="currentColor" strokeWidth="0"/></svg>}
           active={activeView === 'portrait'}
           onClick={() => onViewChange('portrait')}
         />
