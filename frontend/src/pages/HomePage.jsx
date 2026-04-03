@@ -105,7 +105,6 @@ const QUOTE_POOL = [
   { text: 'What you seek is seeking you.', author: 'Rumi' },
   { text: 'Do not consider painful what is good for you.', author: 'Euripides' },
   { text: 'When the power of love overcomes the love of power, the world will know peace.', author: 'Jimi Hendrix' },
-  { text: 'REALITY is coupled PERCEPTION & PERCEPTION can be MEDIATED & MANIPULATED', author: '' },
   { text: 'But war, organised war, is not a human instinct. It is a highly planned and cooperative form of theft.', author: '' },
   { text: 'Do not go where the path may lead. Go instead where there is no path and leave a trail.', author: 'Ralph Waldo Emerson' },
   // From the curated pool
@@ -895,12 +894,13 @@ const s = {
     display: 'flex',
     gap: '5px',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
   },
   rhythmRows: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '5px',
+    gap: '8px',
+    flex: 1,
   },
   rhythmDot: {
     width: '7px',

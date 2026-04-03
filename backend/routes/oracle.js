@@ -152,16 +152,22 @@ router.post('/sessions/:id/messages', async (req, res) => {
     db.prepare('UPDATE oracle_sessions SET title = ? WHERE id = ?').run(title, session.id);
   }
 
-  // Load full conversation history (up to last 30 messages for context window)
+  // Load full conversation history, filtering out empty responses
   const history = db.prepare(
-    'SELECT role, content FROM oracle_messages WHERE session_id = ? ORDER BY created_at ASC LIMIT 30'
+    "SELECT role, content FROM oracle_messages WHERE session_id = ? AND content != '' ORDER BY created_at ASC LIMIT 30"
   ).all(session.id);
 
   const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype);
 
   try {
-    const answer = await llm.callWithHistory(systemPrompt, history, { maxTokens: 1200 });
+    const answer = await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 1200 });
     const trimmed = answer.trim();
+
+    // Don't save empty responses
+    if (!trimmed) {
+      db.prepare('DELETE FROM oracle_messages WHERE id = ?').run(userMsgResult.lastInsertRowid);
+      return res.status(502).json({ error: 'Model returned an empty response. Try again or switch models.' });
+    }
 
     const assistantResult = db.prepare(
       'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'

@@ -248,4 +248,226 @@ async function callWithHistory(systemPrompt, messages, options = {}) {
   return data.message.content;
 }
 
-module.exports = { call, stream, callWithHistory, testConnection };
+// ── Tool-calling conversation (web search) ──────────────────────────────────
+
+const WEB_SEARCH_TOOL = {
+  name: 'web_search',
+  description: 'Search the web for current information. Use when the user asks about recent events, facts you are unsure about, or anything that benefits from up-to-date data.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'The search query' },
+    },
+    required: ['query'],
+  },
+};
+
+async function executeToolCall(toolName, args) {
+  if (toolName === 'web_search') {
+    const searchService = require('./searchService');
+    const result = await searchService.search(args.query);
+    return searchService.formatResults(result);
+  }
+  return 'Unknown tool';
+}
+
+async function callWithHistoryAndTools(systemPrompt, messages, options = {}) {
+  const searchService = require('./searchService');
+  if (!searchService.isEnabled()) {
+    return callWithHistory(systemPrompt, messages, options);
+  }
+
+  const cfg = getSettings();
+  const provider = options.provider || cfg.provider;
+
+  // Claude/OpenAI: use native tool calling (works reliably)
+  if (provider === 'claude') {
+    return callClaudeWithTools(systemPrompt, messages, cfg, options);
+  }
+  if (provider === 'openai') {
+    return callOpenAIWithTools(systemPrompt, messages, cfg, options);
+  }
+
+  // Ollama (and any other): prompt injection fallback
+  // Most Ollama models don't support tool calling reliably, so we detect
+  // search-worthy queries and inject results directly into the system prompt.
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg?.role === 'user' && searchService.needsSearch(lastMsg.content)) {
+    console.log('[web-search] Triggered for:', lastMsg.content);
+    const results = await searchService.search(lastMsg.content);
+    console.log('[web-search] Results:', results.results?.length || 0, results.error || '');
+    const formatted = searchService.formatResults(results);
+    if (results.results?.length > 0) {
+      const searchBlock = '\n\nWeb search results:\n' + formatted +
+        '\n\nUse these search results to inform your response where relevant.';
+      // If adding search would push past 20K, trim the system prompt to make room
+      // (keeps search quality intact for capable models, trims context for smaller ones)
+      const MAX_PROMPT = 20000;
+      if (systemPrompt.length + searchBlock.length > MAX_PROMPT) {
+        systemPrompt = systemPrompt.substring(0, MAX_PROMPT - searchBlock.length);
+      }
+      systemPrompt += searchBlock;
+    }
+  }
+  return callWithHistory(systemPrompt, messages, options);
+}
+
+async function callClaudeWithTools(systemPrompt, messages, cfg, options) {
+  const Anthropic = require('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey: options.apiKey || cfg.anthropicKey });
+
+  const claudeTool = {
+    name: WEB_SEARCH_TOOL.name,
+    description: WEB_SEARCH_TOOL.description,
+    input_schema: WEB_SEARCH_TOOL.parameters,
+  };
+
+  const mapped = messages.map((m) => ({ role: m.role, content: m.content }));
+
+  const response = await client.messages.create({
+    model: options.model || cfg.claudeModel,
+    max_tokens: options.maxTokens || 2048,
+    system: systemPrompt,
+    tools: [claudeTool],
+    messages: mapped,
+  });
+
+  // Check if the model wants to use a tool
+  const toolBlock = response.content.find((b) => b.type === 'tool_use');
+  if (!toolBlock) {
+    const textBlock = response.content.find((b) => b.type === 'text');
+    return textBlock ? textBlock.text : '';
+  }
+
+  // Execute tool and re-call
+  const toolResult = await executeToolCall(toolBlock.name, toolBlock.input);
+
+  const followUp = await client.messages.create({
+    model: options.model || cfg.claudeModel,
+    max_tokens: options.maxTokens || 2048,
+    system: systemPrompt,
+    messages: [
+      ...mapped,
+      { role: 'assistant', content: response.content },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolBlock.id, content: toolResult }] },
+    ],
+  });
+
+  const finalText = followUp.content.find((b) => b.type === 'text');
+  return finalText ? finalText.text : '';
+}
+
+async function callOpenAIWithTools(systemPrompt, messages, cfg, options) {
+  const OpenAI = require('openai');
+  const client = new OpenAI({ apiKey: options.apiKey || cfg.openaiKey });
+
+  const model = options.model || cfg.openaiModel;
+  // Reasoning models (o1, o3) don't support function calling
+  const isReasoning = /^o[13]/.test(model);
+
+  const mapped = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  const reqParams = {
+    model,
+    max_tokens: options.maxTokens || 2048,
+    messages: mapped,
+  };
+  if (!isReasoning) {
+    reqParams.tools = [{
+      type: 'function',
+      function: {
+        name: WEB_SEARCH_TOOL.name,
+        description: WEB_SEARCH_TOOL.description,
+        parameters: WEB_SEARCH_TOOL.parameters,
+      },
+    }];
+  }
+
+  const response = await client.chat.completions.create(reqParams);
+  const msg = response.choices[0].message;
+
+  if (!msg.tool_calls || msg.tool_calls.length === 0) {
+    return msg.content || '';
+  }
+
+  // Execute tool and re-call
+  const tc = msg.tool_calls[0];
+  const args = JSON.parse(tc.function.arguments);
+  const toolResult = await executeToolCall(tc.function.name, args);
+
+  const followUp = await client.chat.completions.create({
+    model,
+    max_tokens: options.maxTokens || 2048,
+    messages: [
+      ...mapped,
+      msg,
+      { role: 'tool', tool_call_id: tc.id, content: toolResult },
+    ],
+  });
+
+  return followUp.choices[0].message.content || '';
+}
+
+async function callOllamaWithTools(systemPrompt, messages, cfg, options) {
+  const ollamaUrl = options.ollamaUrl || cfg.ollamaUrl;
+  const model = options.model || cfg.ollamaModel;
+
+  const mapped = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  const response = await fetch(`${ollamaUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      messages: mapped,
+      tools: [{
+        type: 'function',
+        function: {
+          name: WEB_SEARCH_TOOL.name,
+          description: WEB_SEARCH_TOOL.description,
+          parameters: WEB_SEARCH_TOOL.parameters,
+        },
+      }],
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
+  const data = await response.json();
+
+  // If no tool calls, return text response
+  if (!data.message.tool_calls || data.message.tool_calls.length === 0) {
+    return data.message.content || '';
+  }
+
+  // Execute tool and re-call
+  const tc = data.message.tool_calls[0];
+  const args = tc.function.arguments;
+  const toolResult = await executeToolCall(tc.function.name, typeof args === 'string' ? JSON.parse(args) : args);
+
+  const followUp = await fetch(`${ollamaUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      messages: [
+        ...mapped,
+        data.message,
+        { role: 'tool', content: toolResult },
+      ],
+    }),
+  });
+
+  if (!followUp.ok) throw new Error(`Ollama follow-up failed: ${followUp.status}`);
+  const followUpData = await followUp.json();
+  return followUpData.message.content || '';
+}
+
+module.exports = { call, stream, callWithHistory, callWithHistoryAndTools, testConnection };

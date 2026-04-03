@@ -75,7 +75,7 @@ router.post('/generate', async (req, res) => {
     const now = new Date();
     const moon = sky.getMoonPhase(now);
     const conditions = sky.getPlanetaryConditions(now);
-    const events = sky.getUpcomingEvents(now, 30);
+    const events = sky.getUpcomingEvents(now, 60);
 
     // Load portrait for personalisation
     const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
@@ -93,44 +93,53 @@ router.post('/generate', async (req, res) => {
       if (lines.length) portraitContext = `\n\n## ABOUT THIS PERSON\n${lines.join('\n')}`;
     }
 
-    // Format sky data
+    // Format sky data — include forward-looking cycle info
     const retroPlanets = conditions.filter(c => c.retrograde).map(c => c.planet);
     const conditionLines = conditions.map(c => {
-      if (c.retrograde) return `${c.planet}: Retrograde${c.retrogradeEnds ? ' (until ' + c.retrogradeEnds + ')' : ''} — ${c.description || ''}`;
-      return `${c.planet}: In ${c.sign}`;
+      let line = `${c.planet}: In ${c.sign}`;
+      if (c.retrograde) {
+        line = `${c.planet}: Retrograde in ${c.sign}${c.retrogradeEnds ? ' (until ' + c.retrogradeEnds + ')' : ''} — ${c.description || ''}`;
+      } else if (c.nextRetrograde) {
+        line += ` (next retrograde begins ${c.nextRetrograde})`;
+      }
+      if (c.signChangeDate && c.nextSign) {
+        line += ` — moves into ${c.nextSign} on ${c.signChangeDate}`;
+      }
+      return line;
     }).join('\n');
 
-    const eventLines = events.slice(0, 10).map(e => {
+    const eventLines = events.slice(0, 15).map(e => {
       return `${e.date}: ${e.type}${e.sign ? ' in ' + e.sign : ''}${e.name ? ' (' + e.name + ')' : ''}`;
     }).join('\n');
 
     const systemPrompt = `You are an astrologer within a personal journaling app called Liminal.
-You write warm, insightful, personal astrological summaries that help people understand how the current sky might touch their inner life.
+You write warm, insightful, deeply personal astrological reflections that help people understand how the current sky touches their inner life — and what is emerging ahead.
 ${portraitContext}
 
 ## CURRENT SKY
 Moon: ${moon.phase} in ${moon.moonSign} (${moon.illumination}% illuminated, day ${moon.daysSinceNewMoon || '?'} of cycle)
 Meaning: ${moon.meaning}
 
-Planetary conditions:
+Planetary conditions & cycles:
 ${conditionLines}
 
-Upcoming events (next 30 days):
+Upcoming events (next 60 days):
 ${eventLines}
-${retroPlanets.length ? '\nRetrograde planets: ' + retroPlanets.join(', ') : ''}
+${retroPlanets.length ? '\nCurrently retrograde: ' + retroPlanets.join(', ') : ''}
 
-Write a personalised astrology summary (2–3 paragraphs) that:
-- Opens with the moon phase and what it invites right now
-- Weaves in the planetary conditions — especially retrogrades — and what they mean for this person
-- Notes any upcoming transits or events worth being aware of
-- Speaks directly to the person as "you"
-- Uses contemplative, warm prose — no bullet points, no lists, no headers
-- If the person's birth chart data is available, connects sky transits to their natal placements
-- Keeps under 400 words
+Write a personalised astrology reflection (3–5 paragraphs, up to 550 words) that:
+- Opens with the current moon phase and what it invites right now
+- Names the larger cycles in motion — retrogrades ending or beginning, planets changing signs, pressure easing or building. Frame these as arcs and seasons, not isolated events. Talk about what kind of period is opening or closing.
+- Looks ahead: what is emerging over the next one to two months? What themes are converging? What openings are forming? If a retrograde is ending soon, what does that release look like? If one is approaching, what deserves attention before it arrives?
+- Connects the sky to this specific person — their natal placements, their season of life, their current intention. Don't just list transits — interpret what they mean for this person's inner landscape.
+- Closes with grounded, reflective guidance — not "capitalise on this window" but "stay close to what feels true and let things unfold at their own pace." The tone should be wise and unhurried.
+- Speaks directly as "you"
+- Uses contemplative, warm prose — no bullet points, no lists, no headers, no section titles
+- Reads like a letter from a thoughtful astrologer, not a horoscope
 
-Return only the summary text. No preamble, no sign-off.`;
+Return only the reflection text. No preamble, no greeting, no sign-off.`;
 
-    const summary = await llm.call(systemPrompt, 'Write my current astrology summary.', { maxTokens: 1200 });
+    const summary = await llm.call(systemPrompt, 'Write my current astrology reflection.', { maxTokens: 1600 });
     res.json({ summary: summary.trim() });
   } catch (err) {
     console.error('[sky] generate error:', err);

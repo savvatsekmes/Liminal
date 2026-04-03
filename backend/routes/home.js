@@ -155,7 +155,7 @@ router.get('/rhythm', (req, res) => {
   }
 
   const entries = db.prepare(
-    "SELECT date(created_at) as day, MIN(title) as title FROM entries WHERE user_id = ? AND date(created_at) >= ? GROUP BY date(created_at)"
+    "SELECT COALESCE(date, date(created_at)) as day, MIN(title) as title FROM entries WHERE user_id = ? AND COALESCE(date, date(created_at)) >= ? GROUP BY COALESCE(date, date(created_at))"
   ).all(req.userId, days[0]);
 
   const entryMap = {};

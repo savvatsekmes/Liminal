@@ -6,7 +6,7 @@ const fs = require('fs');
 const multer = require('multer');
 
 function getChatterboxUrl() {
-  return require('../services/settingsService').get('chatterbox_url') || 'http://localhost:8500';
+  return require('../services/settingsService').get('chatterbox_url') || 'http://localhost:8100';
 }
 
 function getTtsDefaults() {

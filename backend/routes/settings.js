@@ -13,6 +13,7 @@ router.get('/', (req, res) => {
   // Add hasKey booleans for secrets so the UI knows they're set
   all.has_anthropic_key = s.hasSecret('anthropic_api_key');
   all.has_openai_key    = s.hasSecret('openai_api_key');
+  all.has_tavily_key    = s.hasSecret('tavily_api_key');
   res.json(all);
 });
 
@@ -41,6 +42,7 @@ router.put('/', (req, res) => {
   const result = s.getAll();
   result.has_anthropic_key = s.hasSecret('anthropic_api_key');
   result.has_openai_key    = s.hasSecret('openai_api_key');
+  result.has_tavily_key    = s.hasSecret('tavily_api_key');
   res.json(result);
 });
 
@@ -84,7 +86,7 @@ router.get('/gpus', (req, res) => {
 router.post('/test-tts', async (req, res) => {
   const fetch = require('node-fetch');
   const { chatterbox_url, voice } = req.body;
-  const url = chatterbox_url || s.get('chatterbox_url') || 'http://localhost:8500';
+  const url = chatterbox_url || s.get('chatterbox_url') || 'http://localhost:8100';
 
   try {
     const r = await fetch(`${url}/v1/audio/speech`, {

@@ -660,6 +660,15 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
   const candorOracle = buildCandorInstruction(portrait);
   if (candorOracle) sections.push(candorOracle);
 
+  const searchService = require('./searchService');
+  if (searchService.isEnabled()) {
+    sections.push(
+      'You have access to a web_search tool. Use it when the user asks about current events, ' +
+      'real-time information, facts you are unsure about, or anything that would benefit from fresh data. ' +
+      'Do not search for things you already know well.'
+    );
+  }
+
   // Check if this is a custom archetype with a user-defined prompt
   const customPrompt = getCustomArchetypePrompt(portrait, archetype);
   if (customPrompt) {

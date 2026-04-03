@@ -7,7 +7,7 @@
 const db = require('../database');
 
 // Keys that hold API secrets — masked in GET responses
-const SECRET_KEYS = new Set(['anthropic_api_key', 'openai_api_key']);
+const SECRET_KEYS = new Set(['anthropic_api_key', 'openai_api_key', 'tavily_api_key']);
 
 // Defaults (used when neither DB nor .env has a value)
 const DEFAULTS = {
@@ -16,7 +16,7 @@ const DEFAULTS = {
   openai_model:              'gpt-4.1',
   ollama_url:                'http://localhost:11434',
   ollama_model:              'llama3.1',
-  chatterbox_url:            'http://localhost:8500',
+  chatterbox_url:            'http://localhost:8100',
   chatterbox_voice:          'Abigail.wav',
   chatterbox_exaggeration:   '0.6',
   chatterbox_cfg_weight:     '0.9',
@@ -26,6 +26,7 @@ const DEFAULTS = {
   voices_path:               '',
   tts_device:                'auto',
   llm_device:                'auto',
+  web_search_enabled:        'false',
   display_name:              '',
   language:                  'en',
 };

@@ -338,11 +338,19 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
 // ── Ollama Model Browser ──────────────────────────────────────────────────────
 
 const RECOMMENDED_MODELS = [
-  { name: 'llama3.2:3b',  desc: 'Fast · good for daily use' },
-  { name: 'llama3.1:8b',  desc: 'Better quality · needs more RAM' },
-  { name: 'mistral:7b',   desc: 'Excellent reasoning' },
-  { name: 'qwen2.5:7b',   desc: 'Strong multilingual' },
-  { name: 'gemma3:4b',    desc: 'Google · very capable' },
+  // Lightweight — 4-6 GB VRAM (GTX 1060, RTX 2060, M1/M2)
+  { name: 'qwen2.5:3b',   desc: 'Lightweight · 4GB VRAM · fast daily use' },
+  { name: 'llama3.2:3b',  desc: 'Lightweight · 4GB VRAM · solid all-rounder' },
+  { name: 'gemma3:4b',    desc: 'Lightweight · 5GB VRAM · Google · very capable' },
+  // Mid-range — 6-8 GB VRAM (RTX 3060, RTX 4060, M1 Pro/M2 Pro)
+  { name: 'qwen2.5:7b',   desc: 'Mid-range · 7GB VRAM · strong multilingual' },
+  { name: 'qwen2.5-coder:7b', desc: 'Mid-range · 7GB VRAM · code-focused' },
+  { name: 'mistral:7b',   desc: 'Mid-range · 7GB VRAM · excellent reasoning' },
+  { name: 'llama3.1:8b',  desc: 'Mid-range · 8GB VRAM · high quality' },
+  // High-end — 12+ GB VRAM (RTX 3080, RTX 4070+, M2 Max/Ultra)
+  { name: 'qwen2.5:14b',  desc: 'High-end · 12GB VRAM · near-frontier quality' },
+  { name: 'qwen2.5:32b',  desc: 'High-end · 20GB VRAM · exceptional quality' },
+  { name: 'llama3.1:70b',  desc: 'High-end · 40GB+ VRAM · best open-source' },
 ];
 
 function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
@@ -502,6 +510,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
   const [testing, setTesting] = useState(false);
   const [anthropicKey, setAnthropicKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
+  const [tavilyKey, setTavilyKey] = useState('');
   const [ollamaData, setOllamaData] = useState(null); // { online, models }
   const [gpus, setGpus] = useState(null);
 
@@ -556,6 +565,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
     const patch = { llm_provider: provider };
     if (anthropicKey && !anthropicKey.includes('••••')) patch.anthropic_api_key = anthropicKey;
     if (openaiKey && !openaiKey.includes('••••')) patch.openai_api_key = openaiKey;
+    if (tavilyKey && !tavilyKey.includes('••••')) patch.tavily_api_key = tavilyKey;
     if (provider === 'openai') patch.openai_model = cfg.openai_model;
     if (provider === 'ollama') { patch.ollama_url = cfg.ollama_url; patch.ollama_model = cfg.ollama_model; }
     await save(patch);
@@ -710,9 +720,10 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
                 value={cfg.ollama_model || ''}
                 onChange={e => { set('ollama_model', e.target.value); save({ ollama_model: e.target.value }); }}
               >
-                {ollamaData.models.map(m => (
-                  <option key={m.name} value={m.name}>{m.name}</option>
-                ))}
+                {ollamaData.models.map(m => {
+                  const rec = RECOMMENDED_MODELS.find(r => r.name === m.name);
+                  return <option key={m.name} value={m.name}>{m.name}{rec ? ` — ${rec.desc}` : ''}</option>;
+                })}
               </select>
             )}
             {ollamaData?.online && ollamaData.models?.length === 0 && (
@@ -789,6 +800,45 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             ok={testStatus.ok}
             message={testStatus.ok ? `Connected — response: "${testStatus.response}"` : testStatus.error}
           />
+        )}
+      </div>
+
+      <div style={{ borderTop: 'var(--border-style)', marginTop: '16px', paddingTop: '16px' }}>
+        <Field label="Web Search" hint="Let the Oracle search the web via DuckDuckGo — no account needed">
+          <div style={s.segmented}>
+            {['off', 'on'].map((v, i, arr) => (
+              <button
+                key={v}
+                style={{
+                  ...s.segBtn,
+                  ...(i === arr.length - 1 ? s.segBtnLast : {}),
+                  ...(cfg.web_search_enabled === 'true' ? (v === 'on' ? s.segBtnActive : {}) : (v === 'off' ? s.segBtnActive : {})),
+                }}
+                onClick={() => { set('web_search_enabled', v === 'on' ? 'true' : 'false'); save({ web_search_enabled: v === 'on' ? 'true' : 'false' }); }}
+              >
+                {v === 'on' ? 'Enabled' : 'Disabled'}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        {cfg.web_search_enabled === 'true' && (
+          <Field
+            label="Tavily API Key (optional upgrade)"
+            hint={cfg.has_tavily_key ? 'Key is set — using Tavily for higher quality results' : 'Uses DuckDuckGo by default. Add a Tavily key for richer results (free at tavily.com)'}
+          >
+            <div style={s.row}>
+              <input
+                style={s.input}
+                type="password"
+                placeholder={cfg.has_tavily_key ? '••••••••••••••••' : 'tvly-...'}
+                value={tavilyKey}
+                onChange={e => setTavilyKey(e.target.value)}
+                autoComplete="off"
+              />
+              <Btn primary onClick={saveKeys} disabled={saving}>{t('common.save')}</Btn>
+            </div>
+          </Field>
         )}
       </div>
     </Section>

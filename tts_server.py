@@ -33,7 +33,7 @@ log = logging.getLogger("tts_server")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-PORT       = int(os.environ.get("TTS_PORT", 8500))
+PORT       = int(os.environ.get("TTS_PORT", 8100))
 BASE_DIR   = Path(__file__).parent
 VOICES_DIR = Path(os.environ.get("VOICES_DIR", BASE_DIR / "backend" / "data" / "voices"))
 DB_PATH    = BASE_DIR / "backend" / "data" / "liminal.db"
