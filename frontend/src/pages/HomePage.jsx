@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
+import { useTtsOnline } from '../utils/ttsStatus';
 import MicButton from '../components/MicButton';
 import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -146,9 +147,9 @@ const s = {
     marginBottom: '6px',
   },
   greetingDate: {
-    fontSize: '12px',
+    fontSize: '13px',
     color: 'var(--muted)',
-    marginBottom: '24px',
+    marginBottom: '0',
   },
   quoteBlock: {
     marginBottom: '24px',
@@ -890,21 +891,17 @@ const s = {
     color: 'var(--muted)',
     opacity: 0.6,
   },
-  rhythmRow: {
-    display: 'flex',
-    gap: '5px',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   rhythmRows: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
+    flexWrap: 'wrap',
+    gap: '5px',
     flex: 1,
   },
   rhythmDot: {
     width: '7px',
     height: '7px',
+    minWidth: '7px',
+    minHeight: '7px',
     borderRadius: '50%',
   },
   // Sky widget
@@ -936,11 +933,172 @@ const s = {
   },
 };
 
-function getGreeting(t) {
+const morningGreetings = [
+  "Good morning, {name}.",
+  "Morning, {name}.",
+  "Here you are, {name}.",
+  "Another day, {name}.",
+  "The day is yours, {name}.",
+  "Welcome back, {name}.",
+  "You made it to morning, {name}.",
+  "Good to see you, {name}.",
+  "Ready when you are, {name}.",
+  "The page is blank, {name}.",
+  "A fresh start, {name}.",
+  "Begin anywhere, {name}.",
+  "Something new today, {name}.",
+  "The morning holds you, {name}.",
+  "Still here, {name}.",
+  "Good morning. What's alive in you today, {name}?",
+  "The day just opened, {name}.",
+  "Coffee first, then everything else, {name}.",
+  "Whatever happened yesterday, today is new, {name}.",
+  "The morning is quiet. So are you, {name}.",
+  "Start where you are, {name}.",
+  "Something is asking to be written, {name}.",
+  "The light is soft this morning, {name}.",
+  "You woke up. That counts, {name}.",
+  "What are you carrying into today, {name}?",
+];
+
+const afternoonGreetings = [
+  "Good afternoon, {name}.",
+  "Afternoon, {name}.",
+  "Mid-day, {name}.",
+  "Here you are, {name}.",
+  "Taking a breath, {name}?",
+  "Stopping for a moment, {name}.",
+  "The day is half-lived, {name}.",
+  "Welcome back, {name}.",
+  "How's the day treating you, {name}?",
+  "Pausing, {name}?",
+  "Good to see you, {name}.",
+  "The afternoon is yours, {name}.",
+  "Midway through, {name}.",
+  "Something on your mind, {name}?",
+  "The day has happened. Now what, {name}?",
+  "Checking in, {name}.",
+  "Still at it, {name}.",
+  "The day is moving, {name}.",
+  "Taking stock, {name}?",
+  "Halfway home, {name}.",
+  "The sun is high, {name}.",
+  "What has today asked of you, {name}?",
+  "A moment for yourself, {name}.",
+  "The afternoon light, {name}.",
+  "What's sitting with you right now, {name}?",
+];
+
+const eveningGreetings = [
+  "Good evening, {name}.",
+  "Evening, {name}.",
+  "The day is winding down, {name}.",
+  "Here at the end of it, {name}.",
+  "Welcome back, {name}.",
+  "The light is changing, {name}.",
+  "The day is almost done, {name}.",
+  "You made it through, {name}.",
+  "Settling in, {name}?",
+  "The evening is yours, {name}.",
+  "Good to see you, {name}.",
+  "The day has a lot to say, {name}.",
+  "How did it go, {name}?",
+  "Unwinding, {name}?",
+  "The day is behind you now, {name}.",
+  "Here you are at the other end of it, {name}.",
+  "What did today teach you, {name}?",
+  "The work is done. Almost, {name}.",
+  "Breathing out, {name}.",
+  "The evening holds things differently, {name}.",
+  "What needs to be set down, {name}?",
+  "The city is quieting, {name}.",
+  "The day is folding itself away, {name}.",
+  "Something worth writing tonight, {name}?",
+  "The evening asks for honesty, {name}.",
+];
+
+const nightGreetings = [
+  "Still awake, {name}.",
+  "Late night, {name}.",
+  "The quiet hours, {name}.",
+  "Here in the dark, {name}.",
+  "Can't sleep, {name}?",
+  "The night is thinking, {name}.",
+  "Welcome to the other side of the day, {name}.",
+  "Something on your mind, {name}.",
+  "The world is asleep, {name}.",
+  "You and the night, {name}.",
+  "Late thoughts, {name}?",
+  "The dark hours hold things differently, {name}.",
+  "Something needed saying, {name}.",
+  "The night is honest, {name}.",
+  "Here you are, {name}.",
+  "Couldn't wait till morning, {name}?",
+  "The silence is loud tonight, {name}.",
+  "The night always brings something up, {name}.",
+  "Writing at this hour means something, {name}.",
+  "Whatever it is, write it down, {name}.",
+  "The night is a good listener, {name}.",
+  "Not everyone is awake right now, {name}.",
+  "The 3am thoughts are real, {name}.",
+  "This is what the night is for, {name}.",
+  "Deep in it, {name}.",
+];
+
+const DOT_SIZE = 7;
+const DOT_GAP = 5;
+const RHYTHM_ROWS = 3;
+
+function RhythmGrid({ rhythm }) {
+  const ref = useRef(null);
+  const [perRow, setPerRow] = useState(0);
+
+  const measure = useCallback(() => {
+    if (!ref.current) return;
+    const width = ref.current.offsetWidth;
+    setPerRow(Math.floor((width + DOT_GAP) / (DOT_SIZE + DOT_GAP)));
+  }, []);
+
+  useEffect(() => {
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, [measure]);
+
+  const visible = perRow > 0 ? rhythm.slice(-(perRow * RHYTHM_ROWS)) : rhythm;
+
+  return (
+    <div ref={ref} style={s.rhythmRows}>
+      {visible.map((day) => (
+        <div
+          key={day.date}
+          style={{
+            ...s.rhythmDot,
+            background: day.wrote ? 'var(--strong)' : 'transparent',
+            border: day.wrote ? '1.5px solid var(--strong)' : '1.5px solid var(--border)',
+          }}
+          title={`${day.date}${day.title ? ' — ' + day.title : ''}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function getGreeting(name) {
   const h = new Date().getHours();
-  if (h >= 5 && h < 12) return t('home.greeting.morning');
-  if (h >= 12 && h < 17) return t('home.greeting.afternoon');
-  return t('home.greeting.evening');
+  let pool;
+  if (h >= 5 && h < 12) pool = morningGreetings;
+  else if (h >= 12 && h < 17) pool = afternoonGreetings;
+  else if (h >= 17 && h < 21) pool = eveningGreetings;
+  else pool = nightGreetings;
+
+  const stored = sessionStorage.getItem('liminal_greeting');
+  if (stored) return stored.replace('{name}', name);
+
+  const greeting = pool[Math.floor(Math.random() * pool.length)];
+  sessionStorage.setItem('liminal_greeting', greeting);
+  return greeting.replace('{name}', name);
 }
 
 function formatRelativeDate(dateStr, t) {
@@ -979,6 +1137,9 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       if (p.preferred_name) setDisplayName(p.preferred_name);
     }).catch(() => {});
   }, []);
+
+  // Weather
+  const [weather, setWeather] = useState(null);
 
   // Moon & sky
   const [moon, setMoon] = useState(null);
@@ -1020,7 +1181,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [saved, setSaved] = useState(false);
 
   // TTS
-  const [ttsOnline, setTtsOnline] = useState(false);
+  const ttsOnline = useTtsOnline();
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
   const [cardPlaying, setCardPlaying] = useState(false);
@@ -1048,6 +1209,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const dailyPrompt = useMemo(() => getDailyPrompt(), []);
 
   const textareaRef = useRef(null);
+  const greetingRowRef = useRef(null);
+  const [rowHeight, setRowHeight] = useState(null);
   const { isRecording: isDictating, isProcessing: isDictatingProcessing, toggle: toggleDictation } = useDictation((text) => {
     setQuestion((prev) => prev + (prev.trim() ? ' ' : '') + text);
   });
@@ -1105,9 +1268,6 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       }
     }).catch(() => {});
 
-    fetch('/api/tts/status').then((r) => r.json()).then((d) => {
-      setTtsOnline(d.online);
-    }).catch(() => {});
 
     apiFetch('/api/sky/current').then(r => r.json()).then(data => {
       if (data?.moon) setMoon(data.moon);
@@ -1149,6 +1309,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     apiFetch('/api/home/rhythm').then(r => r.json()).then(data => {
       if (data?.rhythm) setRhythm(data.rhythm);
     }).catch(() => {});
+
+    apiFetch('/api/home/weather').then(r => r.json()).then(data => {
+      if (data?.weather) setWeather(data.weather);
+    }).catch(() => {});
   }, []);
 
   // Auto-grow textarea
@@ -1176,6 +1340,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     if (!q || loading) return;
     const activeArchetype = archetype;
 
+    if (greetingRowRef.current) setRowHeight(greetingRowRef.current.offsetHeight);
     setLoading(true);
     setAnswer(null);
     setSaved(false);
@@ -1442,6 +1607,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     setAnsweredQuestion('');
     setAnsweredArchetype('');
     setSaved(false);
+    setRowHeight(null);
     stopAudio();
     setTimeout(() => textareaRef.current?.focus(), 50);
   }
@@ -1453,20 +1619,174 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   return (
     <div style={s.root}>
       <div style={s.inner}>
-        {/* Greeting */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
-          {avatarUrl ? (
-            <img src={avatarUrl} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-          ) : (
-            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '600', color: 'var(--muted)', flexShrink: 0 }}>
-              {(displayName || '?')[0].toUpperCase()}
+        {/* Greeting + Quick Ask row */}
+        <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
+          <img src="/logo.png" alt="Liminal" style={{ width: '88px', objectFit: 'contain', alignSelf: 'center', opacity: 0.85, flexShrink: 0, marginRight: '20px' }} />
+          <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '20px 28px', display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', fontWeight: '600', color: 'var(--muted)', flexShrink: 0 }}>
+                  {(displayName || '?')[0].toUpperCase()}
+                </div>
+              )}
+              <div>
+                <div style={s.greeting}>
+                  {getGreeting(displayName || '')}
+                </div>
+                <div style={s.greetingDate}>
+                  {today}{weather && <span>{'  '}  {weather.icon} {weather.temp}°  ·  {weather.city}</span>}
+                </div>
+              </div>
             </div>
-          )}
-          <div style={s.greeting}>
-            {getGreeting(t)}{displayName ? `, ${displayName}` : ''}.
+          </div>
+          {/* Quick Ask inline */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'row', gap: '14px', minWidth: 0 }}>
+            <div style={{ ...s.askCard, marginBottom: 0, flex: (loading || answer) ? 1 : 1, display: 'flex', flexDirection: 'column', transition: 'flex 0.3s ease' }}>
+              <textarea
+                ref={textareaRef}
+                style={s.textarea}
+                placeholder={dailyPrompt}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); }
+                }}
+                rows={2}
+              />
+              <div style={{ ...s.askCardFooter, marginTop: 'auto' }}>
+                {!loading && !answer && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', flex: 1, alignItems: 'center', overflow: 'hidden' }}>
+                    {suggested.map((q) => (
+                      <button
+                        key={q}
+                        style={{ ...s.suggestedPill, margin: 0, fontSize: '11px', padding: '3px 10px' }}
+                        onClick={() => setQuestion(q)}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.borderColor = 'var(--strong)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--white)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {(loading || answer) && <div style={{ flex: 1 }} />}
+                <div style={{ position: 'relative' }} ref={archetypeRef}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
+                    title={archetype}
+                    type="button"
+                    style={{
+                      ...s.charBtn,
+                      background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                      color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
+                      boxShadow: archetypeOpen
+                        ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                        : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    {(() => {
+                      const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
+                      const custom = customArchetypesList.find(a => a.name === archetype);
+                      if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
+                      if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+                      return <ArchetypeIcon />;
+                    })()}
+                  </button>
+                  {archetypeOpen && (
+                    <div style={s.archetypePopup}>
+                      {BUILT_IN_ARCHETYPES.map((a) => (
+                        <button
+                          key={a.value}
+                          style={{
+                            ...s.archetypeOption,
+                            fontWeight: archetype === a.value ? '600' : '400',
+                            color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
+                          }}
+                          onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
+                          <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
+                        </button>
+                      ))}
+                      {customArchetypesList.length > 0 && (
+                        <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
+                      )}
+                      {customArchetypesList.map((c) => (
+                        <button
+                          key={c.name}
+                          style={{
+                            ...s.archetypeOption,
+                            fontWeight: archetype === c.name ? '600' : '400',
+                            color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
+                          }}
+                          onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+                          <span style={{ marginLeft: '8px' }}>{c.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <MicButton
+                  isRecording={isDictating}
+                  isProcessing={isDictatingProcessing}
+                  onClick={toggleDictation}
+                  style={{ width: '32px', height: '32px', flexShrink: 0 }}
+                />
+                <button
+                  style={{ ...s.askBtn, opacity: loading || !question.trim() ? 0.4 : 1 }}
+                  onClick={handleAsk}
+                  disabled={loading || !question.trim()}
+                >
+                  {t('home.ask')}
+                </button>
+              </div>
+            </div>
+            {/* Inline answer panel */}
+            {(loading || answer) && (
+              <div style={{ flex: 4, border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '16px 20px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {loading ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0s infinite' }} />
+                    <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0.2s infinite' }} />
+                    <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0.4s infinite' }} />
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
+                      <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>"{answeredQuestion}"</span>
+                      <span style={s.responseArchPill}>{answeredArchetype}</span>
+                      <button style={s.regenBtn} onClick={handleRegen} title={t('home.regenerate')}><RegenIcon /></button>
+                    </div>
+                    <div style={{ flex: 1, fontSize: '13px', lineHeight: '1.6', color: 'var(--body)', overflowY: 'auto', minHeight: 0 }}>{answer}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px', flexShrink: 0 }}>
+                      <button
+                        style={{ ...s.actionBtn, ...(playing ? s.actionBtnActive : {}) }}
+                        onClick={handleSpeak}
+                        title={playing ? t('mirror.stop') : t('mirror.listen')}
+                      >
+                        <WaveformIcon playing={playing} />
+                      </button>
+                      <button style={s.actionLink} onClick={handleReset}>{t('home.askAnother')}</button>
+                      {saved ? (
+                        <span style={s.savedMsg}>{t('home.savedToJournal')}</span>
+                      ) : (
+                        <button style={s.actionLink} onClick={handleSaveToJournal}>{t('home.saveToJournal')}</button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
-        <div style={s.greetingDate}>{today}</div>
 
         {/* Daily quote */}
         {(() => { const q = getDailyQuote(); return (
@@ -1860,30 +2180,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             <div style={{ ...s.themesRhythmPill, ...s.rhythmHalf }}>
               <div style={s.rhythmHeader}>
                 <span style={s.rhythmLabel}>Your Rhythm</span>
-                <span style={s.rhythmPeriod}> ·  last 210 days</span>
+                <span style={s.rhythmPeriod}> ·  last 365 days</span>
               </div>
               {rhythm.length > 0 ? (
-                <div style={s.rhythmRows}>
-                  {[0, 1, 2].map(row => {
-                    const third = Math.ceil(rhythm.length / 3);
-                    const slice = rhythm.slice(row * third, (row + 1) * third);
-                    return (
-                      <div key={row} style={s.rhythmRow}>
-                        {slice.map((day) => (
-                          <div
-                            key={day.date}
-                            style={{
-                              ...s.rhythmDot,
-                              background: day.wrote ? 'var(--strong)' : 'transparent',
-                              border: day.wrote ? '1.5px solid var(--strong)' : '1.5px solid var(--border)',
-                            }}
-                            title={`${day.date}${day.title ? ' — ' + day.title : ''}`}
-                          />
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
+                <RhythmGrid rhythm={rhythm} />
               ) : (
                 <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>No entries yet</span>
               )}
@@ -1891,164 +2191,6 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           </div>
         )}
 
-        {/* Quick Ask */}
-        <div style={s.sectionTitle}>{t('home.quickAsk')}</div>
-
-        {/* Input card */}
-        <div style={s.askCard}>
-          <textarea
-            ref={textareaRef}
-            style={s.textarea}
-            placeholder={dailyPrompt}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); }
-            }}
-            rows={2}
-          />
-          <div style={s.askCardFooter}>
-            <div style={{ flex: 1 }} />
-            {/* Archetype picker button */}
-            <div style={{ position: 'relative' }} ref={archetypeRef}>
-              <button
-                onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
-                title={archetype}
-                type="button"
-                style={{
-                  ...s.charBtn,
-                  background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
-                  color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
-                  boxShadow: archetypeOpen
-                    ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
-                    : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
-                }}
-              >
-                {(() => {
-                  const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
-                  const custom = customArchetypesList.find(a => a.name === archetype);
-                  if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
-                  if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
-                  return <ArchetypeIcon />;
-                })()}
-              </button>
-              {archetypeOpen && (
-                <div style={s.archetypePopup}>
-                  {BUILT_IN_ARCHETYPES.map((a) => (
-                    <button
-                      key={a.value}
-                      style={{
-                        ...s.archetypeOption,
-                        fontWeight: archetype === a.value ? '600' : '400',
-                        color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
-                      }}
-                      onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
-                      <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
-                    </button>
-                  ))}
-                  {customArchetypesList.length > 0 && (
-                    <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
-                  )}
-                  {customArchetypesList.map((c) => (
-                    <button
-                      key={c.name}
-                      style={{
-                        ...s.archetypeOption,
-                        fontWeight: archetype === c.name ? '600' : '400',
-                        color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
-                      }}
-                      onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
-                      <span style={{ marginLeft: '8px' }}>{c.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {/* Mic */}
-            <MicButton
-              isRecording={isDictating}
-              isProcessing={isDictatingProcessing}
-              onClick={toggleDictation}
-              style={{ width: '32px', height: '32px', flexShrink: 0 }}
-            />
-            <button
-              style={{ ...s.askBtn, opacity: loading || !question.trim() ? 0.4 : 1 }}
-              onClick={handleAsk}
-              disabled={loading || !question.trim()}
-            >
-              {t('home.ask')}
-            </button>
-          </div>
-        </div>
-
-        {/* Suggested questions */}
-        <div style={s.suggestedRow}>
-          {suggested.map((q) => (
-            <button
-              key={q}
-              style={s.suggestedPill}
-              onClick={() => setQuestion(q)}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.borderColor = 'var(--strong)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--white)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
-            >
-              {q}
-            </button>
-          ))}
-        </div>
-
-        {/* Loading */}
-        {loading && (
-          <div style={s.loadingDots}>
-            <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0s infinite' }} />
-            <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0.2s infinite' }} />
-            <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0.4s infinite' }} />
-          </div>
-        )}
-
-        {/* Response */}
-        {answer && !loading && (
-          <div style={s.responseCard}>
-            <div style={s.responseHeader}>
-              <span style={s.responseQuestion}>"{answeredQuestion}"</span>
-              <span style={s.responseArchPill}>{answeredArchetype}</span>
-              <button style={s.regenBtn} onClick={handleRegen} title={t('home.regenerate')}>
-                <RegenIcon />
-              </button>
-            </div>
-
-            <div style={s.responseBody}>{answer}</div>
-
-            <div style={s.responseActions}>
-              <button
-                style={{ ...s.actionBtn, ...(playing ? s.actionBtnActive : {}) }}
-                onClick={handleSpeak}
-                title={playing ? t('mirror.stop') : t('mirror.listen')}
-              >
-                <WaveformIcon playing={playing} />
-              </button>
-
-              <button style={s.actionLink} onClick={handleReset}>
-                {t('home.askAnother')}
-              </button>
-
-              {saved ? (
-                <span style={s.savedMsg}>{t('home.savedToJournal')}</span>
-              ) : (
-                <button style={s.actionLink} onClick={handleSaveToJournal}>
-                  {t('home.saveToJournal')}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -2139,12 +2281,11 @@ function MoonPhaseSVGSmall({ illumination = 50, phase = '' }) {
 
 function RegenIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-      <path
-        d="M11 6.5A4.5 4.5 0 1 1 6.5 2M6.5 2L9 4.5M6.5 2L4 4.5"
-        stroke="currentColor" strokeWidth="1.2"
-        strokeLinecap="round" strokeLinejoin="round"
-      />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+      <path d="M21 2v6h-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 12a9 9 0 0 1 15.36-6.36L21 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 22v-6h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M21 12a9 9 0 0 1-15.36 6.36L3 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

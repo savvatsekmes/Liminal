@@ -167,6 +167,9 @@ addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'custom_archetypes', "TEXT NOT NULL DEFAULT '[]'");
 addColumnSafe('portrait', 'slider_sky_weight', 'INTEGER DEFAULT 50');
 addColumnSafe('portrait', 'slider_portrait_weight', 'INTEGER DEFAULT 50');
+addColumnSafe('portrait', 'weather_city', 'TEXT');
+addColumnSafe('portrait', 'weather_lat', 'REAL');
+addColumnSafe('portrait', 'weather_lng', 'REAL');
 
 addColumnSafe('users', 'onboarding_complete', 'INTEGER DEFAULT 0');
 addColumnSafe('users', 'avatar_path', 'TEXT');

@@ -265,7 +265,20 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     } catch (e) { /* skip if skyService unavailable */ }
   }
 
-  // 6. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
+  // 6. Weather context
+  try {
+    const { getWeather, getWeatherContext } = require('./weatherService');
+    const lat = portrait?.weather_lat;
+    const lng = portrait?.weather_lng;
+    const city = portrait?.weather_city || portrait?.birth_location || '';
+    if (lat && lng) {
+      const weather = await getWeather(lat, lng, city);
+      const ctx = getWeatherContext(weather);
+      if (ctx) sections.push(ctx);
+    }
+  } catch {}
+
+  // 7. Mirror instructions (includes slider voice + candor via translateSlidersToVoice)
   sections.push(buildMirrorInstructions(portrait, username));
 
   // 7. Language instruction
@@ -606,6 +619,16 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
     } catch {}
   }
 
+  try {
+    const { getWeather, getWeatherContext } = require('./weatherService');
+    const lat = portrait?.weather_lat, lng = portrait?.weather_lng;
+    if (lat && lng) {
+      const w = await getWeather(lat, lng, portrait?.weather_city || portrait?.birth_location || '');
+      const ctx = getWeatherContext(w);
+      if (ctx) sections.push(ctx);
+    }
+  } catch {}
+
   const candorAsk = buildCandorInstruction(portrait);
   if (candorAsk) sections.push(candorAsk);
 
@@ -656,6 +679,16 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
         : `Sky context: ${getSkyContext()}`);
     } catch {}
   }
+
+  try {
+    const { getWeather, getWeatherContext } = require('./weatherService');
+    const lat = portrait?.weather_lat, lng = portrait?.weather_lng;
+    if (lat && lng) {
+      const w = await getWeather(lat, lng, portrait?.weather_city || portrait?.birth_location || '');
+      const ctx = getWeatherContext(w);
+      if (ctx) sections.push(ctx);
+    }
+  } catch {}
 
   const candorOracle = buildCandorInstruction(portrait);
   if (candorOracle) sections.push(candorOracle);

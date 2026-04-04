@@ -23,7 +23,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
         style={{
           background: 'var(--white)',
           border: 'var(--border-style)',
-          borderRadius: '4px',
+          borderRadius: '16px',
           padding: '28px 32px',
           width: '320px',
           maxWidth: '90vw',
@@ -39,7 +39,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
             onClick={onCancel}
             style={{
               padding: '7px 16px', fontSize: '12px', border: 'var(--border-style)',
-              borderRadius: '2px', background: 'var(--white)', color: 'var(--body)',
+              borderRadius: '10px', background: 'var(--white)', color: 'var(--body)',
               cursor: 'pointer', fontFamily: 'var(--font)',
             }}
           >
@@ -49,7 +49,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
             onClick={onConfirm}
             style={{
               padding: '7px 16px', fontSize: '12px', border: '1px solid #cc0000',
-              borderRadius: '2px', background: '#cc0000', color: '#fff',
+              borderRadius: '10px', background: '#cc0000', color: '#fff',
               cursor: 'pointer', fontFamily: 'var(--font)',
             }}
           >

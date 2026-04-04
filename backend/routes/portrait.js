@@ -46,6 +46,7 @@ router.put('/', (req, res) => {
     life_path_number, soul_card, life_path_card,
     working_tarot_card, season_of_life, current_intention,
     custom_archetypes,
+    weather_city, weather_lat, weather_lng,
   } = req.body;
 
   const fields = [];
@@ -61,7 +62,10 @@ router.put('/', (req, res) => {
     sex, pronouns, preferred_name,
     soul_card, life_path_card,
     working_tarot_card, season_of_life, current_intention,
+    weather_city,
   };
+
+  const floatFields = { weather_lat, weather_lng };
 
   const intFields = {
     slider_rational_spiritual,
@@ -86,6 +90,13 @@ router.put('/', (req, res) => {
       const clamped = Math.max(0, Math.min(100, Number(val)));
       fields.push(`${key} = ?`);
       params.push(clamped);
+    }
+  }
+
+  for (const [key, val] of Object.entries(floatFields)) {
+    if (val !== undefined) {
+      fields.push(`${key} = ?`);
+      params.push(val === null ? null : Number(val));
     }
   }
 

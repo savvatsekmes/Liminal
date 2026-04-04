@@ -59,7 +59,7 @@ export default {
 
   // ── Auth / Password Gate ──
   'auth.title': 'Liminal',
-  'auth.tagline': 'A journal for the in-between.',
+  'auth.tagline': 'A mirror for life.',
   'auth.username': 'Username',
   'auth.password': 'Password',
   'auth.login': 'Open journal \u2192',

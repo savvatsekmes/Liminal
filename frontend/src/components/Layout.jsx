@@ -25,15 +25,15 @@ const styles = {
     gap: '4px',
   },
   sidebarLogo: {
-    fontSize: '11px',
-    fontWeight: '700',
-    letterSpacing: '0.08em',
-    color: 'var(--strong)',
     padding: '8px 0',
-    textTransform: 'uppercase',
-    writingMode: 'vertical-rl',
-    textOrientation: 'mixed',
-    transform: 'rotate(180deg)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sidebarLogoImg: {
+    width: '46px',
+    height: 'auto',
+    opacity: 0.85,
   },
   sidebarSpacer: { flex: 1 },
   sidebarBtn: {
@@ -188,7 +188,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
     <div style={styles.root}>
       {/* Left icon sidebar */}
       <nav style={styles.sidebar}>
-        <span style={styles.sidebarLogo}>Liminal</span>
+        <div style={{ ...styles.sidebarLogo, cursor: 'pointer' }} onClick={() => onViewChange('home')}><img src="/logo.png" alt="Liminal" style={styles.sidebarLogoImg} /></div>
         <div style={styles.sidebarSpacer} />
 
         <SidebarButton

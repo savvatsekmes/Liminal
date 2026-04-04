@@ -3,6 +3,7 @@ import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
+import { useTtsOnline } from '../utils/ttsStatus';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import Calendar from '../components/Calendar';
@@ -542,7 +543,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
   // Per-message TTS state
   const [playingMsgId, setPlayingMsgId] = useState(null);
-  const [ttsOnline, setTtsOnline] = useState(false);
+  const ttsOnline = useTtsOnline();
   const audioRef = useRef(null);
 
   // Saved message tracking
@@ -572,8 +573,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     Promise.all([
       apiFetch('/api/oracle/sessions').then((r) => r.json()),
       apiFetch('/api/portrait').then((r) => r.json()),
-      fetch('/api/tts/status').then((r) => r.json()),
-    ]).then(([sessionsData, portrait, ttsData]) => {
+    ]).then(([sessionsData, portrait]) => {
       if (Array.isArray(sessionsData)) {
         setSessions(sessionsData);
         const targetId = initialSessionId || (sessionsData.length > 0 ? sessionsData[0].id : null);
@@ -594,7 +594,6 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
           if (custom.length) setCustomArchetypesList(custom);
         } catch {}
       }
-      setTtsOnline(ttsData.online);
     }).catch(() => {});
   }, []);
 

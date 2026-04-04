@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
+import { useTtsOnline } from '../utils/ttsStatus';
 import { useLanguage } from '../i18n/LanguageContext';
 import ResizeDivider from '../components/ResizeDivider';
 
@@ -485,14 +486,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
   // ── TTS ──
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
-  const [ttsOnline, setTtsOnline] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/tts/status')
-      .then(r => r.json())
-      .then(d => setTtsOnline(d.online))
-      .catch(() => setTtsOnline(false));
-  }, []);
+  const ttsOnline = useTtsOnline();
 
   // ── Load sky data ──
   useEffect(() => {

@@ -25,6 +25,7 @@ import CardPullModal from './CardPullModal';
 import DoodleModal from './DoodleModal';
 import { CardReading } from '../extensions/CardReading';
 import { apiFetch } from '../utils/api';
+import { waitForChatterbox } from '../utils/ttsStatus';
 import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
@@ -303,9 +304,11 @@ export default function WritingCanvas({
     const text = editor?.getText();
     if (!text?.trim()) return;
 
+    setReading(true);
+    const cbReady = await waitForChatterbox(8000);
+
     // Try custom TTS first
-    try {
-      setReading(true);
+    if (cbReady) try {
       const res = await fetch('/api/tts/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -726,6 +729,8 @@ export default function WritingCanvas({
               const text = contextPopup.text;
               setContextPopup(null);
               (async () => {
+                const cbReady = await waitForChatterbox(8000);
+                if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
                 try {
                   const res = await fetch('/api/tts/speak', {
                     method: 'POST',

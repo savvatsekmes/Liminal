@@ -840,8 +840,61 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             </div>
           </Field>
         )}
+
       </div>
     </Section>
+  );
+}
+
+// ── Weather Location Field ───────────────────────────────────────────────────
+function WeatherLocationField() {
+  const [city, setCity] = useState('');
+  const [status, setStatus] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/api/portrait').then(r => r.json()).then(p => {
+      if (p.weather_city) setCity(p.weather_city);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  async function saveCity() {
+    if (!city.trim()) return;
+    setStatus('Looking up…');
+    try {
+      const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city.trim())}&count=1`);
+      const geoData = await geoRes.json();
+      if (!geoData.results?.length) { setStatus('City not found'); return; }
+      const { latitude, longitude, name } = geoData.results[0];
+      await apiFetch('/api/portrait', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weather_city: name, weather_lat: latitude, weather_lng: longitude }),
+      });
+      setCity(name);
+      setStatus(`Set to ${name} (${latitude.toFixed(2)}, ${longitude.toFixed(2)})`);
+    } catch { setStatus('Failed to look up city'); }
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <div style={{ borderTop: 'var(--border-style)', marginTop: '16px', paddingTop: '16px' }}>
+      <Field label="Weather Location" hint="City for weather on the home screen and AI context. Uses Open-Meteo — no API key needed.">
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            style={{ ...s.input, flex: 1, marginBottom: 0 }}
+            value={city}
+            onChange={e => { setCity(e.target.value); setStatus(''); }}
+            onKeyDown={e => { if (e.key === 'Enter') saveCity(); }}
+            placeholder="e.g. Melbourne"
+          />
+          <Btn primary onClick={saveCity}>Set</Btn>
+        </div>
+        {status && <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '6px' }}>{status}</div>}
+      </Field>
+    </div>
   );
 }
 
@@ -1264,6 +1317,8 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
           ))}
         </select>
       </Field>
+
+      <WeatherLocationField />
 
       <div style={s.divider} />
 

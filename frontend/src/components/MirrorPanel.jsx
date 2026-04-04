@@ -4,6 +4,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from './ArchetypeAvatar';
 import { apiFetch } from '../utils/api';
+import { waitForChatterbox } from '../utils/ttsStatus';
 
 const s = {
   root: {
@@ -280,8 +281,11 @@ export default function MirrorPanel({
     readingCancelledRef.current = false;
     setReadingAll(true);
 
+    // Wait for Chatterbox to come online before trying
+    const cbReady = await waitForChatterbox(8000);
+
     // Try custom TTS
-    try {
+    if (cbReady) try {
       const res = await fetch('/api/tts/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -315,6 +319,8 @@ export default function MirrorPanel({
   function readSelectedText(text) {
     setContextPopup(null);
     (async () => {
+      const cbReady = await waitForChatterbox(8000);
+      if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
       try {
         const res = await fetch('/api/tts/speak', {
           method: 'POST',

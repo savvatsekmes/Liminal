@@ -146,10 +146,10 @@ router.get('/themes', (req, res) => {
   res.json({ themes: sorted });
 });
 
-// ── GET /api/home/rhythm — entry dates for last 30 days ─────────────────────
+// ── GET /api/home/rhythm — entry dates for last 365 days ────────────────────
 router.get('/rhythm', (req, res) => {
   const days = [];
-  for (let i = 209; i >= 0; i--) {
+  for (let i = 364; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000);
     days.push(d.toISOString().slice(0, 10));
   }
@@ -168,6 +168,22 @@ router.get('/rhythm', (req, res) => {
   }));
 
   res.json({ rhythm });
+});
+
+// ── GET /api/home/weather — current weather from portrait location ───────────
+router.get('/weather', async (req, res) => {
+  const weatherService = require('../services/weatherService');
+  const portrait = db.prepare('SELECT weather_lat, weather_lng, weather_city, birth_location FROM portrait WHERE user_id = ?').get(req.userId);
+  if (!portrait) return res.json({ weather: null });
+
+  const lat = portrait.weather_lat;
+  const lng = portrait.weather_lng;
+  const city = portrait.weather_city || portrait.birth_location || '';
+
+  if (!lat || !lng) return res.json({ weather: null });
+
+  const weather = await weatherService.getWeather(lat, lng, city);
+  res.json({ weather });
 });
 
 module.exports = router;

@@ -21,6 +21,7 @@ import { useDictation } from '../hooks/useDictation';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
 import { apiFetch } from '../utils/api';
+import { waitForChatterbox } from '../utils/ttsStatus';
 import MirrorBlock from '../components/MirrorBlock';
 import MicButton from '../components/MicButton';
 import CardPullModal from '../components/CardPullModal';
@@ -464,7 +465,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
         style={{
           background: 'var(--white)',
           border: 'var(--border-style)',
-          borderRadius: '4px',
+          borderRadius: '16px',
           padding: '28px 32px',
           width: '320px',
           maxWidth: '90vw',
@@ -482,7 +483,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
               padding: '7px 16px',
               fontSize: '12px',
               border: 'var(--border-style)',
-              borderRadius: '2px',
+              borderRadius: '10px',
               background: 'var(--white)',
               color: 'var(--body)',
               cursor: 'pointer',
@@ -497,7 +498,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
               padding: '7px 16px',
               fontSize: '12px',
               border: '1px solid #cc0000',
-              borderRadius: '2px',
+              borderRadius: '10px',
               background: '#cc0000',
               color: '#fff',
               cursor: 'pointer',
@@ -991,8 +992,10 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
     const text = ed?.getText();
     if (!text?.trim()) return;
 
-    try {
-      setReading(true);
+    setReading(true);
+    const cbReady = await waitForChatterbox(8000);
+
+    if (cbReady) try {
       const res = await fetch('/api/tts/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1202,6 +1205,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
                 const text = contextPopup.text;
                 setContextPopup(null);
                 (async () => {
+                  const cbReady = await waitForChatterbox(8000);
+                  if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
                   try {
                     const res = await fetch('/api/tts/speak', {
                       method: 'POST',
@@ -1546,7 +1551,9 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
     readingCancelledRef.current = false;
     setReadingAll(true);
 
-    try {
+    const cbReady = await waitForChatterbox(8000);
+
+    if (cbReady) try {
       const res = await fetch('/api/tts/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1579,6 +1586,8 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
   function readSelectedText(text) {
     setContextPopup(null);
     (async () => {
+      const cbReady = await waitForChatterbox(8000);
+      if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
       try {
         const res = await fetch('/api/tts/speak', {
           method: 'POST',

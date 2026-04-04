@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import { useTtsOnline } from '../utils/ttsStatus';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from '../components/ResizeDivider';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -545,7 +546,7 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
   const { t } = useLanguage();
   const [editText, setEditText] = useState(description);
   const [playing, setPlaying] = useState(false);
-  const [ttsOnline, setTtsOnline] = useState(false);
+  const ttsOnline = useTtsOnline();
   const audioRef = useRef(null);
 
   // Keep editText in sync when description changes externally
@@ -553,13 +554,6 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
     if (!editing) setEditText(description);
   }, [description, editing]);
 
-  // Check TTS status on mount
-  useEffect(() => {
-    fetch('/api/tts/status')
-      .then((r) => r.json())
-      .then((d) => setTtsOnline(d.online))
-      .catch(() => setTtsOnline(false));
-  }, []);
 
   async function handleListen() {
     if (playing) {

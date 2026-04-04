@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { waitForChatterbox } from '../utils/ttsStatus';
 
 const s = {
   block: {
@@ -65,6 +66,10 @@ export default function MirrorBlock({ block }) {
 
     const text = block.body + (block.quote ? ' ' + block.quote : '');
     setPlaying(true);
+
+    // Wait for Chatterbox to come online before trying
+    const cbReady = await waitForChatterbox(8000);
+    if (!cbReady) { fallbackTTS(text); return; }
 
     try {
       const res = await fetch('/api/tts/speak', {

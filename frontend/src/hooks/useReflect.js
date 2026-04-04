@@ -1,20 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '../utils/api';
+import { useTtsOnline } from '../utils/ttsStatus';
 
 export function useReflect() {
   const [blocks, setBlocks] = useState([]);
   const [opening, setOpening] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [ttsOnline, setTtsOnline] = useState(false);
-
-  // Check Chatterbox status on mount
-  useEffect(() => {
-    fetch('/api/tts/status')
-      .then((r) => r.json())
-      .then((d) => setTtsOnline(d.online))
-      .catch(() => setTtsOnline(false));
-  }, []);
+  const ttsOnline = useTtsOnline();
 
   async function reflect(entry) {
     if (!entry || !entry.body_text) return;

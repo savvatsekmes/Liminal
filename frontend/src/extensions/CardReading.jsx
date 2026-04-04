@@ -1,6 +1,7 @@
 import { Node } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useState, useRef, useCallback } from 'react';
+import { waitForChatterbox } from '../utils/ttsStatus';
 
 // ── Safe attribute encoding (HTML in data-attributes breaks the parser) ──────
 
@@ -464,8 +465,10 @@ function CardDetailPopup({ card, deckType, onClose }) {
     if (meaning) lines.push(meaning);
     const text = lines.join('. ');
 
-    try {
-      setPlaying(true);
+    setPlaying(true);
+    const cbReady = await waitForChatterbox(8000);
+
+    if (cbReady) try {
       const res = await fetch('/api/tts/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
