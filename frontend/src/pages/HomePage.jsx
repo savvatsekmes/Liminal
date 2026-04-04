@@ -390,8 +390,7 @@ const s = {
     lineHeight: '1.3',
   },
   dailyCardInfo: {
-    flex: 1,
-    minWidth: 0,
+    flexShrink: 0,
   },
   dailyCardLabel: {
     fontSize: '9px',
@@ -418,6 +417,7 @@ const s = {
     width: '1px',
     background: 'var(--border)',
     alignSelf: 'stretch',
+    marginLeft: '40px',
   },
   dailyCardReading: {
     flex: 2,
