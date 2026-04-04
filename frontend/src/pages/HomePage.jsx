@@ -141,7 +141,7 @@ const s = {
     maxWidth: '100%',
   },
   greeting: {
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: '600',
     color: 'var(--strong)',
     marginBottom: '6px',
@@ -171,7 +171,7 @@ const s = {
     marginBottom: '28px',
   },
   beveledSquare: {
-    flex: '0 0 70%',
+    flex: '0 0 58%',
     background: 'var(--near-white)',
     border: 'none',
     borderRadius: '16px',
@@ -297,7 +297,7 @@ const s = {
     borderRadius: '16px',
     padding: '16px 20px',
     background: 'var(--near-white)',
-    flex: 1,
+    flex: 2,
     minWidth: 0,
   },
   moonInfo: {
@@ -331,7 +331,7 @@ const s = {
     borderRadius: '16px',
     padding: '16px 20px',
     background: 'var(--near-white)',
-    flex: 1,
+    flex: 3,
     minWidth: 0,
   },
   dailyFlipContainer: {
@@ -512,7 +512,7 @@ const s = {
     background: 'var(--near-white)',
     border: 'none',
     borderRadius: '16px',
-    padding: '20px 28px',
+    padding: '28px 34px',
     cursor: 'pointer',
     transition: 'opacity 0.15s',
     minWidth: 0,
@@ -1147,6 +1147,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
   // Portrait calculated data
   const [portrait, setPortrait] = useState(null);
+  const [portraitSnippet, setPortraitSnippet] = useState(null);
 
   // Daily card
   const [dailyCard, setDailyCard] = useState(null);
@@ -1187,6 +1188,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [cardPlaying, setCardPlaying] = useState(false);
   const cardAudioRef = useRef(null);
   const [cardSaved, setCardSaved] = useState(false);
+
+  const [snippetPlaying, setSnippetPlaying] = useState(false);
+  const snippetAudioRef = useRef(null);
+  const [snippetSaved, setSnippetSaved] = useState(false);
 
   // Pulse, Insight, Themes, Rhythm
   const [pulse, setPulse] = useState(null);
@@ -1308,6 +1313,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     // Rhythm
     apiFetch('/api/home/rhythm').then(r => r.json()).then(data => {
       if (data?.rhythm) setRhythm(data.rhythm);
+    }).catch(() => {});
+
+    apiFetch('/api/home/portrait-snippet').then(r => r.json()).then(data => {
+      if (data?.snippet) setPortraitSnippet(data.snippet);
     }).catch(() => {});
 
     apiFetch('/api/home/weather').then(r => r.json()).then(data => {
@@ -1566,6 +1575,60 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       window.speechSynthesis.speak(utt);
       setCardPlaying(true);
     }
+  }
+
+  async function handleSnippetSpeak(e) {
+    e.stopPropagation();
+    if (snippetPlaying) {
+      if (snippetAudioRef.current) { snippetAudioRef.current.pause(); snippetAudioRef.current = null; }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setSnippetPlaying(false);
+      return;
+    }
+    if (!portraitSnippet) return;
+
+    if (ttsOnline) {
+      try {
+        setSnippetPlaying(true);
+        const res = await fetch('/api/tts/speak', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: portraitSnippet }),
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          snippetAudioRef.current = audio;
+          audio.onended = () => { setSnippetPlaying(false); URL.revokeObjectURL(url); };
+          audio.onerror = () => setSnippetPlaying(false);
+          await audio.play();
+          return;
+        }
+      } catch {}
+    }
+    if (window.speechSynthesis) {
+      const utt = new SpeechSynthesisUtterance(portraitSnippet);
+      utt.onend = () => setSnippetPlaying(false);
+      utt.onerror = () => setSnippetPlaying(false);
+      window.speechSynthesis.speak(utt);
+      setSnippetPlaying(true);
+    }
+  }
+
+  async function handleSaveSnippetToJournal(e) {
+    e.stopPropagation();
+    if (!portraitSnippet || snippetSaved) return;
+    const title = 'Portrait Sketch';
+    const body = `<p>${portraitSnippet}</p>`;
+    try {
+      await apiFetch('/api/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, body, tags: ['portrait'] }),
+      });
+      setSnippetSaved(true);
+    } catch {}
   }
 
   async function handleSpeak() {
@@ -2059,62 +2122,103 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           {/* Portrait pill */}
           {portrait?.birth_date && (
             <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>
-              <div style={s.portraitContent}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                 <div style={s.portraitHeader}>
                   <span style={s.portraitLabel}>Your Portrait</span>
+                  <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
                 </div>
-                <div style={s.portraitGrid}>
-                {portrait.sun_sign && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span>
-                    <span style={s.portraitItemLabel}>Sun</span>
+                <div style={{ display: 'flex', gap: '20px', flex: 1 }}>
+                  {/* Col 1: Sky signs */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
+                    {portrait.sun_sign && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span>
+                        <span style={s.portraitItemLabel}>Sun</span>
+                      </div>
+                    )}
+                    {portrait.moon_sign && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span>
+                        <span style={s.portraitItemLabel}>Moon</span>
+                      </div>
+                    )}
+                    {portrait.rising_sign && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span>
+                        <span style={s.portraitItemLabel}>Rising</span>
+                      </div>
+                    )}
+                    {portrait.chinese_zodiac && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span>
+                        <span style={s.portraitItemLabel}>Chinese Zodiac</span>
+                      </div>
+                    )}
                   </div>
-                )}
-                {portrait.moon_sign && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span>
-                    <span style={s.portraitItemLabel}>Moon</span>
+                  {/* Col 2: Typology & numerology */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
+                    {portrait.mbti && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>{portrait.mbti}</span>
+                        <span style={s.portraitItemLabel}>MBTI</span>
+                      </div>
+                    )}
+                    {portrait.life_path_number != null && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>{portrait.life_path_number}</span>
+                        <span style={s.portraitItemLabel}>Life Path</span>
+                      </div>
+                    )}
+                    {portrait.soul_card && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>{portrait.soul_card}</span>
+                        <span style={s.portraitItemLabel}>Soul Card</span>
+                      </div>
+                    )}
+                    {portrait.life_path_card && (
+                      <div style={s.portraitItem}>
+                        <span style={s.portraitItemValue}>{portrait.life_path_card}</span>
+                        <span style={s.portraitItemLabel}>Life Path Card</span>
+                      </div>
+                    )}
                   </div>
-                )}
-                {portrait.rising_sign && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span>
-                    <span style={s.portraitItemLabel}>Rising</span>
-                  </div>
-                )}
-                {portrait.chinese_zodiac && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span>
-                    <span style={s.portraitItemLabel}>Chinese Zodiac</span>
-                  </div>
-                )}
-                {portrait.life_path_number != null && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>{portrait.life_path_number}</span>
-                    <span style={s.portraitItemLabel}>Life Path</span>
-                  </div>
-                )}
-                {portrait.soul_card && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>{portrait.soul_card}</span>
-                    <span style={s.portraitItemLabel}>Soul Card</span>
-                  </div>
-                )}
-                {portrait.life_path_card && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>{portrait.life_path_card}</span>
-                    <span style={s.portraitItemLabel}>Life Path Card</span>
-                  </div>
-                )}
-                {portrait.mbti && (
-                  <div style={s.portraitItem}>
-                    <span style={s.portraitItemValue}>{portrait.mbti}</span>
-                    <span style={s.portraitItemLabel}>MBTI</span>
-                  </div>
-                )}
+                  {/* Col 3: Generated snippet */}
+                  {portraitSnippet && (
+                    <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid var(--border)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <p style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--body)', margin: 0, fontStyle: 'italic', opacity: 0.85 }}>{portraitSnippet}</p>
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                        <button
+                          style={{ ...s.cardActionBtn, color: snippetPlaying ? 'var(--strong)' : 'var(--muted)' }}
+                          onClick={handleSnippetSpeak}
+                          title="Read aloud"
+                        >
+                          <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
+                            <rect x="1" y={snippetPlaying ? 2 : 4} width="2" height={snippetPlaying ? 10 : 6} rx="1" fill="currentColor">
+                              {snippetPlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+                            </rect>
+                            <rect x="4.5" y={snippetPlaying ? 0 : 2} width="2" height={snippetPlaying ? 14 : 10} rx="1" fill="currentColor">
+                              {snippetPlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+                            </rect>
+                            <rect x="8" y={snippetPlaying ? 3 : 4} width="2" height={snippetPlaying ? 8 : 6} rx="1" fill="currentColor">
+                              {snippetPlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
+                            </rect>
+                            <rect x="11.5" y={snippetPlaying ? 1 : 3} width="2" height={snippetPlaying ? 12 : 8} rx="1" fill="currentColor">
+                              {snippetPlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
+                            </rect>
+                          </svg>
+                        </button>
+                        <button
+                          style={s.cardActionBtn}
+                          onClick={handleSaveSnippetToJournal}
+                          title="Save to journal"
+                        >
+                          {snippetSaved ? '✓ Saved' : '+ Save to journal'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-              <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
             </div>
           )}
         </div>

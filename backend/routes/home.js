@@ -186,4 +186,50 @@ router.get('/weather', async (req, res) => {
   res.json({ weather });
 });
 
+// ── GET /api/home/portrait-snippet — short character summary for home ────────
+router.get('/portrait-snippet', async (req, res) => {
+  const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
+  if (!portrait) return res.json({ snippet: null });
+
+  // Check cache
+  const cached = db.prepare(
+    "SELECT data, entry_hash FROM home_cache WHERE user_id = ? AND cache_key = 'portrait_snippet'"
+  ).get(req.userId);
+
+  const hash = `${portrait.updated_at || ''}`;
+  if (cached && cached.entry_hash === hash) {
+    return res.json(JSON.parse(cached.data));
+  }
+
+  // Build context from portrait
+  const lines = [];
+  if (portrait.preferred_name) lines.push(`Name: ${portrait.preferred_name}`);
+  if (portrait.mbti) lines.push(`MBTI: ${portrait.mbti}`);
+  if (portrait.enneagram) lines.push(`Enneagram: ${portrait.enneagram}`);
+  if (portrait.sun_sign) lines.push(`Sun: ${portrait.sun_sign}`);
+  if (portrait.moon_sign) lines.push(`Moon: ${portrait.moon_sign}`);
+  if (portrait.rising_sign) lines.push(`Rising: ${portrait.rising_sign}`);
+  if (portrait.chinese_zodiac) lines.push(`Chinese zodiac: ${portrait.chinese_element || ''} ${portrait.chinese_zodiac}`.trim());
+  if (portrait.season_of_life) lines.push(`Season of life: ${portrait.season_of_life}`);
+  if (portrait.current_intention) lines.push(`Current intention: ${portrait.current_intention}`);
+  if (portrait.context_note) lines.push(`In their own words: "${portrait.context_note}"`);
+
+  if (lines.length < 2) return res.json({ snippet: null });
+
+  try {
+    const systemPrompt = `Write a 2-3 sentence character sketch of this person — vivid, warm, specific. Third person, present tense. No headers, no lists. Just prose that captures their essence.`;
+    const text = await llm.call(systemPrompt, lines.join('\n'), { maxTokens: 120 });
+    const result = { snippet: text.trim() };
+
+    db.prepare(
+      "INSERT OR REPLACE INTO home_cache (user_id, cache_key, data, entry_hash) VALUES (?, 'portrait_snippet', ?, ?)"
+    ).run(req.userId, JSON.stringify(result), hash);
+
+    res.json(result);
+  } catch (err) {
+    console.error('[home/portrait-snippet] LLM failed:', err.message);
+    res.json({ snippet: null });
+  }
+});
+
 module.exports = router;
