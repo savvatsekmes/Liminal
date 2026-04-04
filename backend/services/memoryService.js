@@ -639,14 +639,14 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
       `You are ${archetype}. ${customPrompt}\n\n` +
       `This person has asked you a direct question. ` +
       `Draw on everything you know about them. Answer warmly, personally, and directly ` +
-      `in 2-4 prose paragraphs. No lists, no headers, no bullet points. ` +
+      `in 2-3 sentences max. Be concise. No lists, no headers, no bullet points. ` +
       `Speak directly to them using "you". Do not restate the question.`
     );
   } else {
     sections.push(
       `You are ${archetype}. This person has asked you a direct question. ` +
       `Draw on everything you know about them. Answer warmly, personally, and directly ` +
-      `in 2-4 prose paragraphs. No lists, no headers, no bullet points. ` +
+      `in 2-3 sentences max. Be concise. No lists, no headers, no bullet points. ` +
       `Speak directly to them using "you". Do not restate the question.`
     );
   }

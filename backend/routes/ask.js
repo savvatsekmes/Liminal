@@ -15,7 +15,7 @@ router.post('/', async (req, res, next) => {
     if (!question?.trim()) return res.status(400).json({ error: 'question is required' });
 
     const systemPrompt = await memory.buildAskSystemPrompt(req.userId, archetype);
-    const answer = await llm.call(systemPrompt, question.trim(), { maxTokens: 900 });
+    const answer = await llm.call(systemPrompt, question.trim(), { maxTokens: 111 });
     res.json({ answer: answer.trim(), archetype });
   } catch (err) {
     console.error('[ask] error:', err.message);
