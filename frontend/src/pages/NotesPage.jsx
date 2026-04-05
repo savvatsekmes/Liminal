@@ -21,7 +21,7 @@ import { useDictation } from '../hooks/useDictation';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
 import { apiFetch } from '../utils/api';
-import { waitForChatterbox } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
 import MicButton from '../components/MicButton';
 import CardPullModal from '../components/CardPullModal';
@@ -876,6 +876,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const ttsAudioRef = useRef(null);
+  const ttsCancelRef = useRef(false);
   const [contextPopup, setContextPopup] = useState(null);
   const editorWrapRef = useRef(null);
   const contextPopupRef = useRef(null);
@@ -982,45 +983,15 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   }
 
   async function handleReadAloud() {
-    if (reading) {
-      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setReading(false);
-      return;
-    }
+    if (reading) { stopSpeak(ttsAudioRef, ttsCancelRef); setReading(false); return; }
     const ed = editorRef.current;
-    const text = ed?.getText();
+    const body = ed?.getText();
+    const text = (note?.title ? note.title + '. ' : '') + (body || '');
     if (!text?.trim()) return;
-
+    ttsCancelRef.current = false;
     setReading(true);
-    const cbReady = await waitForChatterbox(8000);
-
-    if (cbReady) try {
-      const res = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, exaggeration: 0.5 }),
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        ttsAudioRef.current = audio;
-        audio.onended = () => { setReading(false); URL.revokeObjectURL(url); };
-        audio.onerror = () => { setReading(false); };
-        await audio.play();
-        return;
-      }
-    } catch {}
-
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.onend = () => setReading(false);
-      utt.onerror = () => setReading(false);
-      window.speechSynthesis.speak(utt);
-    } else {
-      setReading(false);
-    }
+    await streamSpeak(text, ttsAudioRef, ttsCancelRef);
+    setReading(false);
   }
 
   async function fetchVersions() {
@@ -1204,28 +1175,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
               onClick={() => {
                 const text = contextPopup.text;
                 setContextPopup(null);
-                (async () => {
-                  const cbReady = await waitForChatterbox(8000);
-                  if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
-                  try {
-                    const res = await fetch('/api/tts/speak', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ text, exaggeration: 0.5 }),
-                    });
-                    if (res.ok) {
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      const audio = new Audio(url);
-                      audio.onended = () => URL.revokeObjectURL(url);
-                      await audio.play();
-                      return;
-                    }
-                  } catch {}
-                  if (window.speechSynthesis) {
-                    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-                  }
-                })();
+                ttsCancelRef.current = false;
+                streamSpeak(text, ttsAudioRef, ttsCancelRef);
               }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -1472,9 +1423,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
   const mirrorContextRef = useRef(null);
 
   useEffect(() => () => {
-    readingCancelledRef.current = true;
-    if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    stopSpeak(ttsAudioRef, readingCancelledRef);
   }, []);
 
   // Load custom archetypes
@@ -1536,77 +1485,20 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
   }, []);
 
   async function handleReadAll() {
-    if (readingAll) {
-      readingCancelledRef.current = true;
-      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setReadingAll(false);
-      return;
-    }
+    if (readingAll) { stopSpeak(ttsAudioRef, readingCancelledRef); setReadingAll(false); return; }
     if (!blocks.length) return;
-
-    const fullText = blocks.map(b => b.body).filter(Boolean).join('\n\n');
+    const fullText = blocks.map(b => [b.title, b.body, b.quote].filter(Boolean).join('. ')).filter(Boolean).join('\n\n');
     if (!fullText.trim()) return;
-
     readingCancelledRef.current = false;
     setReadingAll(true);
-
-    const cbReady = await waitForChatterbox(8000);
-
-    if (cbReady) try {
-      const res = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: fullText, exaggeration: 0.5 }),
-      });
-      if (res.ok && !readingCancelledRef.current) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        ttsAudioRef.current = audio;
-        audio.onended = () => { setReadingAll(false); URL.revokeObjectURL(url); };
-        audio.onerror = () => { setReadingAll(false); };
-        await audio.play();
-        return;
-      }
-    } catch {}
-
-    if (readingCancelledRef.current) return;
-
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(fullText);
-      utt.onend = () => setReadingAll(false);
-      utt.onerror = () => setReadingAll(false);
-      window.speechSynthesis.speak(utt);
-    } else {
-      setReadingAll(false);
-    }
+    await streamSpeak(fullText, ttsAudioRef, readingCancelledRef);
+    setReadingAll(false);
   }
 
   function readSelectedText(text) {
     setContextPopup(null);
-    (async () => {
-      const cbReady = await waitForChatterbox(8000);
-      if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
-      try {
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, exaggeration: 0.5 }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audio.onended = () => URL.revokeObjectURL(url);
-          await audio.play();
-          return;
-        }
-      } catch {}
-      if (window.speechSynthesis) {
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-      }
-    })();
+    readingCancelledRef.current = false;
+    streamSpeak(text, ttsAudioRef, readingCancelledRef);
   }
 
   const panelStyle = {

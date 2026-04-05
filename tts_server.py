@@ -61,7 +61,14 @@ def resolve_device() -> str:
         return "cuda:0"
     return "cpu"
 
-DEVICE = resolve_device()
+_requested = resolve_device()
+try:
+    if _requested.startswith("cuda"):
+        torch.cuda.init()
+    DEVICE = _requested
+except Exception as e:
+    log.warning(f"CUDA init failed ({e}), falling back to CPU")
+    DEVICE = "cpu"
 log.info(f"Using device: {DEVICE}")
 
 # ── Patch resemble-perth (v1.0.0 ships PerthImplicitWatermarker as None) ──────
@@ -134,15 +141,7 @@ def split_into_chunks(text: str) -> list[str]:
             count += words
     if current:
         chunks.append(' '.join(current))
-    # Chatterbox needs at least ~10 words to generate a valid speech token sequence
-    MIN_WORDS = 10
-    padded = []
-    for c in chunks:
-        if c.strip():
-            if len(c.split()) < MIN_WORDS:
-                c = c + (" …" * (MIN_WORDS - len(c.split())))
-            padded.append(c)
-    return padded
+    return [c for c in chunks if c.strip()]
 
 
 # cudagraphs-manual is the faster branch default but fails on many PyTorch/CUDA

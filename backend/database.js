@@ -384,4 +384,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_oracle_messages_session ON oracle_messages(session_id, created_at ASC);
 `);
 
+// Home layouts
+db.exec(`
+  CREATE TABLE IF NOT EXISTS home_layouts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    name        TEXT    NOT NULL,
+    widget_order TEXT   NOT NULL DEFAULT '[]',
+    is_active   BOOLEAN DEFAULT 0,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 module.exports = db;

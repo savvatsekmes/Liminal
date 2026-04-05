@@ -3,7 +3,7 @@ import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
-import { useTtsOnline } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import Calendar from '../components/Calendar';
@@ -543,8 +543,8 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
   // Per-message TTS state
   const [playingMsgId, setPlayingMsgId] = useState(null);
-  const ttsOnline = useTtsOnline();
   const audioRef = useRef(null);
+  const cancelRef = useRef(false);
 
   // Saved message tracking
   const [savedMsgIds, setSavedMsgIds] = useState(new Set());
@@ -639,14 +639,14 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
         });
         const newSession = await r.json();
         // Auto-tag if a tag filter is active
-        const activeTag = filterTag !== ALL_TAG ? filterTag : null;
-        if (activeTag) {
+        if (activeFilters.length === 1) {
+          const tag = activeFilters[0];
           await apiFetch(`/api/oracle/sessions/${newSession.id}/tag`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tag: activeTag }),
+            body: JSON.stringify({ tag }),
           });
-          newSession.tag = activeTag;
+          newSession.tags = [...(newSession.tags || []), tag];
         }
         setCurrentSession(newSession);
         setSessions((prev) => [newSession, ...prev]);
@@ -708,14 +708,14 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       });
       const newSession = await r.json();
       // Auto-tag new session if a tag filter is active
-      const activeTag = filterTag !== ALL_TAG ? filterTag : null;
-      if (activeTag) {
+      if (activeFilters.length === 1) {
+        const tag = activeFilters[0];
         await apiFetch(`/api/oracle/sessions/${newSession.id}/tag`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tag: activeTag }),
+          body: JSON.stringify({ tag }),
         });
-        newSession.tag = activeTag;
+        newSession.tags = [...(newSession.tags || []), tag];
       }
       setCurrentSession(newSession);
       setMessages([]);
@@ -834,46 +834,12 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     setShowCreateArchetype(false);
   }
 
-  function stopAudio() {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    setPlayingMsgId(null);
-  }
-
   async function handleSpeak(msg) {
-    if (playingMsgId === msg.id) { stopAudio(); return; }
-    stopAudio();
-
-    if (ttsOnline) {
-      try {
-        setPlayingMsgId(msg.id);
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: msg.content }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          audio.onended = () => { setPlayingMsgId(null); URL.revokeObjectURL(url); };
-          audio.onerror = () => setPlayingMsgId(null);
-          await audio.play();
-          return;
-        }
-      } catch {}
-    }
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(msg.content);
-      utt.onend = () => setPlayingMsgId(null);
-      utt.onerror = () => setPlayingMsgId(null);
-      window.speechSynthesis.speak(utt);
-      setPlayingMsgId(msg.id);
-    }
+    if (playingMsgId === msg.id) { stopSpeak(audioRef, cancelRef); setPlayingMsgId(null); return; }
+    cancelRef.current = false;
+    setPlayingMsgId(msg.id);
+    await streamSpeak(msg.content, audioRef, cancelRef);
+    setPlayingMsgId(null);
   }
 
   async function handleSaveMessage(msg) {

@@ -1,11 +1,16 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
-import { useTtsOnline } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MicButton from '../components/MicButton';
 import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
+import { useLayout } from '../hooks/useLayout';
+import LayoutEditor from '../components/LayoutEditor';
+import WidgetWrapper from '../components/WidgetWrapper';
+import { DndContext, pointerWithin, rectIntersection, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, arrayMove } from '@dnd-kit/sortable';
 
 // ── Suggested question pool ────────────────────────────────────────────────
 const QUESTION_POOL = [
@@ -171,77 +176,66 @@ const s = {
     marginBottom: '28px',
   },
   beveledSquare: {
-    flex: '0 0 58%',
     background: 'var(--near-white)',
     border: 'none',
     borderRadius: '16px',
-    padding: '20px 28px',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-evenly',
-    gap: '0',
+    padding: '16px 20px',
     minWidth: 0,
     boxSizing: 'border-box',
-  },
-  beveledRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-    padding: '12px 0',
-  },
-  beveledRowBorder: {
-    borderTop: 'var(--border-style)',
-  },
-  beveledRowLabel: {
-    fontSize: '9px',
-    fontWeight: '700',
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
-    width: '160px',
-    flexShrink: 0,
-    borderRight: '1px solid var(--border)',
-    paddingRight: '20px',
-    alignSelf: 'stretch',
-    display: 'flex',
-    alignItems: 'center',
-  },
-  // Insights card (used inside beveled)
-  insightStat: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    width: '12%',
-    flexShrink: 0,
-  },
-  insightStatDays: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    width: '15%',
-    flexShrink: 0,
-  },
-  insightDividerDays: {
-    width: '1px',
-    background: 'var(--border)',
-    alignSelf: 'stretch',
-    minHeight: '28px',
-    marginLeft: '20px',
-    flexShrink: 0,
-  },
-  insightStatRight: {
+    overflow: 'hidden',
+    height: '100%',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
+  },
+  statsTable: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, auto) minmax(0, auto) minmax(0, auto) minmax(0, 1fr) minmax(0, auto)',
+    gap: '0',
+    width: '100%',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  statsCell: {
+    padding: '14px 16px 14px 24px',
+    borderRight: '1px solid var(--border)',
+    display: 'flex',
+    flexDirection: 'column',
     gap: '2px',
-    marginLeft: 'auto',
-    width: '40%',
-    flexShrink: 0,
+    minWidth: 0,
+    alignSelf: 'stretch',
+  },
+  statsCellLabel: {
+    padding: '10px 10px',
+    paddingRight: '14px',
+    borderRight: '1px solid var(--border)',
+    display: 'flex',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  statsCellLatest: {
+    padding: '14px 16px 14px 24px',
+    borderLeft: '1px solid var(--border)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    minWidth: 0,
+    overflow: 'hidden',
+  },
+  statsCellDate: {
+    padding: '14px 16px 14px 24px',
     borderLeft: '1px solid var(--border)',
     borderRight: '1px solid var(--border)',
-    paddingLeft: '20px',
-    paddingRight: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    minWidth: 0,
     alignSelf: 'stretch',
+  },
+  statsRowBorder: {
+    gridColumn: '1 / -1',
+    borderTop: 'var(--border-style)',
+    margin: '4px 0',
   },
   insightValue: {
     fontSize: '14px',
@@ -268,7 +262,9 @@ const s = {
     background: 'none',
     border: 'none',
     fontFamily: 'var(--font)',
-    padding: '0 4px',
+    padding: '0 4px 0 12px',
+    borderLeft: '1px solid var(--border)',
+    alignSelf: 'stretch',
     flexShrink: 0,
     textAlign: 'left',
   },
@@ -297,8 +293,11 @@ const s = {
     borderRadius: '16px',
     padding: '16px 20px',
     background: 'var(--near-white)',
-    flex: 2,
     minWidth: 0,
+    boxSizing: 'border-box',
+    height: '100%',
+    overflow: 'hidden',
+    flexWrap: 'wrap',
   },
   moonInfo: {
     flex: 2,
@@ -331,8 +330,11 @@ const s = {
     borderRadius: '16px',
     padding: '16px 20px',
     background: 'var(--near-white)',
-    flex: 3,
     minWidth: 0,
+    boxSizing: 'border-box',
+    height: '100%',
+    overflow: 'hidden',
+    flexWrap: 'wrap',
   },
   dailyFlipContainer: {
     width: 80,
@@ -508,7 +510,6 @@ const s = {
   },
   // Portrait pill
   portraitPill: {
-    flex: 1,
     background: 'var(--near-white)',
     border: 'none',
     borderRadius: '16px',
@@ -520,6 +521,9 @@ const s = {
     display: 'flex',
     gap: '16px',
     alignItems: 'center',
+    height: '100%',
+    overflow: 'hidden',
+    flexWrap: 'wrap',
   },
   portraitContent: {
     flex: 1,
@@ -802,6 +806,7 @@ const s = {
     border: 'none',
     borderRadius: '16px',
     padding: '20px 28px',
+    flex: 1,
   },
   themesHalf: {
     flex: '0 0 39%',
@@ -1130,6 +1135,8 @@ function pickRandom(arr, n) {
 export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNewEntry, onNewNote, onNewConversation }) {
   const { t } = useLanguage();
   const [displayName, setDisplayName] = useState(username || '');
+  const layout = useLayout();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // Fetch preferred name from portrait
   useEffect(() => {
@@ -1182,15 +1189,17 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [saved, setSaved] = useState(false);
 
   // TTS
-  const ttsOnline = useTtsOnline();
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
+  const cancelRef = useRef(false);
   const [cardPlaying, setCardPlaying] = useState(false);
   const cardAudioRef = useRef(null);
+  const cardCancelRef = useRef(false);
   const [cardSaved, setCardSaved] = useState(false);
 
   const [snippetPlaying, setSnippetPlaying] = useState(false);
   const snippetAudioRef = useRef(null);
+  const snippetCancelRef = useRef(false);
   const [snippetSaved, setSnippetSaved] = useState(false);
 
   // Pulse, Insight, Themes, Rhythm
@@ -1201,10 +1210,13 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [rhythm, setRhythm] = useState([]);
   const [insightPlaying, setInsightPlaying] = useState(false);
   const insightAudioRef = useRef(null);
+  const insightCancelRef = useRef(false);
   const [pulsePlaying, setPulsePlaying] = useState(false);
   const pulseAudioRef = useRef(null);
+  const pulseCancelRef = useRef(false);
   const [quotePlaying, setQuotePlaying] = useState(false);
   const quoteAudioRef = useRef(null);
+  const quoteCancelRef = useRef(false);
   const [quoteSaved, setQuoteSaved] = useState(false);
   const [pulseSaved, setPulseSaved] = useState(false);
   const [insightSaved, setInsightSaved] = useState(false);
@@ -1241,8 +1253,9 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           const note = data[0];
           setLastNoteDate(note.created_at);
           setLatestNoteId(note.id);
-          const preview = (note.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-          setLatestNoteTitle(preview ? `${note.type ? note.type.charAt(0).toUpperCase() + note.type.slice(1) + ' — ' : ''}${preview.slice(0, 30)}` : null);
+          const preview = (note.title || '').trim() || (note.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          const typePrefix = note.type ? note.type.charAt(0).toUpperCase() + note.type.slice(1) + ' — ' : '';
+          setLatestNoteTitle(preview ? `${typePrefix}${preview.slice(0, 40)}` : (note.type ? typePrefix + 'Untitled' : 'Untitled'));
         }
       }
     }).catch(() => {});
@@ -1353,7 +1366,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     setLoading(true);
     setAnswer(null);
     setSaved(false);
-    stopAudio();
+    stopSpeak(audioRef, cancelRef); setPlaying(false);
 
     try {
       const res = await apiFetch('/api/ask', {
@@ -1387,7 +1400,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
     setLoading(true);
     setSaved(false);
-    stopAudio();
+    stopSpeak(audioRef, cancelRef); setPlaying(false);
 
     try {
       const res = await apiFetch('/api/ask', {
@@ -1457,55 +1470,14 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     } catch {}
   }
 
-  function stopAudio() {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    setPlaying(false);
-  }
-
-  async function speakText(text, audioRef, setPlayingState) {
+  async function handleQuoteSpeak(text) {
+    if (quotePlaying) { stopSpeak(quoteAudioRef, quoteCancelRef); setQuotePlaying(false); return; }
     if (!text) return;
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    setPlayingState(prev => {
-      if (prev) return false; // was playing, just stop
-      // Start playing
-      (async () => {
-        if (ttsOnline) {
-          try {
-            setPlayingState(true);
-            const res = await fetch('/api/tts/speak', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text }),
-            });
-            if (res.ok) {
-              const blob = await res.blob();
-              const url = URL.createObjectURL(blob);
-              const audio = new Audio(url);
-              audioRef.current = audio;
-              audio.onended = () => { setPlayingState(false); URL.revokeObjectURL(url); };
-              audio.onerror = () => setPlayingState(false);
-              await audio.play();
-              return;
-            }
-          } catch {}
-        }
-        if (window.speechSynthesis) {
-          const utt = new SpeechSynthesisUtterance(text);
-          utt.onend = () => setPlayingState(false);
-          utt.onerror = () => setPlayingState(false);
-          window.speechSynthesis.speak(utt);
-          setPlayingState(true);
-        }
-      })();
-      return true;
-    });
+    quoteCancelRef.current = false;
+    setQuotePlaying(true);
+    await streamSpeak(text, quoteAudioRef, quoteCancelRef);
+    setQuotePlaying(false);
   }
-
-  function handleQuoteSpeak(text) { speakText(text, quoteAudioRef, setQuotePlaying); }
   async function handleSaveQuote(q) {
     if (quoteSaved) return;
     const title = q.author ? `"${q.text.slice(0, 50)}…" — ${q.author}` : `"${q.text.slice(0, 60)}…"`;
@@ -1524,8 +1496,22 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       setPulseSaved(true);
     } catch {}
   }
-  function handlePulseSpeak() { speakText(pulse, pulseAudioRef, setPulsePlaying); }
-  function handleInsightSpeak() { speakText(insight, insightAudioRef, setInsightPlaying); }
+  async function handlePulseSpeak() {
+    if (pulsePlaying) { stopSpeak(pulseAudioRef, pulseCancelRef); setPulsePlaying(false); return; }
+    if (!pulse) return;
+    pulseCancelRef.current = false;
+    setPulsePlaying(true);
+    await streamSpeak(pulse, pulseAudioRef, pulseCancelRef);
+    setPulsePlaying(false);
+  }
+  async function handleInsightSpeak() {
+    if (insightPlaying) { stopSpeak(insightAudioRef, insightCancelRef); setInsightPlaying(false); return; }
+    if (!insight) return;
+    insightCancelRef.current = false;
+    setInsightPlaying(true);
+    await streamSpeak(insight, insightAudioRef, insightCancelRef);
+    setInsightPlaying(false);
+  }
   async function handleSaveInsight() {
     if (insightSaved || !insight) return;
     const title = `Insight — ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`;
@@ -1538,82 +1524,24 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
 
   async function handleCardSpeak(e) {
-    e.stopPropagation(); // don't navigate to cards page
-    if (cardPlaying) {
-      if (cardAudioRef.current) { cardAudioRef.current.pause(); cardAudioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setCardPlaying(false);
-      return;
-    }
+    e.stopPropagation();
+    if (cardPlaying) { stopSpeak(cardAudioRef, cardCancelRef); setCardPlaying(false); return; }
     const text = dailyCard?.reading || dailyCard?.insight;
     if (!text) return;
-
-    if (ttsOnline) {
-      try {
-        setCardPlaying(true);
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          cardAudioRef.current = audio;
-          audio.onended = () => { setCardPlaying(false); URL.revokeObjectURL(url); };
-          audio.onerror = () => setCardPlaying(false);
-          await audio.play();
-          return;
-        }
-      } catch {}
-    }
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.onend = () => setCardPlaying(false);
-      utt.onerror = () => setCardPlaying(false);
-      window.speechSynthesis.speak(utt);
-      setCardPlaying(true);
-    }
+    cardCancelRef.current = false;
+    setCardPlaying(true);
+    await streamSpeak(text, cardAudioRef, cardCancelRef);
+    setCardPlaying(false);
   }
 
   async function handleSnippetSpeak(e) {
     e.stopPropagation();
-    if (snippetPlaying) {
-      if (snippetAudioRef.current) { snippetAudioRef.current.pause(); snippetAudioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setSnippetPlaying(false);
-      return;
-    }
+    if (snippetPlaying) { stopSpeak(snippetAudioRef, snippetCancelRef); setSnippetPlaying(false); return; }
     if (!portraitSnippet) return;
-
-    if (ttsOnline) {
-      try {
-        setSnippetPlaying(true);
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: portraitSnippet }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          snippetAudioRef.current = audio;
-          audio.onended = () => { setSnippetPlaying(false); URL.revokeObjectURL(url); };
-          audio.onerror = () => setSnippetPlaying(false);
-          await audio.play();
-          return;
-        }
-      } catch {}
-    }
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(portraitSnippet);
-      utt.onend = () => setSnippetPlaying(false);
-      utt.onerror = () => setSnippetPlaying(false);
-      window.speechSynthesis.speak(utt);
-      setSnippetPlaying(true);
-    }
+    snippetCancelRef.current = false;
+    setSnippetPlaying(true);
+    await streamSpeak(portraitSnippet, snippetAudioRef, snippetCancelRef);
+    setSnippetPlaying(false);
   }
 
   async function handleSaveSnippetToJournal(e) {
@@ -1632,36 +1560,12 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   }
 
   async function handleSpeak() {
-    if (playing) { stopAudio(); return; }
+    if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
     if (!answer) return;
-
-    if (ttsOnline) {
-      try {
-        setPlaying(true);
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: answer }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); };
-          audio.onerror = () => { setPlaying(false); };
-          await audio.play();
-          return;
-        }
-      } catch {}
-    }
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(answer);
-      utt.onend = () => setPlaying(false);
-      utt.onerror = () => setPlaying(false);
-      window.speechSynthesis.speak(utt);
-      setPlaying(true);
-    }
+    cancelRef.current = false;
+    setPlaying(true);
+    await streamSpeak(answer, audioRef, cancelRef);
+    setPlaying(false);
   }
 
   function handleReset() {
@@ -1671,8 +1575,299 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     setAnsweredArchetype('');
     setSaved(false);
     setRowHeight(null);
-    stopAudio();
+    stopSpeak(audioRef, cancelRef); setPlaying(false);
     setTimeout(() => textareaRef.current?.focus(), 50);
+  }
+
+  // ── Custom collision: pointer-first, then rect intersection fallback ──────
+  function customCollision(args) {
+    const pointer = pointerWithin(args);
+    if (pointer.length > 0) return pointer;
+    return rectIntersection(args);
+  }
+
+  // ── Layout drag-and-drop handler ──────────────────────────────────────────
+  function handleDragEnd(event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = layout.currentLayout.findIndex(w => w.id === active.id);
+    const newIndex = layout.currentLayout.findIndex(w => w.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    layout.reorderWidgets(arrayMove(layout.currentLayout, oldIndex, newIndex));
+  }
+
+  // ── Widget renderer ──────────────────────────────────────────────────────
+  function renderWidget(widgetId, size) {
+    switch (widgetId) {
+      case 'quote': {
+        const q = getDailyQuote();
+        return (
+          <div style={s.quoteBlock}>
+            <span style={s.quoteText}>"{q.text}"</span>
+            <span style={s.pulseAttribution}>
+              {q.author && <span>— {q.author}</span>}
+              <button style={s.pulseSpeaker} onClick={() => handleQuoteSpeak(q.text)} title="Read aloud">
+                <WaveformIcon playing={quotePlaying} />
+              </button>
+              <button style={s.cardActionBtn} onClick={() => handleSaveQuote(q)}>{quoteSaved ? '✓ Saved' : '+ Save to journal'}</button>
+            </span>
+          </div>
+        );
+      }
+      case 'moon': {
+        if (!moon) return null;
+        return (
+          <div style={s.moonCard}>
+            <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
+            <div style={s.moonInfo}>
+              <div style={s.moonPhase}>{moon.phase}</div>
+              <div style={s.moonDetail}>
+                {moon.illumination != null && <span>{Math.round(moon.illumination)}% illuminated</span>}
+                {moon.moonSign && <span> &middot; Moon in {moon.moonSign}</span>}
+              </div>
+              {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
+            </div>
+            {conditions && conditions.length > 0 && (
+              <>
+                <div style={s.moonDivider} />
+                <div style={s.conditionsInfo}>
+                  {conditions.map((c) => (
+                    <div key={c.planet} style={s.conditionRow}>
+                      <span style={s.conditionPlanet}>{c.planet}</span>
+                      <span style={s.conditionSign}>{c.sign}{c.retrograde ? ' ℞' : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            <span style={s.moonArrowLink} onClick={() => onNavigateToSky?.()} title="View Sky">&rsaquo;</span>
+          </div>
+        );
+      }
+      case 'tarot': {
+        if (!dailyCard) return null;
+        return (
+          <div style={s.dailyCardPanel}>
+            <div style={s.dailyFlipContainer}>
+              <div style={{ ...s.dailyFlipInner, transform: cardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
+                <div style={s.dailyFlipFace}>
+                  <img src="/cards/card-back.png" alt="Card back" style={s.dailyCardImg} />
+                </div>
+                <div style={{ ...s.dailyFlipFace, transform: 'rotateY(180deg)' }}>
+                  {dailyCard.image ? (
+                    <img src={dailyCard.image} alt={dailyCard.name} style={{ ...s.dailyCardImg, transform: dailyCard.reversed ? 'rotate(180deg)' : 'none' }} />
+                  ) : (
+                    <div style={s.dailyOracleCard}>
+                      <div style={s.dailyOracleDiamond} />
+                      <div style={s.dailyOracleName}>{dailyCard.name}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div style={s.dailyCardInfo}>
+              <div style={s.dailyCardLabel}>Daily Card</div>
+              <div style={s.dailyCardName}>{dailyCard.name}{dailyCard.reversed ? ' (Reversed)' : ''}</div>
+            </div>
+            {(dailyCard.reading || dailyCard.insight) && (
+              <>
+                <div style={s.dailyCardDivider} />
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 4, minWidth: 0 }}>
+                  <div style={s.dailyCardReading}>{dailyCard.reading || dailyCard.insight}</div>
+                  <div style={s.cardActions}>
+                    <button style={{ ...s.cardActionBtn, color: cardPlaying ? 'var(--strong)' : 'var(--muted)' }} onClick={handleCardSpeak} title="Read aloud">
+                      <WaveformIcon playing={cardPlaying} />
+                    </button>
+                    <button style={s.cardActionBtn} onClick={handleSaveCardToJournal} title="Save to journal">{cardSaved ? '✓ Saved' : '+ Save to journal'}</button>
+                  </div>
+                </div>
+              </>
+            )}
+            <span style={s.moonArrowLink} onClick={() => onNavigateToCards?.()} title="View Cards">&rsaquo;</span>
+          </div>
+        );
+      }
+      case 'pulse': {
+        if (!pulse) return null;
+        return (
+          <div style={s.pulseBlock}>
+            <div style={s.pulseText}>"{pulse}"</div>
+            <div style={s.pulseAttribution}>
+              <span>— from your last entry, {pulseDays}</span>
+              <button style={s.pulseSpeaker} onClick={handlePulseSpeak} title="Read aloud">
+                <WaveformIcon playing={pulsePlaying} />
+              </button>
+              <button style={s.cardActionBtn} onClick={handleSavePulse}>{pulseSaved ? '✓ Saved' : '+ Save to journal'}</button>
+            </div>
+          </div>
+        );
+      }
+      case 'stats': {
+        return (
+          <div style={s.beveledSquare}>
+            <div style={s.statsTable}>
+              {/* Journal row */}
+              <div style={s.statsCellLabel}>
+                <span style={{ fontSize: '9px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)' }}>{t('nav.journal')}</span>
+              </div>
+              <div style={s.statsCell}>
+                <span style={s.insightValue}>{entryCount ?? '—'}</span>
+                <span style={s.insightLabel}>{t('home.entriesWritten')}</span>
+              </div>
+              <div style={s.statsCellDate}>
+                <span style={s.insightValue}>{lastEntryDate ? formatRelativeDate(lastEntryDate, t) : '—'}</span>
+                <span style={s.insightLabel}>{t('home.lastWritten')}</span>
+              </div>
+              {latestEntryTitle ? (
+                <div style={{ ...s.statsCellLatest, cursor: 'pointer' }} onClick={() => onNavigateToEntry?.(latestEntryId)} title={t('home.openInJournal')}>
+                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{latestEntryTitle}</span>
+                  <span style={s.insightLabel}>{t('home.latestEntry')}</span>
+                </div>
+              ) : (<div style={s.statsCellLatest} />)}
+              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewEntry?.(); }}>
+                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
+              </button>
+
+              {/* Divider */}
+              <div style={s.statsRowBorder} />
+
+              {/* Notes row */}
+              <div style={s.statsCellLabel}>
+                <span style={{ fontSize: '9px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)' }}>{t('nav.notes')}</span>
+              </div>
+              <div style={s.statsCell}>
+                <span style={s.insightValue}>{noteCount ?? '—'}</span>
+                <span style={s.insightLabel}>{t('home.notesWritten')}</span>
+              </div>
+              <div style={s.statsCellDate}>
+                <span style={s.insightValue}>{lastNoteDate ? formatRelativeDate(lastNoteDate, t) : '—'}</span>
+                <span style={s.insightLabel}>{t('home.lastWritten')}</span>
+              </div>
+              {latestNoteTitle ? (
+                <div style={{ ...s.statsCellLatest, cursor: 'pointer' }} onClick={() => onNavigateToNote?.(latestNoteId)} title={t('home.openInNotes')}>
+                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{latestNoteTitle}</span>
+                  <span style={s.insightLabel}>{t('home.latestNote')}</span>
+                </div>
+              ) : (<div style={s.statsCellLatest} />)}
+              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewNote?.(); }}>
+                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
+              </button>
+
+              {/* Divider */}
+              <div style={s.statsRowBorder} />
+
+              {/* Oracle row */}
+              <div style={s.statsCellLabel}>
+                <span style={{ fontSize: '9px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)' }}>{t('nav.oracle')}</span>
+              </div>
+              <div style={s.statsCell}>
+                <span style={s.insightValue}>{oracleCount ?? '—'}</span>
+                <span style={s.insightLabel}>{t('home.conversations')}</span>
+              </div>
+              <div style={s.statsCellDate}>
+                <span style={s.insightValue}>{lastOracleDate ? formatRelativeDate(lastOracleDate, t) : '—'}</span>
+                <span style={s.insightLabel}>{t('home.lastConversation')}</span>
+              </div>
+              {latestOraclePreview ? (
+                <div style={{ ...s.statsCellLatest, cursor: 'pointer' }} onClick={() => onNavigateToOracle?.(latestOracleSessionId)} title={t('home.openInOracle')}>
+                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{latestOraclePreview}</span>
+                  <span style={s.insightLabel}>{t('home.latestConversation')}</span>
+                </div>
+              ) : (<div style={s.statsCellLatest} />)}
+              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}>
+                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
+              </button>
+            </div>
+          </div>
+        );
+      }
+      case 'portrait': {
+        if (!portrait?.birth_date) return null;
+        const isCompact = size === 'compact';
+        return (
+          <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+              <div style={s.portraitHeader}>
+                <span style={s.portraitLabel}>Your Portrait</span>
+                <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
+              </div>
+              <div style={{ display: 'flex', gap: '20px', flex: 1 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
+                  {portrait.sun_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span><span style={s.portraitItemLabel}>Sun</span></div>}
+                  {portrait.moon_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span><span style={s.portraitItemLabel}>Moon</span></div>}
+                  {portrait.rising_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span><span style={s.portraitItemLabel}>Rising</span></div>}
+                  {portrait.chinese_zodiac && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span><span style={s.portraitItemLabel}>Chinese Zodiac</span></div>}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
+                  {portrait.mbti && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.mbti}</span><span style={s.portraitItemLabel}>MBTI</span></div>}
+                  {portrait.life_path_number != null && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_number}</span><span style={s.portraitItemLabel}>Life Path</span></div>}
+                  {portrait.soul_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.soul_card}</span><span style={s.portraitItemLabel}>Soul Card</span></div>}
+                  {portrait.life_path_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_card}</span><span style={s.portraitItemLabel}>Life Path Card</span></div>}
+                </div>
+                {!isCompact && portraitSnippet && (
+                  <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid var(--border)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <p style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--body)', margin: 0, fontStyle: 'italic', opacity: 0.85 }}>{portraitSnippet}</p>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                      <button style={{ ...s.cardActionBtn, color: snippetPlaying ? 'var(--strong)' : 'var(--muted)' }} onClick={handleSnippetSpeak} title="Read aloud">
+                        <WaveformIcon playing={snippetPlaying} />
+                      </button>
+                      <button style={s.cardActionBtn} onClick={handleSaveSnippetToJournal} title="Save to journal">{snippetSaved ? '✓ Saved' : '+ Save to journal'}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      case 'insight': {
+        if (!insight) return null;
+        return (
+          <div style={s.insightBlock}>
+            <div style={s.insightText}>"{insight}"</div>
+            <div style={s.pulseAttribution}>
+              <span>— insight</span>
+              <button style={s.pulseSpeaker} onClick={handleInsightSpeak} title="Read aloud">
+                <WaveformIcon playing={insightPlaying} />
+              </button>
+              <button style={s.cardActionBtn} onClick={handleSaveInsight}>{insightSaved ? '✓ Saved' : '+ Save to journal'}</button>
+            </div>
+          </div>
+        );
+      }
+      case 'themes': {
+        if (themes.length < 3) return null;
+        return (
+          <div style={s.themesRhythmPill}>
+            <div style={s.themesHeader}>
+              <span style={s.themesLabel}>Recurring Themes</span>
+              <span style={s.themesPeriod}> ·  this month</span>
+            </div>
+            <div style={s.themesRow}>
+              {themes.map(({ tag, count }) => {
+                const maxCount = themes[0]?.count || 1;
+                const scale = 0.85 + 0.15 * (count / maxCount);
+                return <span key={tag} style={{ ...s.themePill, fontSize: `${11 * scale}px` }} title={`${count} entries`}>{tag}</span>;
+              })}
+            </div>
+          </div>
+        );
+      }
+      case 'rhythm': {
+        if (rhythm.length === 0) return null;
+        return (
+          <div style={s.themesRhythmPill}>
+            <div style={s.rhythmHeader}>
+              <span style={s.rhythmLabel}>Your Rhythm</span>
+              <span style={s.rhythmPeriod}> ·  last 365 days</span>
+            </div>
+            <RhythmGrid rhythm={rhythm} />
+          </div>
+        );
+      }
+      default:
+        return null;
+    }
   }
 
   const today = new Date().toLocaleDateString('en-US', {
@@ -1684,8 +1879,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       <div style={s.inner}>
         {/* Greeting + Quick Ask row */}
         <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
-          <img src="/logo.png" alt="Liminal" style={{ width: '88px', objectFit: 'contain', alignSelf: 'center', opacity: 0.85, flexShrink: 0, marginRight: '20px' }} />
-          <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '20px 28px', display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0 }}>
+          <img src="/logo.png" alt="Liminal" style={{ width: '120px', objectFit: 'contain', alignSelf: 'center', opacity: 0.85, flexShrink: 0, marginRight: '8px' }} />
+          <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '20px 28px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               {avatarUrl ? (
                 <img src={avatarUrl} alt="" style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
@@ -1703,6 +1898,15 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 </div>
               </div>
             </div>
+            {!layout.editMode && (
+              <button
+                onClick={() => layout.setEditMode(true)}
+                style={{ alignSelf: 'flex-end', marginTop: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px', padding: 0, opacity: 0.6 }}
+              >
+                <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
+                Edit layout
+              </button>
+            )}
           </div>
           {/* Quick Ask inline */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'row', gap: '14px', minWidth: 0 }}>
@@ -1851,449 +2055,50 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           </div>
         </div>
 
-        {/* Daily quote */}
-        {(() => { const q = getDailyQuote(); return (
-          <div style={s.quoteBlock}>
-            <span style={s.quoteText}>"{q.text}"</span>
-            <span style={s.pulseAttribution}>
-              {q.author && <span>— {q.author}</span>}
-              <button style={s.pulseSpeaker} onClick={() => handleQuoteSpeak(q.text)} title="Read aloud">
-                <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
-                  <rect x="1" y={quotePlaying ? 2 : 4} width="2" height={quotePlaying ? 10 : 6} rx="1" fill="currentColor">
-                    {quotePlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="4.5" y={quotePlaying ? 0 : 2} width="2" height={quotePlaying ? 14 : 10} rx="1" fill="currentColor">
-                    {quotePlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="8" y={quotePlaying ? 3 : 4} width="2" height={quotePlaying ? 8 : 6} rx="1" fill="currentColor">
-                    {quotePlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="11.5" y={quotePlaying ? 1 : 3} width="2" height={quotePlaying ? 12 : 8} rx="1" fill="currentColor">
-                    {quotePlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
-                  </rect>
-                </svg>
-              </button>
-              <button style={s.cardActionBtn} onClick={() => handleSaveQuote(q)}>{quoteSaved ? '✓ Saved' : '+ Save to journal'}</button>
-            </span>
-          </div>
-        ); })()}
 
-        {/* Moon + Daily Card row */}
-        <div style={s.moonCardRow}>
-          {/* Moon panel → Sky */}
-          {moon && (
-            <div style={s.moonCard}>
-              <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
-              <div style={s.moonInfo}>
-                <div style={s.moonPhase}>{moon.phase}</div>
-                <div style={s.moonDetail}>
-                  {moon.illumination != null && <span>{Math.round(moon.illumination)}% illuminated</span>}
-                  {moon.moonSign && <span> &middot; Moon in {moon.moonSign}</span>}
-                </div>
-                {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
-              </div>
-              {conditions && conditions.length > 0 && (
-                <>
-                  <div style={s.moonDivider} />
-                  <div style={s.conditionsInfo}>
-                    {conditions.map((c) => (
-                      <div key={c.planet} style={s.conditionRow}>
-                        <span style={s.conditionPlanet}>{c.planet}</span>
-                        <span style={s.conditionSign}>
-                          {c.sign}
-                          {c.retrograde ? ' ℞' : ''}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-              <span style={s.moonArrowLink} onClick={() => onNavigateToSky?.()} title="View Sky">&rsaquo;</span>
-            </div>
-          )}
 
-          {/* Daily Card → Cards */}
-          {dailyCard && (
-            <div style={s.dailyCardPanel}>
-              <div style={s.dailyFlipContainer}>
-                <div style={{
-                  ...s.dailyFlipInner,
-                  transform: cardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                }}>
-                  <div style={s.dailyFlipFace}>
-                    <img src="/cards/card-back.png" alt="Card back" style={s.dailyCardImg} />
-                  </div>
-                  <div style={{ ...s.dailyFlipFace, transform: 'rotateY(180deg)' }}>
-                    {dailyCard.image ? (
-                      <img
-                        src={dailyCard.image}
-                        alt={dailyCard.name}
-                        style={{
-                          ...s.dailyCardImg,
-                          transform: dailyCard.reversed ? 'rotate(180deg)' : 'none',
-                        }}
-                      />
-                    ) : (
-                      <div style={s.dailyOracleCard}>
-                        <div style={s.dailyOracleDiamond} />
-                        <div style={s.dailyOracleName}>{dailyCard.name}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div style={s.dailyCardInfo}>
-                <div style={s.dailyCardLabel}>Daily Card</div>
-                <div style={s.dailyCardName}>
-                  {dailyCard.name}{dailyCard.reversed ? ' (Reversed)' : ''}
-                </div>
-              </div>
-              {(dailyCard.reading || dailyCard.insight) && (
-                <>
-                  <div style={s.dailyCardDivider} />
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 4, minWidth: 0 }}>
-                    <div style={s.dailyCardReading}>
-                      {(dailyCard.reading || dailyCard.insight)}
-                    </div>
-                    <div style={s.cardActions}>
-                      <button
-                        style={{ ...s.cardActionBtn, color: cardPlaying ? 'var(--strong)' : 'var(--muted)' }}
-                        onClick={handleCardSpeak}
-                        title="Read aloud"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
-                          <rect x="1" y={cardPlaying ? 2 : 4} width="2" height={cardPlaying ? 10 : 6} rx="1" fill="currentColor">
-                            {cardPlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
-                          </rect>
-                          <rect x="4.5" y={cardPlaying ? 0 : 2} width="2" height={cardPlaying ? 14 : 10} rx="1" fill="currentColor">
-                            {cardPlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
-                          </rect>
-                          <rect x="8" y={cardPlaying ? 3 : 4} width="2" height={cardPlaying ? 8 : 6} rx="1" fill="currentColor">
-                            {cardPlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
-                          </rect>
-                          <rect x="11.5" y={cardPlaying ? 1 : 3} width="2" height={cardPlaying ? 12 : 8} rx="1" fill="currentColor">
-                            {cardPlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
-                          </rect>
-                        </svg>
-                      </button>
-                      <button
-                        style={s.cardActionBtn}
-                        onClick={handleSaveCardToJournal}
-                        title="Save to journal"
-                      >
-                        {cardSaved ? '✓ Saved' : '+ Save to journal'}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-              <span style={s.moonArrowLink} onClick={() => onNavigateToCards?.()} title="View Cards">&rsaquo;</span>
-            </div>
-          )}
-        </div>
-
-        {/* Pulse */}
-        {pulse && (
-          <div style={s.pulseBlock}>
-            <div style={s.pulseText}>"{pulse}"</div>
-            <div style={s.pulseAttribution}>
-              <span>— from your last entry, {pulseDays}</span>
-              <button style={s.pulseSpeaker} onClick={handlePulseSpeak} title="Read aloud">
-                <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
-                  <rect x="1" y={pulsePlaying ? 2 : 4} width="2" height={pulsePlaying ? 10 : 6} rx="1" fill="currentColor">
-                    {pulsePlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="4.5" y={pulsePlaying ? 0 : 2} width="2" height={pulsePlaying ? 14 : 10} rx="1" fill="currentColor">
-                    {pulsePlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="8" y={pulsePlaying ? 3 : 4} width="2" height={pulsePlaying ? 8 : 6} rx="1" fill="currentColor">
-                    {pulsePlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="11.5" y={pulsePlaying ? 1 : 3} width="2" height={pulsePlaying ? 12 : 8} rx="1" fill="currentColor">
-                    {pulsePlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
-                  </rect>
-                </svg>
-              </button>
-              <button style={s.cardActionBtn} onClick={handleSavePulse}>{pulseSaved ? '✓ Saved' : '+ Save to journal'}</button>
-            </div>
-          </div>
+        {/* Layout editor panel */}
+        {layout.editMode && (
+          <LayoutEditor
+            savedLayouts={layout.savedLayouts}
+            activeLayoutId={layout.activeLayoutId}
+            isLiminalDefault={layout.isLiminalDefault}
+            dirty={layout.dirty}
+            availableWidgets={layout.availableWidgets}
+            onSelectLayout={layout.selectLayout}
+            onAddWidget={layout.addWidget}
+            onSaveLayout={layout.saveLayout}
+            onDeleteLayout={layout.deleteLayout}
+            onDiscard={layout.discardChanges}
+            onDone={() => layout.setEditMode(false)}
+          />
         )}
 
-        {/* Activity + Portrait row */}
-        <div style={s.activityPortraitRow}>
-        <div style={s.beveledSquare}>
-            {/* Journal row */}
-            <div style={s.beveledRow}>
-              <span style={s.beveledRowLabel}>{t('nav.journal')}</span>
-              <div style={s.insightStat}>
-                <span style={s.insightValue}>{entryCount ?? '—'}</span>
-                <span style={s.insightLabel}>{t('home.entriesWritten')}</span>
-              </div>
-              <div style={s.insightDividerDays} />
-              <div style={s.insightStatDays}>
-                <span style={s.insightValue}>{lastEntryDate ? formatRelativeDate(lastEntryDate, t) : '—'}</span>
-                <span style={s.insightLabel}>{t('home.lastWritten')}</span>
-              </div>
-              {latestEntryTitle ? (
-                <div
-                  style={{ ...s.insightStatRight, cursor: 'pointer' }}
-                  onClick={() => onNavigateToEntry?.(latestEntryId)}
-                  title={t('home.openInJournal')}
-                >
-                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
-                    {latestEntryTitle.slice(0, 30)}{latestEntryTitle.length > 30 ? '…' : ''}
-                  </span>
-                  <span style={s.insightLabel}>{t('home.latestEntry')}</span>
-                </div>
-              ) : (
-                <div style={s.insightStatRight} />
-              )}
-              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewEntry?.(); }}>
-                <span style={s.newLinkValue}>+</span>
-                <span style={s.newLinkLabel}>New</span>
-              </button>
+        {/* Widget zone */}
+        <DndContext sensors={sensors} collisionDetection={customCollision} onDragEnd={handleDragEnd}>
+          <SortableContext items={layout.currentLayout.map(w => w.id)} strategy={() => []}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'stretch' }}>
+              {layout.currentLayout.map((widget) => {
+                const content = renderWidget(widget.id, widget.width);
+                if (!content && !layout.editMode) return null;
+                return (
+                  <WidgetWrapper
+                    key={widget.id}
+                    id={widget.id}
+                    editMode={layout.editMode}
+                    isLiminalDefault={layout.isLiminalDefault}
+                    width={widget.width}
+                    onRemove={layout.removeWidget}
+                    onShrink={layout.shrinkWidget}
+                    onGrow={layout.growWidget}
+                  >
+                    {content || <div style={{ padding: '12px', fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>No data yet</div>}
+                  </WidgetWrapper>
+                );
+              })}
             </div>
-
-            {/* Notes row */}
-            <div style={{ ...s.beveledRow, ...s.beveledRowBorder }}>
-              <span style={s.beveledRowLabel}>{t('nav.notes')}</span>
-              <div style={s.insightStat}>
-                <span style={s.insightValue}>{noteCount ?? '—'}</span>
-                <span style={s.insightLabel}>{t('home.notesWritten')}</span>
-              </div>
-              <div style={s.insightDividerDays} />
-              <div style={s.insightStatDays}>
-                <span style={s.insightValue}>{lastNoteDate ? formatRelativeDate(lastNoteDate, t) : '—'}</span>
-                <span style={s.insightLabel}>{t('home.lastWritten')}</span>
-              </div>
-              {latestNoteTitle ? (
-                <div
-                  style={{ ...s.insightStatRight, cursor: 'pointer' }}
-                  onClick={() => onNavigateToNote?.(latestNoteId)}
-                  title={t('home.openInNotes')}
-                >
-                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
-                    {latestNoteTitle.slice(0, 30)}{latestNoteTitle.length > 30 ? '…' : ''}
-                  </span>
-                  <span style={s.insightLabel}>{t('home.latestNote')}</span>
-                </div>
-              ) : (
-                <div style={s.insightStatRight} />
-              )}
-              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewNote?.(); }}>
-                <span style={s.newLinkValue}>+</span>
-                <span style={s.newLinkLabel}>New</span>
-              </button>
-            </div>
-
-            {/* Oracle row */}
-            <div style={{ ...s.beveledRow, ...s.beveledRowBorder }}>
-              <span style={s.beveledRowLabel}>{t('nav.oracle')}</span>
-              <div style={s.insightStat}>
-                <span style={s.insightValue}>{oracleCount ?? '—'}</span>
-                <span style={s.insightLabel}>{t('home.conversations')}</span>
-              </div>
-              <div style={s.insightDividerDays} />
-              <div style={s.insightStatDays}>
-                <span style={s.insightValue}>{lastOracleDate ? formatRelativeDate(lastOracleDate, t) : '—'}</span>
-                <span style={s.insightLabel}>{t('home.lastConversation')}</span>
-              </div>
-              {latestOraclePreview ? (
-                <div
-                  style={{ ...s.insightStatRight, cursor: 'pointer' }}
-                  onClick={() => onNavigateToOracle?.(latestOracleSessionId)}
-                  title={t('home.openInOracle')}
-                >
-                  <span style={{ ...s.insightValue, textDecoration: 'underline', textDecorationColor: 'var(--border)' }}>
-                    {latestOraclePreview.slice(0, 30)}{latestOraclePreview.length > 30 ? '…' : ''}
-                  </span>
-                  <span style={s.insightLabel}>{t('home.latestConversation')}</span>
-                </div>
-              ) : (
-                <div style={s.insightStatRight} />
-              )}
-              <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}>
-                <span style={s.newLinkValue}>+</span>
-                <span style={s.newLinkLabel}>New</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Portrait pill */}
-          {portrait?.birth_date && (
-            <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                <div style={s.portraitHeader}>
-                  <span style={s.portraitLabel}>Your Portrait</span>
-                  <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
-                </div>
-                <div style={{ display: 'flex', gap: '20px', flex: 1 }}>
-                  {/* Col 1: Sky signs */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
-                    {portrait.sun_sign && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span>
-                        <span style={s.portraitItemLabel}>Sun</span>
-                      </div>
-                    )}
-                    {portrait.moon_sign && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span>
-                        <span style={s.portraitItemLabel}>Moon</span>
-                      </div>
-                    )}
-                    {portrait.rising_sign && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span>
-                        <span style={s.portraitItemLabel}>Rising</span>
-                      </div>
-                    )}
-                    {portrait.chinese_zodiac && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span>
-                        <span style={s.portraitItemLabel}>Chinese Zodiac</span>
-                      </div>
-                    )}
-                  </div>
-                  {/* Col 2: Typology & numerology */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
-                    {portrait.mbti && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>{portrait.mbti}</span>
-                        <span style={s.portraitItemLabel}>MBTI</span>
-                      </div>
-                    )}
-                    {portrait.life_path_number != null && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>{portrait.life_path_number}</span>
-                        <span style={s.portraitItemLabel}>Life Path</span>
-                      </div>
-                    )}
-                    {portrait.soul_card && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>{portrait.soul_card}</span>
-                        <span style={s.portraitItemLabel}>Soul Card</span>
-                      </div>
-                    )}
-                    {portrait.life_path_card && (
-                      <div style={s.portraitItem}>
-                        <span style={s.portraitItemValue}>{portrait.life_path_card}</span>
-                        <span style={s.portraitItemLabel}>Life Path Card</span>
-                      </div>
-                    )}
-                  </div>
-                  {/* Col 3: Generated snippet */}
-                  {portraitSnippet && (
-                    <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid var(--border)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                      <p style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--body)', margin: 0, fontStyle: 'italic', opacity: 0.85 }}>{portraitSnippet}</p>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button
-                          style={{ ...s.cardActionBtn, color: snippetPlaying ? 'var(--strong)' : 'var(--muted)' }}
-                          onClick={handleSnippetSpeak}
-                          title="Read aloud"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
-                            <rect x="1" y={snippetPlaying ? 2 : 4} width="2" height={snippetPlaying ? 10 : 6} rx="1" fill="currentColor">
-                              {snippetPlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
-                            </rect>
-                            <rect x="4.5" y={snippetPlaying ? 0 : 2} width="2" height={snippetPlaying ? 14 : 10} rx="1" fill="currentColor">
-                              {snippetPlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
-                            </rect>
-                            <rect x="8" y={snippetPlaying ? 3 : 4} width="2" height={snippetPlaying ? 8 : 6} rx="1" fill="currentColor">
-                              {snippetPlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
-                            </rect>
-                            <rect x="11.5" y={snippetPlaying ? 1 : 3} width="2" height={snippetPlaying ? 12 : 8} rx="1" fill="currentColor">
-                              {snippetPlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
-                            </rect>
-                          </svg>
-                        </button>
-                        <button
-                          style={s.cardActionBtn}
-                          onClick={handleSaveSnippetToJournal}
-                          title="Save to journal"
-                        >
-                          {snippetSaved ? '✓ Saved' : '+ Save to journal'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Insight block */}
-        {insight && (
-          <div style={s.insightBlock}>
-            <div style={s.insightText}>"{insight}"</div>
-            <div style={s.pulseAttribution}>
-              <span>— insight</span>
-              <button style={s.pulseSpeaker} onClick={handleInsightSpeak} title="Read aloud">
-                <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style={{ verticalAlign: 'middle' }}>
-                  <rect x="1" y={insightPlaying ? 2 : 4} width="2" height={insightPlaying ? 10 : 6} rx="1" fill="currentColor">
-                    {insightPlaying && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="4.5" y={insightPlaying ? 0 : 2} width="2" height={insightPlaying ? 14 : 10} rx="1" fill="currentColor">
-                    {insightPlaying && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="8" y={insightPlaying ? 3 : 4} width="2" height={insightPlaying ? 8 : 6} rx="1" fill="currentColor">
-                    {insightPlaying && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
-                  </rect>
-                  <rect x="11.5" y={insightPlaying ? 1 : 3} width="2" height={insightPlaying ? 12 : 8} rx="1" fill="currentColor">
-                    {insightPlaying && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
-                  </rect>
-                </svg>
-              </button>
-              <button style={s.cardActionBtn} onClick={handleSaveInsight}>{insightSaved ? '✓ Saved' : '+ Save to journal'}</button>
-            </div>
-          </div>
-        )}
-
-        {/* Recurring Themes + Your Rhythm — combined pill */}
-        {(themes.length >= 3 || rhythm.length > 0) && (
-          <div style={s.themesRhythmRow}>
-            {/* Recurring Themes pill */}
-            <div style={{ ...s.themesRhythmPill, ...s.themesHalf }}>
-              <div style={s.themesHeader}>
-                <span style={s.themesLabel}>Recurring Themes</span>
-                <span style={s.themesPeriod}> ·  this month</span>
-              </div>
-              {themes.length >= 3 ? (
-                <div style={s.themesRow}>
-                  {themes.map(({ tag, count }) => {
-                    const maxCount = themes[0]?.count || 1;
-                    const scale = 0.85 + 0.15 * (count / maxCount);
-                    return (
-                      <span
-                        key={tag}
-                        style={{ ...s.themePill, fontSize: `${11 * scale}px` }}
-                        title={`${count} entries`}
-                      >
-                        {tag}
-                      </span>
-                    );
-                  })}
-                </div>
-              ) : (
-                <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>Not enough data yet</span>
-              )}
-            </div>
-
-            {/* Your Rhythm pill */}
-            <div style={{ ...s.themesRhythmPill, ...s.rhythmHalf }}>
-              <div style={s.rhythmHeader}>
-                <span style={s.rhythmLabel}>Your Rhythm</span>
-                <span style={s.rhythmPeriod}> ·  last 365 days</span>
-              </div>
-              {rhythm.length > 0 ? (
-                <RhythmGrid rhythm={rhythm} />
-              ) : (
-                <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>No entries yet</span>
-              )}
-            </div>
-          </div>
-        )}
+          </SortableContext>
+        </DndContext>
 
       </div>
     </div>

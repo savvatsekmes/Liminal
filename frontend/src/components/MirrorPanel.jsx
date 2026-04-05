@@ -4,7 +4,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from './ArchetypeAvatar';
 import { apiFetch } from '../utils/api';
-import { waitForChatterbox } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
 const s = {
   root: {
@@ -190,6 +190,8 @@ export default function MirrorPanel({
 }) {
   const { t } = useLanguage();
   const [readingAll, setReadingAll] = useState(false);
+  const [readingOpening, setReadingOpening] = useState(false);
+  const openingAudioRef = useRef(null);
   const ttsAudioRef = useRef(null);
   const readingCancelledRef = useRef(false);
   const [archetypeOpen, setArchetypeOpen] = useState(false);
@@ -265,81 +267,30 @@ export default function MirrorPanel({
     }
   }, []);
 
+  async function handleReadOpening() {
+    if (readingOpening) { stopSpeak(openingAudioRef, readingCancelledRef); setReadingOpening(false); return; }
+    if (!opening) return;
+    readingCancelledRef.current = false;
+    setReadingOpening(true);
+    await streamSpeak(opening, openingAudioRef, readingCancelledRef);
+    setReadingOpening(false);
+  }
+
   async function handleReadAll() {
-    if (readingAll) {
-      readingCancelledRef.current = true;
-      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setReadingAll(false);
-      return;
-    }
+    if (readingAll) { stopSpeak(ttsAudioRef, readingCancelledRef); setReadingAll(false); return; }
     if (!blocks.length) return;
-
-    const fullText = [opening, ...blocks.map(b => b.body)].filter(Boolean).join('\n\n');
+    const fullText = [opening, ...blocks.map(b => [b.title, b.body, b.quote].filter(Boolean).join('. '))].filter(Boolean).join('\n\n');
     if (!fullText.trim()) return;
-
     readingCancelledRef.current = false;
     setReadingAll(true);
-
-    // Wait for Chatterbox to come online before trying
-    const cbReady = await waitForChatterbox(8000);
-
-    // Try custom TTS
-    if (cbReady) try {
-      const res = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: fullText, exaggeration: 0.5 }),
-      });
-      if (res.ok && !readingCancelledRef.current) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        ttsAudioRef.current = audio;
-        audio.onended = () => { setReadingAll(false); URL.revokeObjectURL(url); };
-        audio.onerror = () => { setReadingAll(false); };
-        await audio.play();
-        return;
-      }
-    } catch {}
-
-    if (readingCancelledRef.current) return;
-
-    // Fallback to browser TTS
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(fullText);
-      utt.onend = () => setReadingAll(false);
-      utt.onerror = () => setReadingAll(false);
-      window.speechSynthesis.speak(utt);
-    } else {
-      setReadingAll(false);
-    }
+    await streamSpeak(fullText, ttsAudioRef, readingCancelledRef);
+    setReadingAll(false);
   }
 
   function readSelectedText(text) {
     setContextPopup(null);
-    (async () => {
-      const cbReady = await waitForChatterbox(8000);
-      if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
-      try {
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, exaggeration: 0.5 }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audio.onended = () => URL.revokeObjectURL(url);
-          await audio.play();
-          return;
-        }
-      } catch {}
-      if (window.speechSynthesis) {
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-      }
-    })();
+    readingCancelledRef.current = false;
+    streamSpeak(text, ttsAudioRef, readingCancelledRef);
   }
 
   if (previewVersion) {
@@ -382,7 +333,31 @@ export default function MirrorPanel({
         {!loading && error && <div style={s.error}>{error}</div>}
         {!loading && !error && blocks.length === 0 && <EmptyState />}
         {!loading && !error && opening && (
-          <div style={s.opening}>{opening}</div>
+          <div style={s.opening}>
+            {opening}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '10px', border: 'none', background: 'none', color: readingOpening ? 'var(--strong)' : 'var(--muted)', cursor: 'pointer', padding: 0, transition: 'color 0.12s' }}
+                onClick={handleReadOpening}
+                aria-label={readingOpening ? 'Stop' : 'Listen'}
+              >
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y={readingOpening ? 2 : 4} width="2" height={readingOpening ? 10 : 6} rx="1" fill="currentColor">
+                  {readingOpening && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+                </rect>
+                <rect x="4.5" y={readingOpening ? 0 : 2} width="2" height={readingOpening ? 14 : 10} rx="1" fill="currentColor">
+                  {readingOpening && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+                </rect>
+                <rect x="8" y={readingOpening ? 3 : 5} width="2" height={readingOpening ? 8 : 4} rx="1" fill="currentColor">
+                  {readingOpening && <animate attributeName="height" values="8;3;8" dur="0.7s" repeatCount="indefinite" />}
+                </rect>
+                <rect x="11.5" y={readingOpening ? 1 : 3} width="2" height={readingOpening ? 12 : 8} rx="1" fill="currentColor">
+                  {readingOpening && <animate attributeName="height" values="12;5;12" dur="0.9s" repeatCount="indefinite" />}
+                </rect>
+              </svg>
+              </button>
+            </div>
+          </div>
         )}
         {!loading && !error && blocks.map((block, i) => (
           <MirrorBlock key={i} block={block} />

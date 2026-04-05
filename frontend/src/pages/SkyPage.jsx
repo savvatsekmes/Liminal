@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
-import { useTtsOnline } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
 import ResizeDivider from '../components/ResizeDivider';
 
@@ -486,7 +486,8 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
   // ── TTS ──
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
-  const ttsOnline = useTtsOnline();
+  const cancelRef = useRef(false);
+  const cardCancelRef = useRef(false);
 
   // ── Load sky data ──
   useEffect(() => {
@@ -539,89 +540,23 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
 
   // ── Sky TTS ──
   async function handleSkyListen() {
-    if (playing) {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setPlaying(false);
-      return;
-    }
+    if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
     if (!skySummary) return;
-
-    if (ttsOnline) {
-      try {
-        setPlaying(true);
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: skySummary, exaggeration: 0.5 }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); };
-          audio.onerror = () => { setPlaying(false); fallbackTTS(skySummary); };
-          await audio.play();
-          return;
-        }
-      } catch {}
-    }
-    fallbackTTS(skySummary);
-  }
-
-  function fallbackTTS(text) {
-    if (!window.speechSynthesis) { setPlaying(false); return; }
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.onend = () => setPlaying(false);
-    utt.onerror = () => setPlaying(false);
-    window.speechSynthesis.speak(utt);
+    cancelRef.current = false;
     setPlaying(true);
+    await streamSpeak(skySummary, audioRef, cancelRef);
+    setPlaying(false);
   }
 
   // ── Card TTS ──
   async function handleCardListen() {
-    if (cardPlaying) {
-      if (cardAudioRef.current) { cardAudioRef.current.pause(); cardAudioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setCardPlaying(false);
-      return;
-    }
+    if (cardPlaying) { stopSpeak(cardAudioRef, cardCancelRef); setCardPlaying(false); return; }
     if (!cardReading) return;
-
-    // Strip HTML tags for TTS
     const plainText = cardReading.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-
-    if (ttsOnline) {
-      try {
-        setCardPlaying(true);
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: plainText, exaggeration: 0.5 }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          cardAudioRef.current = audio;
-          audio.onended = () => { setCardPlaying(false); URL.revokeObjectURL(url); };
-          audio.onerror = () => { setCardPlaying(false); cardFallbackTTS(plainText); };
-          await audio.play();
-          return;
-        }
-      } catch {}
-    }
-    cardFallbackTTS(plainText);
-  }
-
-  function cardFallbackTTS(text) {
-    if (!window.speechSynthesis) { setCardPlaying(false); return; }
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.onend = () => setCardPlaying(false);
-    utt.onerror = () => setCardPlaying(false);
-    window.speechSynthesis.speak(utt);
+    cardCancelRef.current = false;
     setCardPlaying(true);
+    await streamSpeak(plainText, cardAudioRef, cardCancelRef);
+    setCardPlaying(false);
   }
 
   // ── Card pull logic ──

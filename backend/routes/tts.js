@@ -121,6 +121,7 @@ async function speakChatterbox(req, res, s) {
 
   const url = getChatterboxUrl();
   const processedText = preprocessText(text);
+  console.log('[tts] Sending to Chatterbox:', JSON.stringify(processedText));
 
   try {
     const chatterboxRes = await fetch(`${url}/v1/audio/speech`, {

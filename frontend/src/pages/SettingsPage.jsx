@@ -339,17 +339,18 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
 
 const RECOMMENDED_MODELS = [
   // Lightweight — 4-6 GB VRAM (GTX 1060, RTX 2060, M1/M2)
-  { name: 'qwen2.5:3b',   desc: 'Lightweight · 4GB VRAM · fast daily use' },
+  { name: 'qwen3.5:2b',   desc: 'Lightweight · 2.7GB · fast daily use' },
+  { name: 'qwen3.5:4b',   desc: 'Lightweight · 3.4GB · great balance' },
   { name: 'llama3.2:3b',  desc: 'Lightweight · 4GB VRAM · solid all-rounder' },
   { name: 'gemma3:4b',    desc: 'Lightweight · 5GB VRAM · Google · very capable' },
-  // Mid-range — 6-8 GB VRAM (RTX 3060, RTX 4060, M1 Pro/M2 Pro)
-  { name: 'qwen2.5:7b',   desc: 'Mid-range · 7GB VRAM · strong multilingual' },
-  { name: 'qwen2.5-coder:7b', desc: 'Mid-range · 7GB VRAM · code-focused' },
+  // Mid-range — 6-10 GB VRAM (RTX 3060, RTX 4060, M1 Pro/M2 Pro)
+  { name: 'qwen3.5:9b',   desc: 'Mid-range · 6.6GB · strong multilingual + vision' },
   { name: 'mistral:7b',   desc: 'Mid-range · 7GB VRAM · excellent reasoning' },
   { name: 'llama3.1:8b',  desc: 'Mid-range · 8GB VRAM · high quality' },
   // High-end — 12+ GB VRAM (RTX 3080, RTX 4070+, M2 Max/Ultra)
-  { name: 'qwen2.5:14b',  desc: 'High-end · 12GB VRAM · near-frontier quality' },
-  { name: 'qwen2.5:32b',  desc: 'High-end · 20GB VRAM · exceptional quality' },
+  { name: 'qwen3.5:27b',  desc: 'High-end · 17GB · near-frontier quality' },
+  { name: 'qwen3.5:35b',  desc: 'High-end · 24GB · exceptional quality' },
+  { name: 'gemma4:e4b',   desc: 'High-end · 20GB+ VRAM · Google · expert MoE' },
   { name: 'llama3.1:70b',  desc: 'High-end · 40GB+ VRAM · best open-source' },
 ];
 
@@ -751,6 +752,24 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             ) : (
               <input style={s.input} value={cfg.vision_model || 'llama3.2-vision'} onChange={e => set('vision_model', e.target.value)} onBlur={() => save({ vision_model: cfg.vision_model })} placeholder="llama3.2-vision" />
             )}
+          </Field>
+
+          <Field label="Thinking Mode" hint="Let reasoning models think before responding. Better quality but slower.">
+            <div style={s.segmented}>
+              {['off', 'on'].map((v, i, arr) => (
+                <button
+                  key={v}
+                  style={{
+                    ...s.segBtn,
+                    ...(i === arr.length - 1 ? s.segBtnLast : {}),
+                    ...(cfg.ollama_think === 'true' ? (v === 'on' ? s.segBtnActive : {}) : (v === 'off' ? s.segBtnActive : {})),
+                  }}
+                  onClick={() => { set('ollama_think', v === 'on' ? 'true' : 'false'); save({ ollama_think: v === 'on' ? 'true' : 'false' }); }}
+                >
+                  {v === 'on' ? 'Enabled' : 'Disabled'}
+                </button>
+              ))}
+            </div>
           </Field>
 
           <OllamaModelBrowser

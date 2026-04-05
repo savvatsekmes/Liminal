@@ -16,6 +16,7 @@ const DEFAULTS = {
   openai_model:              'gpt-4.1',
   ollama_url:                'http://localhost:11434',
   ollama_model:              'llama3.1',
+  ollama_think:              'false',
   chatterbox_url:            'http://localhost:8100',
   chatterbox_voice:          'Abigail.wav',
   chatterbox_exaggeration:   '0.6',

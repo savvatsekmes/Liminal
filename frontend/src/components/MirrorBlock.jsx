@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { waitForChatterbox } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
 const s = {
   block: {
@@ -55,50 +55,15 @@ const s = {
 export default function MirrorBlock({ block }) {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
+  const cancelRef = useRef(false);
 
   async function handleListen() {
-    if (playing) {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setPlaying(false);
-      return;
-    }
-
-    const text = block.body + (block.quote ? ' ' + block.quote : '');
+    if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
+    const text = (block.title ? block.title + '. ' : '') + block.body + (block.quote ? ' ' + block.quote : '');
+    cancelRef.current = false;
     setPlaying(true);
-
-    // Wait for Chatterbox to come online before trying
-    const cbReady = await waitForChatterbox(8000);
-    if (!cbReady) { fallbackTTS(text); return; }
-
-    try {
-      const res = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, exaggeration: 0.5 }),
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); };
-        audio.onerror = () => { setPlaying(false); fallbackTTS(text); };
-        await audio.play();
-        return;
-      }
-    } catch {}
-
-    fallbackTTS(text);
-  }
-
-  function fallbackTTS(text) {
-    if (!window.speechSynthesis) { setPlaying(false); return; }
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.onend = () => setPlaying(false);
-    utt.onerror = () => setPlaying(false);
-    window.speechSynthesis.speak(utt);
-    setPlaying(true);
+    await streamSpeak(text, audioRef, cancelRef);
+    setPlaying(false);
   }
 
   // Render body with **bold** preserved from the LLM

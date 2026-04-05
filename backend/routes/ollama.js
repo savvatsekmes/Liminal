@@ -49,6 +49,7 @@ router.post('/pull', async (req, res) => {
     }
 
     let buffer = '';
+    let hadError = false;
     for await (const chunk of r.body) {
       buffer += chunk.toString();
       const lines = buffer.split('\n');
@@ -57,11 +58,14 @@ router.post('/pull', async (req, res) => {
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);
+          if (parsed.error) hadError = true;
           res.write(`data: ${JSON.stringify(parsed)}\n\n`);
         } catch {}
       }
     }
-    res.write(`data: ${JSON.stringify({ status: 'done' })}\n\n`);
+    if (!hadError) {
+      res.write(`data: ${JSON.stringify({ status: 'done' })}\n\n`);
+    }
   } catch (err) {
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
   }

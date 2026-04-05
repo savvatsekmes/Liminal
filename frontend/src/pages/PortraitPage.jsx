@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
-import { useTtsOnline } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from '../components/ResizeDivider';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -546,8 +546,8 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
   const { t } = useLanguage();
   const [editText, setEditText] = useState(description);
   const [playing, setPlaying] = useState(false);
-  const ttsOnline = useTtsOnline();
   const audioRef = useRef(null);
+  const cancelRef = useRef(false);
 
   // Keep editText in sync when description changes externally
   useEffect(() => {
@@ -556,44 +556,12 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
 
 
   async function handleListen() {
-    if (playing) {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setPlaying(false);
-      return;
-    }
+    if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
     if (!description) return;
-
-    if (ttsOnline) {
-      try {
-        setPlaying(true);
-        const res = await fetch('/api/tts/speak', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: description, exaggeration: 0.5 }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); };
-          audio.onerror = () => { setPlaying(false); fallbackTTS(description); };
-          await audio.play();
-          return;
-        }
-      } catch {}
-    }
-    fallbackTTS(description);
-  }
-
-  function fallbackTTS(text) {
-    if (!window.speechSynthesis) { setPlaying(false); return; }
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.onend = () => setPlaying(false);
-    utt.onerror = () => setPlaying(false);
-    window.speechSynthesis.speak(utt);
+    cancelRef.current = false;
     setPlaying(true);
+    await streamSpeak(description, audioRef, cancelRef);
+    setPlaying(false);
   }
 
   return (

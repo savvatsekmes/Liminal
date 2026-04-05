@@ -12,7 +12,7 @@ ttsLog      = baseDir & "\tts_server.log"
 ' ── Kill any stale processes before starting ─────────────────────────────────
 shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
 shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
-shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 8500 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
+shell.Run "powershell -NoProfile -Command ""$p = Get-NetTCPConnection -LocalPort 8100 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force -ErrorAction SilentlyContinue }""", 0, True
 
 ' ── Start TTS server (hidden) ────────────────────────────────────────────────
 Dim tCmd

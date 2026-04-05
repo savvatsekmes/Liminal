@@ -11,6 +11,19 @@ app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000'], crede
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ── Extend timeout for LLM-heavy routes (5 min) ─────────────────────────────
+function extendTimeout(req, res, next) {
+  req.setTimeout(300000);
+  res.setTimeout(300000);
+  next();
+}
+app.use('/api/reflect', extendTimeout);
+app.use('/api/oracle',  extendTimeout);
+app.use('/api/ask',     extendTimeout);
+app.use('/api/home',    extendTimeout);
+app.use('/api/portrait', extendTimeout);
+app.use('/api/ollama',   extendTimeout);
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth',     require('./routes/auth'));
 app.use('/api/entries',  require('./routes/entries'));
@@ -31,6 +44,7 @@ app.use('/api/memories', require('./routes/memories'));
 app.use('/api/cards',    require('./routes/cards'));
 app.use('/api/sky',      require('./routes/sky'));
 app.use('/api/home',     require('./routes/home'));
+app.use('/api/layouts',  require('./routes/layouts'));
 
 // ── JSON error handler (prevents HTML 500 pages) ─────────────────────────────
 // Must be registered AFTER all routes.

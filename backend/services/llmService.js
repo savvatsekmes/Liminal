@@ -16,6 +16,7 @@ function getSettings() {
     openaiModel:      s.get('openai_model') || 'gpt-4.1',
     ollamaUrl:        s.get('ollama_url') || 'http://localhost:11434',
     ollamaModel:      s.get('ollama_model') || 'llama3.1',
+    ollamaThink:      s.get('ollama_think') === 'true',
   };
 }
 
@@ -54,23 +55,38 @@ async function callOpenAI(systemPrompt, userMessage, options = {}) {
 }
 
 // ── Ollama ────────────────────────────────────────────────────────────────────
+const OLLAMA_TIMEOUT = 5 * 60 * 1000; // 5 minutes for large models
+
 async function callOllama(systemPrompt, userMessage, options = {}) {
   const cfg = getSettings();
   const ollamaUrl = options.ollamaUrl || cfg.ollamaUrl;
   const model = options.model || cfg.ollamaModel;
 
-  const response = await fetch(`${ollamaUrl}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT);
+
+  let response;
+  try {
+    response = await fetch(`${ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        stream: false,
+        think: options.think ?? cfg.ollamaThink ?? false,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        options: {
+          num_ctx: options.numCtx || 8192,
+        },
+      }),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
@@ -231,18 +247,30 @@ async function callWithHistory(systemPrompt, messages, options = {}) {
   // Ollama
   const ollamaUrl = options.ollamaUrl || cfg.ollamaUrl;
   const model = options.model || cfg.ollamaModel;
-  const response = await fetch(`${ollamaUrl}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT);
+  let response;
+  try {
+    response = await fetch(`${ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        stream: false,
+        think: options.think ?? cfg.ollamaThink ?? false,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.map((m) => ({ role: m.role, content: m.content })),
+        ],
+        options: {
+          num_ctx: options.numCtx || 8192,
+        },
+      }),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok) throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
   const data = await response.json();
   return data.message.content;

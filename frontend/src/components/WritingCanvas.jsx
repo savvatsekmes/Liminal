@@ -25,7 +25,7 @@ import CardPullModal from './CardPullModal';
 import DoodleModal from './DoodleModal';
 import { CardReading } from '../extensions/CardReading';
 import { apiFetch } from '../utils/api';
-import { waitForChatterbox } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
@@ -174,6 +174,7 @@ export default function WritingCanvas({
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const ttsAudioRef = useRef(null);
+  const ttsCancelRef = useRef(false);
 
   const editorRef = useRef(null);
   const { isRecording, isProcessing, toggle: toggleDictation } = useDictation((text) => {
@@ -295,46 +296,14 @@ export default function WritingCanvas({
   }
 
   async function handleReadAloud() {
-    if (reading) {
-      if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setReading(false);
-      return;
-    }
-    const text = editor?.getText();
+    if (reading) { stopSpeak(ttsAudioRef, ttsCancelRef); setReading(false); return; }
+    const body = editor?.getText();
+    const text = (entry?.title ? entry.title + '. ' : '') + (body || '');
     if (!text?.trim()) return;
-
+    ttsCancelRef.current = false;
     setReading(true);
-    const cbReady = await waitForChatterbox(8000);
-
-    // Try custom TTS first
-    if (cbReady) try {
-      const res = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, exaggeration: 0.5 }),
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        ttsAudioRef.current = audio;
-        audio.onended = () => { setReading(false); URL.revokeObjectURL(url); };
-        audio.onerror = () => { setReading(false); };
-        await audio.play();
-        return;
-      }
-    } catch {}
-
-    // Fallback to browser TTS
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.onend = () => setReading(false);
-      utt.onerror = () => setReading(false);
-      window.speechSynthesis.speak(utt);
-    } else {
-      setReading(false);
-    }
+    await streamSpeak(text, ttsAudioRef, ttsCancelRef);
+    setReading(false);
   }
 
   async function saveToLifeContext() {
@@ -728,28 +697,9 @@ export default function WritingCanvas({
             onClick={() => {
               const text = contextPopup.text;
               setContextPopup(null);
-              (async () => {
-                const cbReady = await waitForChatterbox(8000);
-                if (!cbReady) { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); return; }
-                try {
-                  const res = await fetch('/api/tts/speak', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text, exaggeration: 0.5 }),
-                  });
-                  if (res.ok) {
-                    const blob = await res.blob();
-                    const url = URL.createObjectURL(blob);
-                    const audio = new Audio(url);
-                    audio.onended = () => URL.revokeObjectURL(url);
-                    await audio.play();
-                    return;
-                  }
-                } catch {}
-                if (window.speechSynthesis) {
-                  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-                }
-              })();
+              const tempAudio = { current: null };
+              const tempCancel = { current: false };
+              streamSpeak(text, tempAudio, tempCancel);
             }}
             onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}

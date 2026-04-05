@@ -1,7 +1,7 @@
 import { Node } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useState, useRef, useCallback } from 'react';
-import { waitForChatterbox } from '../utils/ttsStatus';
+import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
 // ── Safe attribute encoding (HTML in data-attributes breaks the parser) ──────
 
@@ -447,14 +447,10 @@ function ChevronIcon({ expanded }) {
 function CardDetailPopup({ card, deckType, onClose }) {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
+  const cancelRef = useRef(false);
 
   const handleReadAloud = useCallback(async () => {
-    if (playing) {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      setPlaying(false);
-      return;
-    }
+    if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
 
     const lines = [card.name];
     if (card.position) lines.push(`Position: ${card.position}`);
@@ -465,36 +461,10 @@ function CardDetailPopup({ card, deckType, onClose }) {
     if (meaning) lines.push(meaning);
     const text = lines.join('. ');
 
+    cancelRef.current = false;
     setPlaying(true);
-    const cbReady = await waitForChatterbox(8000);
-
-    if (cbReady) try {
-      const res = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, exaggeration: 0.5 }),
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); };
-        audio.onerror = () => setPlaying(false);
-        await audio.play();
-        return;
-      }
-    } catch {}
-
-    // Fallback to browser TTS
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.onend = () => setPlaying(false);
-      utt.onerror = () => setPlaying(false);
-      window.speechSynthesis.speak(utt);
-    } else {
-      setPlaying(false);
-    }
+    await streamSpeak(text, audioRef, cancelRef);
+    setPlaying(false);
   }, [card, playing]);
 
   const uprightMeaning = card.upright || card.meaning || '';

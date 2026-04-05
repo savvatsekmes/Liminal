@@ -18,11 +18,11 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    paddingTop: '12px',
+    paddingTop: '48px',
     paddingBottom: '12px',
     borderRight: 'var(--border-style)',
     background: 'var(--near-white)',
-    gap: '4px',
+    gap: '16px',
   },
   sidebarLogo: {
     padding: '8px 0',
@@ -189,7 +189,6 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
       {/* Left icon sidebar */}
       <nav style={styles.sidebar}>
         <div style={{ ...styles.sidebarLogo, cursor: 'pointer' }} onClick={() => onViewChange('home')}><img src="/logo.png" alt="Liminal" style={styles.sidebarLogoImg} /></div>
-        <div style={styles.sidebarSpacer} />
 
         <SidebarButton
           label={t('nav.home')}
@@ -229,6 +228,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
         />
         <div style={styles.sidebarSpacer} />
 
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
         {/* Lock button */}
         <button
           onClick={onLock}
@@ -238,7 +238,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
             border: 'none',
             cursor: 'pointer',
             padding: '6px',
-            marginBottom: '8px',
+            marginBottom: '0',
             color: 'var(--muted)',
             fontSize: '16px',
             lineHeight: 1,
@@ -263,7 +263,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
           style={{
             ...styles.sidebarBtn,
             ...(activeView === 'settings' ? styles.sidebarBtnActive : {}),
-            marginBottom: '8px',
+            marginBottom: '0',
           }}
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--strong)'; }}
           onMouseLeave={(e) => { if (activeView !== 'settings') e.currentTarget.style.color = 'var(--muted)'; }}
@@ -360,6 +360,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
               </button>
             </div>
           )}
+        </div>
         </div>
       </nav>
 

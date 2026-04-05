@@ -23,7 +23,15 @@ import { LanguageProvider } from './i18n/LanguageContext';
 const LOCK_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange }) {
-  const [activeView, setActiveView] = useState(isFirstSession ? 'journal' : 'home');
+  const [activeView, setActiveView] = useState(() => {
+    const saved = sessionStorage.getItem('liminal_view');
+    if (saved && ['home','journal','notes','oracle','portrait','memory','settings'].includes(saved)) return saved;
+    return isFirstSession ? 'journal' : 'home';
+  });
+  const handleViewChange = useCallback((view) => {
+    setActiveView(view);
+    sessionStorage.setItem('liminal_view', view);
+  }, []);
   const [locked, setLocked] = useState(false);
   const lockTimerRef = useRef(null);
 
@@ -113,7 +121,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   return (
     <>
     {locked && <LockScreen username={username} onUnlock={() => { setLocked(false); resetLockTimer(); }} />}
-    <Layout activeView={activeView} onViewChange={setActiveView} onLogout={onLogout} onLock={() => setLocked(true)} avatarUrl={avatarUrl} username={username}>
+    <Layout activeView={activeView} onViewChange={handleViewChange} onLogout={onLogout} onLock={() => setLocked(true)} avatarUrl={avatarUrl} username={username}>
       {{
         entryList: (
           <EntryList
@@ -132,20 +140,20 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             <HomePage
               username={username}
               avatarUrl={avatarUrl}
-              onNavigateToEntry={(id) => { selectEntry({ id }); setActiveView('journal'); }}
-              onNavigateToNote={(id) => { setPendingNoteId(id); setActiveView('notes'); }}
-              onNavigateToOracle={(id) => { setPendingSessionId(id); setActiveView('oracle'); }}
-              onNavigateToSky={() => { setPendingPortraitTab('sky'); setActiveView('portrait'); }}
-              onNavigateToCards={() => { setPendingPortraitTab('cards'); setActiveView('portrait'); }}
-              onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); setActiveView('portrait'); }}
-              onNewEntry={() => { createEntry(); setActiveView('journal'); }}
-              onNewNote={() => setActiveView('notes')}
-              onNewConversation={() => setActiveView('oracle')}
+              onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
+              onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
+              onNavigateToOracle={(id) => { setPendingSessionId(id); handleViewChange('oracle'); }}
+              onNavigateToSky={() => { setPendingPortraitTab('sky'); handleViewChange('portrait'); }}
+              onNavigateToCards={() => { setPendingPortraitTab('cards'); handleViewChange('portrait'); }}
+              onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }}
+              onNewEntry={() => { createEntry(); handleViewChange('journal'); }}
+              onNewNote={() => handleViewChange('notes')}
+              onNewConversation={() => handleViewChange('oracle')}
             />
           );
           if (activeView === 'oracle') return <OraclePage initialSessionId={pendingSessionId} onSessionSelected={() => setPendingSessionId(null)} />;
           if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} />;
-          if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); setActiveView('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
+          if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
           if (activeView === 'memory') return <MemoryPage />;
           if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />;
 
