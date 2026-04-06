@@ -38,25 +38,49 @@ BASE_DIR   = Path(__file__).parent
 VOICES_DIR = Path(os.environ.get("VOICES_DIR", BASE_DIR / "backend" / "data" / "voices"))
 DB_PATH    = BASE_DIR / "backend" / "data" / "liminal.db"
 
+def resolve_gpu_by_name(name: str) -> str | None:
+    """Find cuda:N index by GPU name substring (e.g. '4090' matches 'NVIDIA GeForce RTX 4090')."""
+    if not torch.cuda.is_available():
+        return None
+    needle = name.lower()
+    for i in range(torch.cuda.device_count()):
+        if needle in torch.cuda.get_device_name(i).lower():
+            log.info(f"Resolved GPU name '{name}' → cuda:{i} ({torch.cuda.get_device_name(i)})")
+            return f"cuda:{i}"
+    return None
+
 def resolve_device() -> str:
-    """Pick the device to run on, checking env → DB → auto."""
+    """Pick the device to run on, checking env → DB → auto.
+    Supports cuda:N indices or GPU name substrings (e.g. '4090', 'RTX 5090')."""
+    raw = None
+
     # 1. Explicit env var
     env = os.environ.get("TTS_DEVICE", "").strip()
     if env and env != "auto":
-        return env
+        raw = env
 
     # 2. Liminal settings DB
-    if DB_PATH.exists():
+    if not raw and DB_PATH.exists():
         try:
             con = sqlite3.connect(str(DB_PATH))
             row = con.execute("SELECT value FROM settings WHERE key='tts_device'").fetchone()
             con.close()
             if row and row[0] and row[0] != "auto":
-                return row[0]
+                raw = row[0]
         except Exception:
             pass
 
-    # 3. Auto: first CUDA GPU, else CPU
+    # 3. If we got a value, resolve it
+    if raw:
+        if raw.startswith("cuda:") or raw == "cpu":
+            return raw
+        # Treat as GPU name substring
+        match = resolve_gpu_by_name(raw)
+        if match:
+            return match
+        log.warning(f"GPU '{raw}' not found, falling back to auto")
+
+    # 4. Auto: first CUDA GPU, else CPU
     if torch.cuda.is_available() and torch.cuda.device_count() > 0:
         return "cuda:0"
     return "cpu"

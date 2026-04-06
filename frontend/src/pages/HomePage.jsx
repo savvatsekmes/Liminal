@@ -190,9 +190,8 @@ const s = {
   },
   statsTable: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, auto) minmax(0, auto) minmax(0, auto) minmax(0, 1fr) minmax(0, auto)',
+    gridTemplateColumns: 'auto auto auto minmax(200px, 500px) auto auto',
     gap: '0',
-    width: '100%',
     alignItems: 'center',
     overflow: 'hidden',
   },
@@ -215,16 +214,16 @@ const s = {
   },
   statsCellLatest: {
     padding: '14px 16px 14px 24px',
-    borderLeft: '1px solid var(--border)',
+    borderRight: '1px solid var(--border)',
     display: 'flex',
     flexDirection: 'column',
     gap: '2px',
     minWidth: 0,
     overflow: 'hidden',
+    alignSelf: 'stretch',
   },
   statsCellDate: {
     padding: '14px 16px 14px 24px',
-    borderLeft: '1px solid var(--border)',
     borderRight: '1px solid var(--border)',
     display: 'flex',
     flexDirection: 'column',
@@ -262,11 +261,27 @@ const s = {
     background: 'none',
     border: 'none',
     fontFamily: 'var(--font)',
-    padding: '0 4px 0 12px',
-    borderLeft: '1px solid var(--border)',
+    padding: '0 12px',
+    borderRight: '1px solid var(--border)',
     alignSelf: 'stretch',
     flexShrink: 0,
-    textAlign: 'left',
+    textAlign: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsArrow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    padding: '0 8px',
+    fontSize: '16px',
+    color: 'var(--muted)',
+    cursor: 'pointer',
+    background: 'none',
+    border: 'none',
+    fontFamily: 'var(--font)',
+    transition: 'color 0.12s',
   },
   newLinkValue: {
     fontSize: '16px',
@@ -1727,6 +1742,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewEntry?.(); }}>
                 <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
               </button>
+              <button style={s.statsArrow} onClick={() => onNavigateToEntry?.()} title={t('nav.journal')}>&rsaquo;</button>
 
               {/* Divider */}
               <div style={s.statsRowBorder} />
@@ -1752,6 +1768,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewNote?.(); }}>
                 <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
               </button>
+              <button style={s.statsArrow} onClick={() => onNavigateToNote?.()} title={t('nav.notes')}>&rsaquo;</button>
 
               {/* Divider */}
               <div style={s.statsRowBorder} />
@@ -1777,6 +1794,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}>
                 <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
               </button>
+              <button style={s.statsArrow} onClick={() => onNavigateToOracle?.()} title={t('nav.oracle')}>&rsaquo;</button>
             </div>
           </div>
         );

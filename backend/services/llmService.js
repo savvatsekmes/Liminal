@@ -97,7 +97,8 @@ async function callOllama(systemPrompt, userMessage, options = {}) {
   }
 
   const data = await response.json();
-  return data.message.content;
+  // Strip any <think>...</think> tags that reasoning models may include
+  return (data.message.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -165,10 +166,14 @@ async function* stream(systemPrompt, userMessage, options = {}) {
       body: JSON.stringify({
         model,
         stream: true,
+        think: options.think ?? cfg.ollamaThink ?? false,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
+        options: {
+          num_ctx: options.numCtx || 8192,
+        },
       }),
     });
 
@@ -180,6 +185,7 @@ async function* stream(systemPrompt, userMessage, options = {}) {
     }
 
     let buffer = '';
+    let inThink = false;
     for await (const rawChunk of response.body) {
       buffer += rawChunk.toString();
       const lines = buffer.split('\n');
@@ -188,7 +194,20 @@ async function* stream(systemPrompt, userMessage, options = {}) {
         if (!line.trim()) continue;
         try {
           const parsed = JSON.parse(line);
-          if (parsed.message?.content) yield parsed.message.content;
+          if (parsed.message?.content) {
+            let text = parsed.message.content;
+            // Filter out <think>...</think> tags from streaming
+            if (text.includes('<think>')) inThink = true;
+            if (inThink) {
+              if (text.includes('</think>')) {
+                text = text.split('</think>').pop();
+                inThink = false;
+              } else {
+                continue;
+              }
+            }
+            if (text) yield text;
+          }
         } catch {}
       }
     }
@@ -273,7 +292,7 @@ async function callWithHistory(systemPrompt, messages, options = {}) {
   }
   if (!response.ok) throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
   const data = await response.json();
-  return data.message.content;
+  return (data.message.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
 }
 
 // ── Tool-calling conversation (web search) ──────────────────────────────────
@@ -471,7 +490,7 @@ async function callOllamaWithTools(systemPrompt, messages, cfg, options) {
 
   // If no tool calls, return text response
   if (!data.message.tool_calls || data.message.tool_calls.length === 0) {
-    return data.message.content || '';
+    return (data.message.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
   }
 
   // Execute tool and re-call

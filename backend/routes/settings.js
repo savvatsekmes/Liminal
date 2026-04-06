@@ -68,6 +68,23 @@ router.post('/test-llm', async (req, res) => {
 // Returns list of CUDA GPUs available on this machine
 router.get('/gpus', (req, res) => {
   const { execSync } = require('child_process');
+  // Try nvidia-smi first (works even when torch CUDA init fails)
+  try {
+    const out = execSync(
+      'nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader,nounits',
+      { timeout: 10000, encoding: 'utf-8' }
+    );
+    const gpus = out.trim().split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const [id, name, memMiB] = line.split(', ');
+        return { id: parseInt(id), name: name.trim(), vram_gb: Math.round(parseFloat(memMiB) / 1024 * 10) / 10 };
+      })
+      .filter(g => !isNaN(g.id));
+    return res.json({ cuda: gpus.length > 0, gpus });
+  } catch {}
+  // Fallback to torch
   const python = process.env.PYTHON_PATH ||
     'C:\\Users\\Savva Tsekmes\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
   try {

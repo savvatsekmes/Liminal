@@ -787,7 +787,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
           />
 
           {gpus?.cuda && (
-            <Field label={t('settings.gpuForOllama')} hint={t('settings.gpuForOllamaHint')}>
+            <Field label={t('settings.gpuForOllama')} hint="Restart Ollama after changing. Uses CUDA_VISIBLE_DEVICES.">
               <select
                 style={s.select}
                 value={cfg.llm_device || 'auto'}
@@ -795,14 +795,14 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               >
                 <option value="auto">Auto (Ollama manages its own GPU)</option>
                 {gpus.gpus?.map(g => (
-                  <option key={g.id} value={`cuda:${g.id}`}>
-                    cuda:{g.id} — {g.name} ({g.vram_gb} GB)
+                  <option key={g.id} value={g.name}>
+                    {g.name} ({g.vram_gb} GB)
                   </option>
                 ))}
               </select>
               {cfg.llm_device && cfg.llm_device !== 'auto' && (
                 <div style={s.sublabel}>
-                  Set CUDA_VISIBLE_DEVICES={cfg.llm_device.replace('cuda:', '')} when starting Ollama to use this GPU.
+                  Set CUDA_VISIBLE_DEVICES for the matching GPU when starting Ollama.
                 </div>
               )}
             </Field>
@@ -1027,7 +1027,7 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
           </Field>
 
           {gpus && (
-            <Field label={t('settings.gpuForTts')} hint={t('settings.gpuForTtsHint')}>
+            <Field label={t('settings.gpuForTts')} hint="Restart TTS server after changing. Use GPU name to survive index changes.">
               <select
                 style={s.select}
                 value={cfg.tts_device || 'auto'}
@@ -1036,8 +1036,8 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
                 <option value="auto">Auto (first available GPU)</option>
                 <option value="cpu">CPU (slow)</option>
                 {gpus.gpus?.map(g => (
-                  <option key={g.id} value={`cuda:${g.id}`}>
-                    cuda:{g.id} — {g.name} ({g.vram_gb} GB)
+                  <option key={g.id} value={g.name}>
+                    {g.name} ({g.vram_gb} GB)
                   </option>
                 ))}
               </select>
