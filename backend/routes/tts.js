@@ -50,7 +50,15 @@ router.get('/status', async (req, res) => {
     const response = await fetch(`${url}/v1/models`, {
       signal: AbortSignal.timeout(2000),
     });
-    res.json({ online: response.ok, voices: [] });
+    if (!response.ok) return res.json({ online: false, voices: [] });
+    // Also fetch device info for compat_mode / compute capability
+    try {
+      const devRes = await fetch(`${url}/device`, { signal: AbortSignal.timeout(2000) });
+      const dev = await devRes.json();
+      return res.json({ online: true, voices: [], ...dev });
+    } catch {
+      return res.json({ online: true, voices: [] });
+    }
   } catch {
     res.json({ online: false, voices: [] });
   }

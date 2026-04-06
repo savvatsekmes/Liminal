@@ -1041,6 +1041,11 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
                   </option>
                 ))}
               </select>
+              {ttsStatus?.compat_mode && (
+                <div style={{ marginTop: '6px', padding: '6px 10px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', fontSize: '11px', color: '#856404', lineHeight: '1.4' }}>
+                  ⚠ Compatibility mode active — {ttsStatus.gpu_name || 'this GPU'} (compute {ttsStatus.compute_capability}) lacks fast attention kernels (requires 8.0+). TTS will work but generation is slower.
+                </div>
+              )}
             </Field>
           )}
 

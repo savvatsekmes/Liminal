@@ -95,6 +95,28 @@ except Exception as e:
     DEVICE = "cpu"
 log.info(f"Using device: {DEVICE}")
 
+# ── Compat mode for older GPUs (Turing / Pascal, compute cap < 8.0) ──────────
+# cutlassF and flash-SDP kernels require compute capability >= 8.0 (Ampere+).
+# On older cards these crash with "cutlassF: no kernel found to launch!".
+# We disable all non-math SDPA backends globally, wrap model load and generation
+# in math-only context, switch diffusers to vanilla attention, and skip bf16.
+
+COMPAT_MODE = False
+if DEVICE.startswith("cuda"):
+    idx = int(DEVICE.split(":")[-1]) if ":" in DEVICE else 0
+    major, minor = torch.cuda.get_device_capability(idx)
+    if major < 8:
+        COMPAT_MODE = True
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        if hasattr(torch.backends.cuda, 'enable_cudnn_sdp'):
+            torch.backends.cuda.enable_cudnn_sdp(False)
+        os.environ["TORCH_CUDNN_V8_API_DISABLED"] = "1"
+        log.warning(f"Compatibility mode ON — {torch.cuda.get_device_name(idx)} "
+                    f"(compute {major}.{minor}) lacks cutlassF/flash-SDP support")
+    else:
+        log.info(f"GPU compute capability {major}.{minor} — fast kernels enabled")
+
 # ── Patch resemble-perth (v1.0.0 ships PerthImplicitWatermarker as None) ──────
 import perth
 if perth.PerthImplicitWatermarker is None:
@@ -104,11 +126,17 @@ if perth.PerthImplicitWatermarker is None:
 
 log.info("Loading ChatterboxTTS (first run downloads ~1 GB)…")
 from chatterbox.tts import ChatterboxTTS
-model = ChatterboxTTS.from_pretrained(device=DEVICE)
 
-# Convert T3 to BFloat16. model.conds.t3 is a custom dataclass (T3Cond), not an
-# nn.Module, so it doesn't accept .to(dtype) — cast only the LLaMA backbone.
-if DEVICE.startswith("cuda") and torch.cuda.is_bf16_supported():
+if COMPAT_MODE:
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+        model = ChatterboxTTS.from_pretrained(device=DEVICE)
+    log.info("Model loaded in math-only SDPA mode")
+else:
+    model = ChatterboxTTS.from_pretrained(device=DEVICE)
+
+# BFloat16 only on Ampere+ where it's hardware-native.
+# Turing reports bf16 support but it's emulated and causes kernel issues.
+if DEVICE.startswith("cuda") and not COMPAT_MODE and torch.cuda.is_bf16_supported():
     try:
         model.t3.to(torch.bfloat16)
         torch.cuda.empty_cache()
@@ -136,12 +164,14 @@ def list_models():
 
 @app.get("/device")
 def device_info():
-    info = {"device": DEVICE, "cuda": torch.cuda.is_available()}
+    info = {"device": DEVICE, "cuda": torch.cuda.is_available(), "compat_mode": COMPAT_MODE}
     if DEVICE.startswith("cuda"):
         idx = int(DEVICE.split(":")[-1]) if ":" in DEVICE else 0
+        major, minor = torch.cuda.get_device_capability(idx)
         info["gpu_name"] = torch.cuda.get_device_name(idx)
         info["vram_gb"]  = round(torch.cuda.get_device_properties(idx).total_memory / 1e9, 1)
         info["bfloat16"] = torch.cuda.is_bf16_supported()
+        info["compute_capability"] = f"{major}.{minor}"
     return info
 
 # ── Text chunking ─────────────────────────────────────────────────────────────
@@ -173,7 +203,7 @@ def split_into_chunks(text: str) -> list[str]:
 # "eager" is stable; bfloat16 on both t3+conds.t3 still gives a speed boost.
 _T3_PARAMS = {"generate_token_backend": "eager"} if DEVICE.startswith("cuda") else {}
 
-def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature):
+def _do_generate(text, voice_path, exaggeration, cfg_weight, temperature):
     try:
         return model.generate(
             text,
@@ -191,6 +221,13 @@ def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature):
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
         )
+
+def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature):
+    if COMPAT_MODE:
+        # Force math-only SDPA backend at generation time — cutlassF/flash crash on older GPUs
+        with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+            return _do_generate(text, voice_path, exaggeration, cfg_weight, temperature)
+    return _do_generate(text, voice_path, exaggeration, cfg_weight, temperature)
 
 
 @app.post("/v1/audio/speech")
