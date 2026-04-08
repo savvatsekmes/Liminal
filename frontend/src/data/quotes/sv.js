@@ -1,0 +1,21 @@
+// Swedish daily quote pool — original Swedish-language sources.
+export default [
+  { text: 'Två sanningar närmar sig varann. En kommer inifrån, en kommer utifrån och där de möts har man en chans att få se sig själv.', author: 'Tomas Tranströmer' },
+  { text: 'Mitt i livet händer det att döden kommer och tar mått på människan. Det besöket glöms och livet fortsätter. Men kostymen sys i det tysta.', author: 'Tomas Tranströmer' },
+  { text: 'Vi går omkring bland levande och döda och bär våra egna ansikten i händerna.', author: 'Tomas Tranströmer' },
+  { text: 'Det finns ingenting i världen som så uppfyller mig som en stilla kväll vid sjön.', author: 'Karin Boye' },
+  { text: 'Nog finns det mål och mening i vår färd – men det är vägen som är mödan värd.', author: 'Karin Boye' },
+  { text: 'Ja visst gör det ont när knoppar brister.', author: 'Karin Boye' },
+  { text: 'Den mätta dagen, den är aldrig störst. Den bästa dagen är en dag av törst.', author: 'Karin Boye' },
+  { text: 'Du sökte en blomma och fann en frukt. Du sökte en källa och fann ett hav.', author: 'Edith Södergran' },
+  { text: 'Jag är ingen kvinna. Jag är ett neutrum.', author: 'Edith Södergran' },
+  { text: 'Var inte rädd. Det finns ett hemligt tecken, en lösen från liv till liv.', author: 'Edith Södergran' },
+  { text: 'Allt jag inte sade och allt jag inte gjorde är min sång.', author: 'Erik Axel Karlfeldt' },
+  { text: 'Den som spar, han har.', author: 'svenskt ordspråk' },
+  { text: 'Borta bra men hemma bäst.', author: 'svenskt ordspråk' },
+  { text: 'Övning ger färdighet.', author: 'svenskt ordspråk' },
+  { text: 'Man ska smida medan järnet är varmt.', author: 'svenskt ordspråk' },
+  { text: 'Tystnaden är guld.', author: 'svenskt ordspråk' },
+  { text: 'Lagom är bäst.', author: 'svenskt ordspråk' },
+  { text: 'Äventyret är livets blomma.', author: 'Selma Lagerlöf' },
+];

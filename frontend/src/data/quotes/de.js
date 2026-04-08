@@ -1,0 +1,21 @@
+// German daily quote pool — original German-language sources.
+export default [
+  { text: 'Wer ein Warum zum Leben hat, erträgt fast jedes Wie.', author: 'Friedrich Nietzsche' },
+  { text: 'Was mich nicht umbringt, macht mich stärker.', author: 'Friedrich Nietzsche' },
+  { text: 'Du musst dein Leben ändern.', author: 'Rainer Maria Rilke' },
+  { text: 'Sei geduldig gegen alles Ungelöste in deinem Herzen, und versuche, die Fragen selbst lieb zu haben.', author: 'Rainer Maria Rilke' },
+  { text: 'Wer nicht von dreitausend Jahren sich weiß Rechenschaft zu geben, bleib im Dunkeln unerfahren, mag von Tag zu Tage leben.', author: 'Johann Wolfgang von Goethe' },
+  { text: 'Es irrt der Mensch, solang er strebt.', author: 'Johann Wolfgang von Goethe' },
+  { text: 'Werde, der du bist.', author: 'Friedrich Nietzsche' },
+  { text: 'Jedem Anfang wohnt ein Zauber inne, der uns beschützt und der uns hilft, zu leben.', author: 'Hermann Hesse' },
+  { text: 'Man muss das Unmögliche versuchen, um das Mögliche zu erreichen.', author: 'Hermann Hesse' },
+  { text: 'Worüber man nicht sprechen kann, darüber muss man schweigen.', author: 'Ludwig Wittgenstein' },
+  { text: 'Die Welt ist alles, was der Fall ist.', author: 'Ludwig Wittgenstein' },
+  { text: 'Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.', author: 'Isaac Newton (im Deutschen)' },
+  { text: 'Die Sprache ist das Haus des Seins.', author: 'Martin Heidegger' },
+  { text: 'Wer mit Ungeheuern kämpft, mag zusehn, dass er nicht dabei zum Ungeheuer wird. Und wenn du lange in einen Abgrund blickst, blickt der Abgrund auch in dich hinein.', author: 'Friedrich Nietzsche' },
+  { text: 'Wo aber Gefahr ist, wächst das Rettende auch.', author: 'Friedrich Hölderlin' },
+  { text: 'Es ist nicht zu wenig Zeit, die wir haben, sondern es ist zu viel Zeit, die wir nicht nutzen.', author: 'Lucius Annaeus Seneca (auf Deutsch)' },
+  { text: 'Stille ist nicht das, was man hört, wenn nichts klingt.', author: 'Hermann Hesse' },
+  { text: 'Der Augenblick gehört dem, der ihn empfindet.', author: 'Friedrich Nietzsche' },
+];

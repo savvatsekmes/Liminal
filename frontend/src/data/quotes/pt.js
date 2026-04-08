@@ -1,0 +1,21 @@
+// Portuguese daily quote pool — original Portuguese-language sources.
+export default [
+  { text: 'Tudo vale a pena se a alma não é pequena.', author: 'Fernando Pessoa' },
+  { text: 'O poeta é um fingidor. Finge tão completamente que chega a fingir que é dor a dor que deveras sente.', author: 'Fernando Pessoa' },
+  { text: 'Navegar é preciso; viver não é preciso.', author: 'Fernando Pessoa' },
+  { text: 'Tenho em mim todos os sonhos do mundo.', author: 'Fernando Pessoa' },
+  { text: 'No meio do caminho tinha uma pedra. Tinha uma pedra no meio do caminho.', author: 'Carlos Drummond de Andrade' },
+  { text: 'Mundo mundo vasto mundo, mais vasto é meu coração.', author: 'Carlos Drummond de Andrade' },
+  { text: 'A vida é a arte do encontro, embora haja tanto desencontro pela vida.', author: 'Vinícius de Moraes' },
+  { text: 'Que seja infinito enquanto dure.', author: 'Vinícius de Moraes' },
+  { text: 'O homem é do tamanho do seu sonho.', author: 'Fernando Pessoa' },
+  { text: 'Eu não sou eu nem sou o outro, sou qualquer coisa de intermédio.', author: 'Mário de Sá-Carneiro' },
+  { text: 'O escritor faz-se calando, o leitor faz-se lendo.', author: 'José Saramago' },
+  { text: 'Talvez não tenhamos conseguido fazer o melhor, mas lutamos para que o melhor fosse feito.', author: 'Martin Luther King (citação em português)' },
+  { text: 'É preciso amar as pessoas como se não houvesse amanhã.', author: 'Renato Russo' },
+  { text: 'A coisa mais bonita que podemos experimentar é o mistério.', author: 'Albert Einstein (em português)' },
+  { text: 'Quem não vive para servir, não serve para viver.', author: 'Madre Teresa (em português)' },
+  { text: 'O essencial é saber ver.', author: 'Alberto Caeiro / Fernando Pessoa' },
+  { text: 'Sou do tamanho do que vejo, e não do tamanho da minha altura.', author: 'Fernando Pessoa' },
+  { text: 'Ninguém ama a ninguém: ama o que faz de si nesse alguém.', author: 'Caio Fernando Abreu' },
+];

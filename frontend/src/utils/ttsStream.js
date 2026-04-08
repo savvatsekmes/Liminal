@@ -91,6 +91,7 @@ export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
         text: sentence,
         exaggeration: opts.exaggeration ?? 0.5,
         ...(resolvedVoice ? { voice: resolvedVoice } : {}),
+        ...(opts.language ? { language: opts.language } : {}),
       }),
     });
     if (!res.ok) throw new Error('TTS failed');

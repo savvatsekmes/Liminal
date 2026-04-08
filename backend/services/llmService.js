@@ -5,6 +5,26 @@
 
 const fetch = require('node-fetch');
 
+// ── Language injection ────────────────────────────────────────────────────────
+// Centralised so every route benefits without touching individual prompts.
+// Routes that read user-written content (entries, notes, chat messages) should
+// pass `{ language: false }` to opt out — the LLM will then mirror whatever
+// language the user typed in, rather than being forced into the UI language.
+
+const LANG_NAMES = {
+  en: 'English', el: 'Greek', es: 'Spanish', fr: 'French', de: 'German',
+  pt: 'Portuguese', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean',
+  ru: 'Russian', ar: 'Arabic', tr: 'Turkish', nl: 'Dutch', sv: 'Swedish', pl: 'Polish',
+};
+
+function withLanguage(systemPrompt, options = {}) {
+  if (options.language === false) return systemPrompt;
+  const code = options.language || require('./settingsService').get('language') || 'en';
+  if (code === 'en') return systemPrompt;
+  const name = LANG_NAMES[code] || 'English';
+  return `${systemPrompt}\n\nIMPORTANT: Respond entirely in ${name}. All output must be in ${name}, not English.`;
+}
+
 function getSettings() {
   // Lazy-require to avoid circular deps at startup
   const s = require('./settingsService');
@@ -104,6 +124,7 @@ async function callOllama(systemPrompt, userMessage, options = {}) {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 async function call(systemPrompt, userMessage, options = {}) {
+  systemPrompt = withLanguage(systemPrompt, options);
   const provider = options.provider || getSettings().provider;
 
   switch (provider) {
@@ -115,6 +136,7 @@ async function call(systemPrompt, userMessage, options = {}) {
 }
 
 async function* stream(systemPrompt, userMessage, options = {}) {
+  systemPrompt = withLanguage(systemPrompt, options);
   const provider = options.provider || getSettings().provider;
 
   if (provider === 'claude') {
@@ -234,6 +256,7 @@ async function testConnection(provider, overrides = {}) {
 // messages: [{ role: 'user'|'assistant', content: string }, ...]
 
 async function callWithHistory(systemPrompt, messages, options = {}) {
+  systemPrompt = withLanguage(systemPrompt, options);
   const cfg = getSettings();
   const provider = options.provider || cfg.provider;
 
@@ -319,6 +342,7 @@ async function executeToolCall(toolName, args) {
 }
 
 async function callWithHistoryAndTools(systemPrompt, messages, options = {}) {
+  systemPrompt = withLanguage(systemPrompt, options);
   const searchService = require('./searchService');
   if (!searchService.isEnabled()) {
     return callWithHistory(systemPrompt, messages, options);

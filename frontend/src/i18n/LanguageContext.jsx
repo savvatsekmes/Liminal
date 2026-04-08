@@ -75,10 +75,15 @@ export function LanguageProvider({ children, initialLang = 'en' }) {
     }).catch(() => {});
   }, []);
 
-  // Load initial language if not English
+  // React to initialLang changes from the parent — App.jsx fetches the saved
+  // language from /api/settings asynchronously after mount, so this prop
+  // arrives later than the first render. Without this effect, useState(initialLang)
+  // captures only the first value and the UI stays in English forever.
   useEffect(() => {
+    setLangState(initialLang);
     if (initialLang !== 'en') loadLang(initialLang);
-  }, []);
+    else setStrings(en);
+  }, [initialLang]);
 
   const t = useCallback((key, replacements) => {
     let str = strings[key] || en[key] || key;

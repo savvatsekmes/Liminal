@@ -1,0 +1,21 @@
+// Italian daily quote pool — original Italian-language sources.
+export default [
+  { text: "Nel mezzo del cammin di nostra vita mi ritrovai per una selva oscura, ché la diritta via era smarrita.", author: 'Dante Alighieri' },
+  { text: "Considerate la vostra semenza: fatti non foste a viver come bruti, ma per seguir virtute e canoscenza.", author: 'Dante Alighieri' },
+  { text: "L'amor che move il sole e l'altre stelle.", author: 'Dante Alighieri' },
+  { text: "Dolce e chiara è la notte e senza vento.", author: 'Giacomo Leopardi' },
+  { text: "M'illumino d'immenso.", author: 'Giuseppe Ungaretti' },
+  { text: "Si sta come d'autunno sugli alberi le foglie.", author: 'Giuseppe Ungaretti' },
+  { text: "E ridivento subito straniero.", author: 'Giuseppe Ungaretti' },
+  { text: "Il giusto mezzo non lo conosco; lo ignoro.", author: 'Cesare Pavese' },
+  { text: "Verrà la morte e avrà i tuoi occhi.", author: 'Cesare Pavese' },
+  { text: "Non si ricordano i giorni, si ricordano gli attimi.", author: 'Cesare Pavese' },
+  { text: "L'inferno dei viventi non è qualcosa che sarà; se ce n'è uno, è quello che è già qui, l'inferno che abitiamo tutti i giorni, che formiamo stando insieme.", author: 'Italo Calvino' },
+  { text: "Le città come i sogni sono costruite di desideri e di paure.", author: 'Italo Calvino' },
+  { text: "Una pietra sopra l'altra; un muro fra te e il mondo.", author: 'Italo Calvino' },
+  { text: "Così è (se vi pare).", author: 'Luigi Pirandello' },
+  { text: "Imparare è più che istruirsi: è scoprire ciò che sei.", author: 'proverbio italiano' },
+  { text: "Chi vive sperando, muore cantando.", author: 'proverbio italiano' },
+  { text: "La perfezione si raggiunge non quando non c'è più nulla da aggiungere, ma quando non c'è più nulla da togliere.", author: 'Antoine de Saint-Exupéry (in italiano)' },
+  { text: "Chi non rischia non rosica.", author: 'proverbio italiano' },
+];

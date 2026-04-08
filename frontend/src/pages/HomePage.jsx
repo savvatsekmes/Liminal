@@ -4,6 +4,8 @@ import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MicButton from '../components/MicButton';
 import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
+import { getDailyQuote } from '../data/quotes';
+import { getHomeStrings } from '../data/homeStrings';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import { useLayout, WIDGET_LABELS } from '../hooks/useLayout';
@@ -12,127 +14,11 @@ import WidgetWrapper from '../components/WidgetWrapper';
 import { DndContext, pointerWithin, rectIntersection, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove } from '@dnd-kit/sortable';
 
-// ── Suggested question pool ────────────────────────────────────────────────
-const QUESTION_POOL = [
-  'What am I avoiding right now?',
-  "What's the recurring pattern in my entries this month?",
-  'What would I tell myself six months ago?',
-  'Where am I being hardest on myself?',
-  'What does my body need right now?',
-  "What am I not saying out loud?",
-  'What would the wisest version of me do?',
-  'What pattern keeps showing up?',
-  'What would I regret not doing?',
-  'What do I actually want?',
-  "What's the thing I keep circling around?",
-  "What am I grateful for but not acknowledging?",
-  'What needs to end?',
-  'What am I ready for?',
-  "What story am I telling myself that isn't true?",
-  'Where am I playing small?',
-  'What would courage look like right now?',
-  'What needs my attention most?',
-  'What am I outgrowing?',
-  'What does my gut say?',
-];
-
-
-// ── Quick Ask rotating prompts ──────────────────────────────────────────────
-const QUICK_ASK_PROMPTS = [
-  "What's sitting with you today?",
-  "What do you need to say out loud?",
-  "What are you not telling yourself?",
-  "What's the thing you keep circling around?",
-  "What would the wisest version of you say right now?",
-  "What does your body need today?",
-  "What are you avoiding?",
-  "What's asking for your attention?",
-  "What would you tell a close friend in your position?",
-  "Where are you being hardest on yourself?",
-  "What's ready to be released?",
-  "What are you pretending not to know?",
-  "What feels unfinished?",
-  "What small thing would make today feel more like yours?",
-  "What pattern keeps showing up?",
-  "What is fear telling you right now?",
-  "What would courage look like today?",
-  "What's the question beneath the question?",
-  "What do you need more of right now?",
-  "What are you grateful for that you haven't said out loud?",
-];
-
-function getDailyPrompt() {
+function getDailyPrompt(prompts) {
   const now = new Date();
   const start = new Date(now.getFullYear(), 0, 0);
   const dayOfYear = Math.floor((now - start) / 86400000);
-  return QUICK_ASK_PROMPTS[dayOfYear % QUICK_ASK_PROMPTS.length];
-}
-
-// ── Daily quote pool ────────────────────────────────────────────────────────
-const QUOTE_POOL = [
-  // Personal & Family
-  { text: 'This is not a melomacarouna. This is a dry biscuit.', author: 'Elisabet' },
-  { text: "It's been years, and just one day he appears at your doorstep, you let him in, and he tells a story about where he's been all those years he's been gone, then the wind will blow him away again....", author: '' },
-  { text: 'BUT YOU WERE NOT HERE, I ALONE OCCUPY THE DARKNESS', author: '' },
-  // Wisdom & Philosophy
-  { text: 'You must take your opponent into a deep dark forest where 2+2=5, and the path leading out is only wide enough for one.', author: 'Mikhail Tal' },
-  { text: "Love says I'm everything. Wisdom says I'm nothing. Between the 2 my life flows.", author: '' },
-  { text: 'The perfect man employs his mind as a mirror — grasping nothing, refusing nothing, receiving but not keeping.', author: 'Jiddu Krishnamurti' },
-  { text: 'The more I learn, the less I know.', author: 'Socrates' },
-  { text: 'Truth is not what you want it to be; it is what it is, and you must bend to its power or live a lie.', author: 'Miyamoto Musashi' },
-  { text: 'The mind and what is are not two separate processes.', author: 'J. Krishnamurti' },
-  { text: 'The meaning of life is just to be alive. It is so plain and so obvious and so simple. And yet, everybody rushes around in a great panic as if it were necessary to achieve something beyond themselves.', author: 'Alan Watts' },
-  { text: 'At the edge of expectation. Assumptions become belief.', author: 'Andrei Jikh' },
-  { text: 'You Will Know Them by Their Fruits.', author: 'Matthew' },
-  { text: 'Beware that, when fighting monsters, you yourself do not become a monster. For when you gaze long into the abyss, the abyss gazes also into you.', author: 'Friedrich Nietzsche' },
-  { text: 'The thing we tell of can never be found by seeking, yet only seekers find it.', author: 'Bayazid Bastami' },
-  { text: 'Om is the bow.', author: '' },
-  { text: 'Wake up, grow up, clean up, show up.', author: 'Ken Wilber' },
-  { text: 'We must master the art of peace in addition to the art of war.', author: 'Master Roshi' },
-  { text: "However necessary it may be to say 'I' and 'mine' for the practical purposes of everyday life, our Ego in fact is nothing but a name for what is really only a sequence of observed behaviours.", author: 'Ananda Coomaraswamy' },
-  { text: 'Each wave is born and is going to die, but the water is free from birth and death.', author: 'Thich Nhat Hanh' },
-  { text: 'The intuitive mind is a sacred gift and the rational mind is a faithful servant. We have created a society that honors the servant and has forgotten the gift.', author: 'Albert Einstein' },
-  { text: "When the opponent expands, I contract. When he contracts, I expand. And when there is an opportunity, I do not hit — it hits all by itself.", author: 'Bruce Lee' },
-  { text: "Here is my secret: I don't mind what happens.", author: 'J. Krishnamurti' },
-  { text: 'If you can only be tall because someone else is on their knees, then you have a serious problem.', author: 'Toni Morrison' },
-  { text: 'Be careful not to wear spiritualism as a badge to decorate your ego.', author: '' },
-  { text: 'Thou canst not stir a flower without troubling of a star.', author: 'Francis Thompson' },
-  { text: 'Trust in God, but tie your camel.', author: 'Prophet Muhammad' },
-  { text: 'Awakened One, listen without distraction. Do not let your thoughts wander.', author: '' },
-  { text: 'Meaning is a jumper that you have to knit yourself.', author: '' },
-  { text: 'We spin cocoons around ourselves and get possessed by our possessions.', author: '' },
-  { text: 'The forest was shrinking but the trees kept voting for the axe. For the axe was clever and convinced the trees that because his handle was wood he was one of them.', author: '' },
-  { text: 'Hard times create strong men. Strong men create good times. Good times create weak men. And weak men create hard times.', author: 'G. Michael Hopf' },
-  { text: 'Be like a tree. Let the dead leaves drop.', author: 'Rumi' },
-  { text: 'Never make a permanent decision from a temporary emotion.', author: '' },
-  { text: 'The places where you have the biggest challenges in your life become the places where you have the most to give.', author: 'Tracy McMillan' },
-  { text: 'Wake up. To see the farm is to leave it.', author: '' },
-  { text: 'All we ever want is the clues. Let people fill in the gaps.', author: '' },
-  { text: 'What you seek is seeking you.', author: 'Rumi' },
-  { text: 'Do not consider painful what is good for you.', author: 'Euripides' },
-  { text: 'When the power of love overcomes the love of power, the world will know peace.', author: 'Jimi Hendrix' },
-  { text: 'But war, organised war, is not a human instinct. It is a highly planned and cooperative form of theft.', author: '' },
-  { text: 'Do not go where the path may lead. Go instead where there is no path and leave a trail.', author: 'Ralph Waldo Emerson' },
-  // From the curated pool
-  { text: 'No snowflake ever falls in the wrong place.', author: 'Zen proverb' },
-  { text: 'The only way out is through.', author: 'Robert Frost' },
-  { text: 'You are not a drop in the ocean. You are the entire ocean in a drop.', author: 'Rumi' },
-  { text: 'The privilege of a lifetime is to become who you truly are.', author: 'Carl Jung' },
-  { text: 'The wound is the place where the light enters you.', author: 'Rumi' },
-  { text: 'Between stimulus and response there is a space.', author: 'Viktor Frankl' },
-  { text: 'Be patient toward all that is unsolved in your heart.', author: 'Rainer Maria Rilke' },
-  { text: 'The cave you fear to enter holds the treasure you seek.', author: 'Joseph Campbell' },
-  { text: 'What we are looking for is what is looking.', author: 'Francis of Assisi' },
-  { text: 'The only journey is the one within.', author: 'Rainer Maria Rilke' },
-  { text: 'Sit. Feast on your life.', author: 'Derek Walcott' },
-  { text: 'What is essential is invisible to the eye.', author: 'Antoine de Saint-Exupéry' },
-];
-
-function getDailyQuote() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), 0, 0);
-  const dayOfYear = Math.floor((now - start) / 86400000);
-  return QUOTE_POOL[dayOfYear % QUOTE_POOL.length];
+  return prompts[dayOfYear % prompts.length];
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────
@@ -954,118 +840,6 @@ const s = {
   },
 };
 
-const morningGreetings = [
-  "Good morning, {name}.",
-  "Morning, {name}.",
-  "Here you are, {name}.",
-  "Another day, {name}.",
-  "The day is yours, {name}.",
-  "Welcome back, {name}.",
-  "You made it to morning, {name}.",
-  "Good to see you, {name}.",
-  "Ready when you are, {name}.",
-  "The page is blank, {name}.",
-  "A fresh start, {name}.",
-  "Begin anywhere, {name}.",
-  "Something new today, {name}.",
-  "The morning holds you, {name}.",
-  "Still here, {name}.",
-  "Good morning. What's alive in you today, {name}?",
-  "The day just opened, {name}.",
-  "Coffee first, then everything else, {name}.",
-  "Whatever happened yesterday, today is new, {name}.",
-  "The morning is quiet. So are you, {name}.",
-  "Start where you are, {name}.",
-  "Something is asking to be written, {name}.",
-  "The light is soft this morning, {name}.",
-  "You woke up. That counts, {name}.",
-  "What are you carrying into today, {name}?",
-];
-
-const afternoonGreetings = [
-  "Good afternoon, {name}.",
-  "Afternoon, {name}.",
-  "Mid-day, {name}.",
-  "Here you are, {name}.",
-  "Taking a breath, {name}?",
-  "Stopping for a moment, {name}.",
-  "The day is half-lived, {name}.",
-  "Welcome back, {name}.",
-  "How's the day treating you, {name}?",
-  "Pausing, {name}?",
-  "Good to see you, {name}.",
-  "The afternoon is yours, {name}.",
-  "Midway through, {name}.",
-  "Something on your mind, {name}?",
-  "The day has happened. Now what, {name}?",
-  "Checking in, {name}.",
-  "Still at it, {name}.",
-  "The day is moving, {name}.",
-  "Taking stock, {name}?",
-  "Halfway home, {name}.",
-  "The sun is high, {name}.",
-  "What has today asked of you, {name}?",
-  "A moment for yourself, {name}.",
-  "The afternoon light, {name}.",
-  "What's sitting with you right now, {name}?",
-];
-
-const eveningGreetings = [
-  "Good evening, {name}.",
-  "Evening, {name}.",
-  "The day is winding down, {name}.",
-  "Here at the end of it, {name}.",
-  "Welcome back, {name}.",
-  "The light is changing, {name}.",
-  "The day is almost done, {name}.",
-  "You made it through, {name}.",
-  "Settling in, {name}?",
-  "The evening is yours, {name}.",
-  "Good to see you, {name}.",
-  "The day has a lot to say, {name}.",
-  "How did it go, {name}?",
-  "Unwinding, {name}?",
-  "The day is behind you now, {name}.",
-  "Here you are at the other end of it, {name}.",
-  "What did today teach you, {name}?",
-  "The work is done. Almost, {name}.",
-  "Breathing out, {name}.",
-  "The evening holds things differently, {name}.",
-  "What needs to be set down, {name}?",
-  "The city is quieting, {name}.",
-  "The day is folding itself away, {name}.",
-  "Something worth writing tonight, {name}?",
-  "The evening asks for honesty, {name}.",
-];
-
-const nightGreetings = [
-  "Still awake, {name}.",
-  "Late night, {name}.",
-  "The quiet hours, {name}.",
-  "Here in the dark, {name}.",
-  "Can't sleep, {name}?",
-  "The night is thinking, {name}.",
-  "Welcome to the other side of the day, {name}.",
-  "Something on your mind, {name}.",
-  "The world is asleep, {name}.",
-  "You and the night, {name}.",
-  "Late thoughts, {name}?",
-  "The dark hours hold things differently, {name}.",
-  "Something needed saying, {name}.",
-  "The night is honest, {name}.",
-  "Here you are, {name}.",
-  "Couldn't wait till morning, {name}?",
-  "The silence is loud tonight, {name}.",
-  "The night always brings something up, {name}.",
-  "Writing at this hour means something, {name}.",
-  "Whatever it is, write it down, {name}.",
-  "The night is a good listener, {name}.",
-  "Not everyone is awake right now, {name}.",
-  "The 3am thoughts are real, {name}.",
-  "This is what the night is for, {name}.",
-  "Deep in it, {name}.",
-];
-
 const DOT_SIZE = 7;
 const DOT_GAP = 5;
 const RHYTHM_ROWS = 3;
@@ -1106,19 +880,20 @@ function RhythmGrid({ rhythm }) {
   );
 }
 
-function getGreeting(name) {
+function getGreeting(name, greetings, lang) {
   const h = new Date().getHours();
   let pool;
-  if (h >= 5 && h < 12) pool = morningGreetings;
-  else if (h >= 12 && h < 17) pool = afternoonGreetings;
-  else if (h >= 17 && h < 21) pool = eveningGreetings;
-  else pool = nightGreetings;
+  if (h >= 5 && h < 12) pool = greetings.morning;
+  else if (h >= 12 && h < 17) pool = greetings.afternoon;
+  else if (h >= 17 && h < 21) pool = greetings.evening;
+  else pool = greetings.night;
 
-  const stored = sessionStorage.getItem('liminal_greeting');
+  const storageKey = `liminal_greeting_${lang}`;
+  const stored = sessionStorage.getItem(storageKey);
   if (stored) return stored.replace('{name}', name);
 
   const greeting = pool[Math.floor(Math.random() * pool.length)];
-  sessionStorage.setItem('liminal_greeting', greeting);
+  sessionStorage.setItem(storageKey, greeting);
   return greeting.replace('{name}', name);
 }
 
@@ -1149,17 +924,9 @@ function pickRandom(arr, n) {
 }
 
 export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNewEntry, onNewNote, onNewConversation }) {
-  const { t } = useLanguage();
-  const [displayName, setDisplayName] = useState(username || '');
+  const { t, lang } = useLanguage();
   const layout = useLayout();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-
-  // Fetch preferred name from portrait
-  useEffect(() => {
-    apiFetch('/api/portrait').then(r => r.json()).then(p => {
-      if (p.preferred_name) setDisplayName(p.preferred_name);
-    }).catch(() => {});
-  }, []);
 
   // Weather
   const [weather, setWeather] = useState(null);
@@ -1171,6 +938,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   // Portrait calculated data
   const [portrait, setPortrait] = useState(null);
   const [portraitSnippet, setPortraitSnippet] = useState(null);
+  const displayName = portrait?.preferred_name || username || '';
 
   // Daily card
   const [dailyCard, setDailyCard] = useState(null);
@@ -1242,9 +1010,11 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [pulseSaved, setPulseSaved] = useState(false);
   const [insightSaved, setInsightSaved] = useState(false);
 
-  // Suggested questions — pick 4 once per session
-  const suggested = useMemo(() => pickRandom(QUESTION_POOL, 4), []);
-  const dailyPrompt = useMemo(() => getDailyPrompt(), []);
+  const homeStrings = useMemo(() => getHomeStrings(lang), [lang]);
+
+  // Suggested questions — pick 4 once per session, re-pick when language changes
+  const suggested = useMemo(() => pickRandom(homeStrings.questionPool, 4), [homeStrings]);
+  const dailyPrompt = useMemo(() => getDailyPrompt(homeStrings.quickAskPrompts), [homeStrings]);
 
   const textareaRef = useRef(null);
   const greetingRowRef = useRef(null);
@@ -1654,7 +1424,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   function renderWidget(widgetId, size) {
     switch (widgetId) {
       case 'quote': {
-        const q = getDailyQuote();
+        const q = getDailyQuote(lang);
         return (
           <div style={s.quoteBlock}>
             <span style={s.quoteText}>"{q.text}"</span>
@@ -1674,12 +1444,12 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           <div style={s.moonCard}>
             <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
             <div style={s.moonInfo}>
-              <div style={s.moonPhase}>{moon.phase}</div>
+              <div style={s.moonPhase}>{t(`moon.phase.${(moon.phase || '').replace(/ /g, '')}`)}</div>
               <div style={s.moonDetail}>
-                {moon.illumination != null && <span>{Math.round(moon.illumination)}% illuminated</span>}
-                {moon.moonSign && <span> &middot; Moon in {moon.moonSign}</span>}
+                {moon.illumination != null && <span>{t('moon.illuminated', { percent: Math.round(moon.illumination) })}</span>}
+                {moon.moonSign && <span> &middot; {t('moon.moonIn', { sign: moon.moonSign })}</span>}
               </div>
-              {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
+              {moon.phase && <div style={s.moonMeaning}>{t(`moon.meaning.${moon.phase.replace(/ /g, '')}`)}</div>}
             </div>
             <span style={s.moonArrowLink} onClick={() => onNavigateToSky?.()} title="View Sky">&rsaquo;</span>
           </div>
@@ -1707,8 +1477,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               </div>
             </div>
             <div style={s.dailyCardInfo}>
-              <div style={s.dailyCardLabel}>Daily Card</div>
-              <div style={s.dailyCardName}>{dailyCard.name}{dailyCard.reversed ? ' (Reversed)' : ''}</div>
+              <div style={s.dailyCardLabel}>{t('home.dailyCard')}</div>
+              <div style={s.dailyCardName}>{dailyCard.name}{dailyCard.reversed ? ` (${t('home.reversed')})` : ''}</div>
             </div>
             {(dailyCard.reading || dailyCard.insight) && (
               <>
@@ -1766,7 +1536,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 </div>
               ) : (<div style={s.statsCellLatest} />)}
               <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewEntry?.(); }}>
-                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
+                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>{t('home.new')}</span>
               </button>
               <button style={s.statsArrow} onClick={() => onNavigateToEntry?.()} title={t('nav.journal')}>&rsaquo;</button>
 
@@ -1792,7 +1562,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 </div>
               ) : (<div style={s.statsCellLatest} />)}
               <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewNote?.(); }}>
-                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
+                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>{t('home.new')}</span>
               </button>
               <button style={s.statsArrow} onClick={() => onNavigateToNote?.()} title={t('nav.notes')}>&rsaquo;</button>
 
@@ -1818,7 +1588,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 </div>
               ) : (<div style={s.statsCellLatest} />)}
               <button style={s.newLinkInline} onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}>
-                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>New</span>
+                <span style={s.newLinkValue}>+</span><span style={s.newLinkLabel}>{t('home.new')}</span>
               </button>
               <button style={s.statsArrow} onClick={() => onNavigateToOracle?.()} title={t('nav.oracle')}>&rsaquo;</button>
             </div>
@@ -1832,21 +1602,21 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
               <div style={s.portraitHeader}>
-                <span style={s.portraitLabel}>Your Portrait</span>
+                <span style={s.portraitLabel}>{t('portrait.title')}</span>
                 <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
               </div>
               <div style={{ display: 'flex', gap: '20px', flex: 1 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
-                  {portrait.sun_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span><span style={s.portraitItemLabel}>Sun</span></div>}
-                  {portrait.moon_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span><span style={s.portraitItemLabel}>Moon</span></div>}
-                  {portrait.rising_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span><span style={s.portraitItemLabel}>Rising</span></div>}
-                  {portrait.chinese_zodiac && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span><span style={s.portraitItemLabel}>Chinese Zodiac</span></div>}
+                  {portrait.sun_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span><span style={s.portraitItemLabel}>{t('portrait.sunSign')}</span></div>}
+                  {portrait.moon_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span><span style={s.portraitItemLabel}>{t('portrait.moonSign')}</span></div>}
+                  {portrait.rising_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span><span style={s.portraitItemLabel}>{t('portrait.risingSign')}</span></div>}
+                  {portrait.chinese_zodiac && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span><span style={s.portraitItemLabel}>{t('portrait.chineseZodiac')}</span></div>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
-                  {portrait.mbti && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.mbti}</span><span style={s.portraitItemLabel}>MBTI</span></div>}
-                  {portrait.life_path_number != null && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_number}</span><span style={s.portraitItemLabel}>Life Path</span></div>}
-                  {portrait.soul_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.soul_card}</span><span style={s.portraitItemLabel}>Soul Card</span></div>}
-                  {portrait.life_path_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_card}</span><span style={s.portraitItemLabel}>Life Path Card</span></div>}
+                  {portrait.mbti && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.mbti}</span><span style={s.portraitItemLabel}>{t('portrait.mbti')}</span></div>}
+                  {portrait.life_path_number != null && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_number}</span><span style={s.portraitItemLabel}>{t('portrait.lifePathNumber')}</span></div>}
+                  {portrait.soul_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.soul_card}</span><span style={s.portraitItemLabel}>{t('portrait.soulCard')}</span></div>}
+                  {portrait.life_path_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_card}</span><span style={s.portraitItemLabel}>{t('portrait.lifePathCard')}</span></div>}
                 </div>
                 {!isCompact && portraitSnippet && (
                   <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid var(--border)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -2107,7 +1877,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               )}
               <div>
                 <div style={s.greeting}>
-                  {getGreeting(displayName || '')}
+                  {getGreeting(displayName || '', homeStrings.greetings, lang)}
                 </div>
                 <div style={s.greetingDate}>
                   {today}{weather && <span>{'  '}  {weather.icon} {weather.temp}°  ·  {weather.city}</span>}

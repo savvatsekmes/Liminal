@@ -1,0 +1,21 @@
+// Japanese daily quote pool — original Japanese-language sources.
+export default [
+  { text: '古池や蛙飛びこむ水の音', author: '松尾芭蕉' },
+  { text: '夏草や兵どもが夢の跡', author: '松尾芭蕉' },
+  { text: '月日は百代の過客にして、行きかふ年もまた旅人なり。', author: '松尾芭蕉' },
+  { text: '柿くへば鐘が鳴るなり法隆寺', author: '正岡子規' },
+  { text: '雪とけて村いっぱいの子どもかな', author: '小林一茶' },
+  { text: '露の世は露の世ながらさりながら', author: '小林一茶' },
+  { text: '我が生涯に一片の悔いなし。', author: 'ラオウ（北斗の拳）' },
+  { text: '一期一会。', author: '茶道のことば' },
+  { text: '七転び八起き。', author: '日本のことわざ' },
+  { text: '塞翁が馬。', author: '日本のことわざ' },
+  { text: '吾唯足知。', author: '龍安寺' },
+  { text: '今日もまた、明日もまた、その日その日を新しく生きる。', author: '良寛' },
+  { text: '散る桜　残る桜も　散る桜', author: '良寛' },
+  { text: '日々是好日。', author: '雲門文偃' },
+  { text: '心頭滅却すれば火もまた涼し。', author: '快川紹喜' },
+  { text: '行雲流水。', author: '禅のことば' },
+  { text: '智に働けば角が立つ。情に棹させば流される。意地を通せば窮屈だ。とかくに人の世は住みにくい。', author: '夏目漱石' },
+  { text: '吾輩は猫である。名前はまだ無い。', author: '夏目漱石' },
+];

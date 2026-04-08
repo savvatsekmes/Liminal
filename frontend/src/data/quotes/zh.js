@@ -1,0 +1,21 @@
+// Chinese daily quote pool — original Chinese-language sources (classical & modern).
+export default [
+  { text: '道可道，非常道。名可名，非常名。', author: '老子' },
+  { text: '上善若水。水善利萬物而不爭。', author: '老子' },
+  { text: '知人者智，自知者明。', author: '老子' },
+  { text: '千里之行，始於足下。', author: '老子' },
+  { text: '吾生也有涯，而知也無涯。', author: '莊子' },
+  { text: '相濡以沫，不如相忘於江湖。', author: '莊子' },
+  { text: '學而時習之，不亦說乎？', author: '孔子' },
+  { text: '己所不欲，勿施於人。', author: '孔子' },
+  { text: '逝者如斯夫，不舍晝夜。', author: '孔子' },
+  { text: '三人行，必有我師焉。', author: '孔子' },
+  { text: '人生若只如初見，何事秋風悲畫扇。', author: '納蘭性德' },
+  { text: '採菊東籬下，悠然見南山。', author: '陶淵明' },
+  { text: '人有悲歡離合，月有陰晴圓缺，此事古難全。', author: '蘇軾' },
+  { text: '回首向來蕭瑟處，歸去，也無風雨也無晴。', author: '蘇軾' },
+  { text: '不識廬山真面目，只緣身在此山中。', author: '蘇軾' },
+  { text: '空山不見人，但聞人語響。', author: '王維' },
+  { text: '床前明月光，疑是地上霜。', author: '李白' },
+  { text: '天生我材必有用。', author: '李白' },
+];

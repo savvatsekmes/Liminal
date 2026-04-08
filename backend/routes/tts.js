@@ -127,7 +127,8 @@ async function speakChatterbox(req, res, s) {
     temperature  = defaults.temperature,
     model        = 'chatterbox',
   } = req.body;
-  console.log(`[tts] /speak voice=${voice} (req.body.voice=${req.body.voice || '(none)'}) default=${defaults.voice}`);
+  const language = req.body.language || s.get('language') || 'en';
+  console.log(`[tts] /speak voice=${voice} lang=${language} (req.body.voice=${req.body.voice || '(none)'}) default=${defaults.voice}`);
 
   const url = getChatterboxUrl();
   const processedText = preprocessText(text);
@@ -144,8 +145,9 @@ async function speakChatterbox(req, res, s) {
         exaggeration: Number(exaggeration),
         cfg_weight: Number(cfg_weight),
         temperature: Number(temperature),
+        language,
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!chatterboxRes.ok) {

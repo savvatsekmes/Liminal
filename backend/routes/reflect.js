@@ -263,7 +263,7 @@ Rules:
 
   try {
     const maxTokens = Math.max(1000, Math.ceil(text.length / 2));
-    const polished = await llm.call(systemPrompt, text, { maxTokens });
+    const polished = await llm.call(systemPrompt, text, { maxTokens, language: false });
     res.json({ polished: polished.trim() });
   } catch (err) {
     console.error('[reflect/polish] Error:', err.message);
@@ -291,7 +291,7 @@ Rules:
 - Do NOT use colons or subtitle formats`;
 
   try {
-    const title = await llm.call(systemPrompt, plain.slice(0, 2000), { maxTokens: 30 });
+    const title = await llm.call(systemPrompt, plain.slice(0, 2000), { maxTokens: 30, language: false });
     res.json({ title: title.trim().replace(/^["']|["']$/g, '') });
   } catch (err) {
     console.error('[reflect/title] Error:', err.message);
@@ -418,7 +418,7 @@ Return ONLY a JSON array of tag strings, e.g.: ["identity", "career", "transitio
 No explanation. No other text.`;
 
   try {
-    const raw = await llm.call(systemPrompt, text, { maxTokens: 100 });
+    const raw = await llm.call(systemPrompt, text, { maxTokens: 100, language: false });
     const cleaned = raw.trim().replace(/```(?:json)?|```/g, '').trim();
     return JSON.parse(cleaned);
   } catch {

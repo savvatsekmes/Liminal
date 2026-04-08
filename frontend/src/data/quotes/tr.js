@@ -1,0 +1,21 @@
+// Turkish daily quote pool — original Turkish-language sources.
+export default [
+  { text: 'Yaşamak bir ağaç gibi tek ve hür ve bir orman gibi kardeşçesine.', author: 'Nâzım Hikmet' },
+  { text: 'En güzel günlerimizi henüz yaşamadık.', author: 'Nâzım Hikmet' },
+  { text: 'Memleketimi seviyorum: çınarlarında kolan vurdum, hapishanelerinde yattım.', author: 'Nâzım Hikmet' },
+  { text: 'Sevdiğim için sevdiğin gibi sev beni.', author: 'Nâzım Hikmet' },
+  { text: 'Ben gelmedim dava için, benim işim sevda için.', author: 'Yunus Emre' },
+  { text: 'Yaratılanı severiz Yaratan’dan ötürü.', author: 'Yunus Emre' },
+  { text: 'İlim ilim bilmektir, ilim kendin bilmektir. Sen kendin bilmezsen, bu nice okumaktır.', author: 'Yunus Emre' },
+  { text: 'Bir ben vardır bende benden içeri.', author: 'Yunus Emre' },
+  { text: 'İnsanların en hayırlısı, insanlara faydalı olandır.', author: 'Hadis-i şerif (Türkçe)' },
+  { text: 'Bir fincan kahvenin kırk yıl hatırı vardır.', author: 'Türk atasözü' },
+  { text: 'Ağaç yaşken eğilir.', author: 'Türk atasözü' },
+  { text: 'Damlaya damlaya göl olur.', author: 'Türk atasözü' },
+  { text: 'Anladım ki dünyada her şey insan içinmiş.', author: 'Cemal Süreya' },
+  { text: 'Şiir bir başkaldırıdır. Hayata, ölüme, aşka.', author: 'Cemal Süreya' },
+  { text: 'Üşüyorum kapama gözlerini.', author: 'Cemal Süreya' },
+  { text: 'Bir gün anlayacaksın, sevmek bazen susmaktır.', author: 'Sabahattin Ali' },
+  { text: 'İstanbul’u dinliyorum, gözlerim kapalı.', author: 'Orhan Veli' },
+  { text: 'Bedava yaşıyoruz, bedava; hava bedava, bulut bedava.', author: 'Orhan Veli' },
+];

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const llm = require('../services/llmService');
+const settingsService = require('../services/settingsService');
 const db = require('../database');
 
 router.use(requireAuth);
@@ -15,7 +16,8 @@ router.get('/pulse', async (req, res) => {
 
   if (!latest) return res.json({ pulse: null });
 
-  const entryHash = `${latest.id}:${latest.created_at}`;
+  const lang = settingsService.get('language') || 'en';
+  const entryHash = `${latest.id}:${latest.created_at}:${lang}`;
 
   // Check cache — regenerate if stale (new entry since last generation)
   const cached = db.prepare(
@@ -71,7 +73,8 @@ router.get('/insight', async (req, res) => {
 
   if (recent.length < 2) return res.json({ insight: null });
 
-  const entryHash = recent.map(r => r.id).join(',');
+  const lang = settingsService.get('language') || 'en';
+  const entryHash = recent.map(r => r.id).join(',') + `:${lang}`;
 
   // Check cache
   if (!req.query.refresh) {
@@ -311,7 +314,8 @@ router.get('/portrait-snippet', async (req, res) => {
     "SELECT data, entry_hash FROM home_cache WHERE user_id = ? AND cache_key = 'portrait_snippet'"
   ).get(req.userId);
 
-  const hash = `${portrait.updated_at || ''}`;
+  const lang = settingsService.get('language') || 'en';
+  const hash = `${portrait.updated_at || ''}:${lang}`;
   if (cached && cached.entry_hash === hash) {
     return res.json(JSON.parse(cached.data));
   }

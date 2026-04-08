@@ -1,0 +1,21 @@
+// Dutch daily quote pool — original Dutch-language sources.
+export default [
+  { text: 'Alles van waarde is weerloos.', author: 'Lucebert' },
+  { text: 'Ik draai een kleine revolutie af, ik draai een kleine mooie revolutie af.', author: 'Lucebert' },
+  { text: 'Tussen droom en daad staan wetten in de weg en praktische bezwaren.', author: 'Willem Elsschot' },
+  { text: 'Denken is bedanken.', author: 'Martin Heidegger (in het Nederlands)' },
+  { text: 'Er is geen weg naar geluk, geluk is de weg.', author: 'Boeddha (in het Nederlands)' },
+  { text: 'Wie schrijft, die blijft.', author: 'Nederlands gezegde' },
+  { text: 'Boontje komt om zijn loontje.', author: 'Nederlands gezegde' },
+  { text: 'De aanhouder wint.', author: 'Nederlands gezegde' },
+  { text: 'Oost west, thuis best.', author: 'Nederlands gezegde' },
+  { text: 'Een mens lijdt het meest door het lijden dat hij vreest.', author: 'Nicolaas Beets' },
+  { text: 'Het leven is zoals het is, niet zoals het zou moeten zijn.', author: 'Hugo Claus' },
+  { text: 'In het verleden ligt het heden, in het nu wat worden zal.', author: 'Willem Bilderdijk' },
+  { text: 'Wat je niet kent, mis je niet.', author: 'Nederlands gezegde' },
+  { text: 'Stilte is het hoogste lied.', author: 'Mechthild van Maagdenburg (in het Nederlands)' },
+  { text: 'Eenvoud is het kenmerk van het ware.', author: 'Nederlands gezegde' },
+  { text: 'Wie het kleine niet eert, is het grote niet weerd.', author: 'Nederlands gezegde' },
+  { text: 'De wereld is een schouwtoneel, elk speelt zijn rol en krijgt zijn deel.', author: 'Joost van den Vondel' },
+  { text: 'Het hart heeft zijn redenen die de rede niet kent.', author: 'Blaise Pascal (in het Nederlands)' },
+];

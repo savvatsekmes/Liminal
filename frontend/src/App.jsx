@@ -220,7 +220,7 @@ export default function App() {
           else if (data.user_id) setAvatarUrl(`/api/auth/avatar/${data.user_id}?t=${Date.now()}`);
           // Fetch language setting
           apiFetch('/api/settings').then(r => r.json()).then(s => {
-            if (s.language && s.language !== 'en') setLanguage(s.language);
+            if (s.language) setLanguage(s.language);
           }).catch(() => {});
           if (data.onboarding_complete) {
             setAuthStatus('ok');
@@ -250,6 +250,12 @@ export default function App() {
         if (data.avatar_url) setAvatarUrl(data.avatar_url);
         else if (data.user_id) setAvatarUrl(`/api/auth/avatar/${data.user_id}?t=${Date.now()}`);
       })
+      .catch(() => {});
+    // Same problem for language — fetch saved value so the UI restores it
+    // after a fresh password-gate login (not just on auto-resume).
+    apiFetch('/api/settings')
+      .then((r) => r.json())
+      .then((s) => { if (s.language) setLanguage(s.language); })
       .catch(() => {});
     if (onboardingComplete) {
       setAuthStatus('ok');

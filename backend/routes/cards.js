@@ -23,13 +23,18 @@ router.get('/decks', (req, res) => {
 
 // ── GET /api/cards/daily — daily card (cached per day) ──────────────────────
 router.get('/daily', async (req, res) => {
+  // Mangle the date key with the current language so a language switch
+  // invalidates the cache and the next call regenerates the reading in the
+  // new language. The `date` column isn't queried elsewhere so suffixing is safe.
+  const lang = require('../services/settingsService').get('language') || 'en';
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const dateKey = `${today}:${lang}`;
 
   // Check cache (skip with ?refresh=1)
   if (!req.query.refresh) {
     const cached = db.prepare(
       'SELECT card_data FROM daily_cards WHERE user_id = ? AND date = ?'
-    ).get(req.userId, today);
+    ).get(req.userId, dateKey);
     if (cached) {
       return res.json(JSON.parse(cached.card_data));
     }
@@ -97,7 +102,7 @@ Write a personalised daily reading for this person based on this card. Focus on 
   // Cache for today
   db.prepare(
     'INSERT OR REPLACE INTO daily_cards (user_id, date, deck, card_data) VALUES (?, ?, ?, ?)'
-  ).run(req.userId, today, deck, JSON.stringify(card));
+  ).run(req.userId, dateKey, deck, JSON.stringify(card));
 
   res.json(card);
 });

@@ -139,28 +139,76 @@ if perth.PerthImplicitWatermarker is None:
     perth.PerthImplicitWatermarker = perth.DummyWatermarker
 
 # ── Load model ────────────────────────────────────────────────────────────────
+# Two model classes: English-only ChatterboxTTS (fast path, all current
+# optimisations) and ChatterboxMultilingualTTS (23 languages, no perf history).
+# Only one is ever resident in VRAM — they swap on language change. The lock
+# serialises swap requests so two simultaneous TTS calls in different languages
+# can't both try to load at once.
 
-log.info("Loading ChatterboxTTS (first run downloads ~1 GB)…")
+import gc, threading
 from chatterbox.tts import ChatterboxTTS
+try:
+    from chatterbox.mtl_tts import ChatterboxMultilingualTTS, SUPPORTED_LANGUAGES
+    _MTL_AVAILABLE = True
+except ImportError as e:
+    log.warning(f"Multilingual Chatterbox not available ({e}) — English-only mode")
+    ChatterboxMultilingualTTS = None
+    SUPPORTED_LANGUAGES = {}
+    _MTL_AVAILABLE = False
 
-if COMPAT_MODE:
-    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
-        model = ChatterboxTTS.from_pretrained(device=DEVICE)
-    log.info("Model loaded in math-only SDPA mode")
-else:
-    model = ChatterboxTTS.from_pretrained(device=DEVICE)
+_model_lock = threading.Lock()
+_current_kind = None  # "en" or "mtl"
+model = None
 
-# BFloat16 only on Ampere+ where it's hardware-native.
-# Turing reports bf16 support but it's emulated and causes kernel issues.
-if DEVICE.startswith("cuda") and not COMPAT_MODE and torch.cuda.is_bf16_supported():
-    try:
-        model.t3.to(torch.bfloat16)
-        torch.cuda.empty_cache()
-        log.info("BFloat16 enabled on t3")
-    except Exception as e:
-        log.warning(f"BFloat16 not applied: {e}")
+def _apply_bf16(m):
+    if DEVICE.startswith("cuda") and not COMPAT_MODE and torch.cuda.is_bf16_supported():
+        try:
+            m.t3.to(torch.bfloat16)
+            torch.cuda.empty_cache()
+            log.info("BFloat16 enabled on t3")
+        except Exception as e:
+            log.warning(f"BFloat16 not applied: {e}")
 
-log.info("Model ready.")
+def _load(kind):
+    cls = ChatterboxTTS if kind == "en" else ChatterboxMultilingualTTS
+    log.info(f"Loading {cls.__name__} on {DEVICE} (first run downloads ~1 GB)…")
+    if COMPAT_MODE:
+        with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+            m = cls.from_pretrained(device=DEVICE)
+        log.info(f"{cls.__name__} loaded in math-only SDPA mode")
+    else:
+        m = cls.from_pretrained(device=DEVICE)
+    _apply_bf16(m)
+    log.info(f"{cls.__name__} ready.")
+    return m
+
+def ensure_model(kind):
+    """Swap loaded model if needed. kind is 'en' or 'mtl'."""
+    global model, _current_kind
+    if kind == "mtl" and not _MTL_AVAILABLE:
+        log.warning("Multilingual requested but not available — staying on English")
+        kind = "en"
+    with _model_lock:
+        if _current_kind == kind and model is not None:
+            return model
+        if model is not None:
+            log.info(f"Unloading {_current_kind} model to swap to {kind}…")
+            try:
+                model.t3.to("cpu")
+            except Exception:
+                pass
+            del model
+            model = None
+            gc.collect()
+            if DEVICE.startswith("cuda"):
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+        model = _load(kind)
+        _current_kind = kind
+        return model
+
+# Warm-start with the English model — keeps existing fast path on launch
+ensure_model("en")
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -173,10 +221,15 @@ class SpeechRequest(BaseModel):
     exaggeration: float = 0.5
     cfg_weight: float = 0.5
     temperature: float = 1.3
+    language: str = "en"  # ISO 639-1; "en" routes to English-only model
 
 @app.get("/v1/models")
 def list_models():
-    return {"object": "list", "data": [{"id": "chatterbox", "object": "model"}]}
+    return {
+        "object": "list",
+        "data": [{"id": "chatterbox", "object": "model"}],
+        "languages": sorted(SUPPORTED_LANGUAGES.keys()) if _MTL_AVAILABLE else ["en"],
+    }
 
 @app.get("/device")
 def device_info():
@@ -196,6 +249,9 @@ def device_info():
     elif DEVICE == "mps":
         info["gpu_name"] = "Apple Silicon GPU (Metal)"
         info["vram_gb"] = "shared"
+    info["loaded_model"] = _current_kind
+    info["multilingual_available"] = _MTL_AVAILABLE
+    info["supported_languages"] = sorted(SUPPORTED_LANGUAGES.keys()) if _MTL_AVAILABLE else ["en"]
     return info
 
 # ── Text chunking ─────────────────────────────────────────────────────────────
@@ -227,31 +283,45 @@ def split_into_chunks(text: str) -> list[str]:
 # "eager" is stable; bfloat16 on both t3+conds.t3 still gives a speed boost.
 _T3_PARAMS = {"generate_token_backend": "eager"} if DEVICE.startswith("cuda") else {}
 
-def _do_generate(text, voice_path, exaggeration, cfg_weight, temperature):
+def _do_generate(text, voice_path, exaggeration, cfg_weight, temperature, language="en"):
+    lang = (language or "en").lower()
+    if lang != "en" and lang not in SUPPORTED_LANGUAGES:
+        log.warning(f"Unsupported language '{lang}', falling back to English")
+        lang = "en"
+    kind = "en" if lang == "en" else "mtl"
+    m = ensure_model(kind)
+    # The multilingual t3 has a different inference pathway and doesn't accept
+    # the eager generate_token_backend tweak — passing it raises
+    # "'list' object has no attribute 'size'" inside its sampler. Only the
+    # English model gets the perf knob.
+    extra = {} if kind == "en" else {"language_id": lang}
+    t3_params = _T3_PARAMS if kind == "en" else {}
     try:
-        return model.generate(
+        return m.generate(
             text,
             audio_prompt_path=voice_path,
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
             temperature=temperature,
-            t3_params=_T3_PARAMS,
+            t3_params=t3_params,
+            **extra,
         )
     except TypeError:
         # Older API without t3_params / temperature
-        return model.generate(
+        return m.generate(
             text,
             audio_prompt_path=voice_path,
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
+            **extra,
         )
 
-def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature):
+def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature, language="en"):
     if COMPAT_MODE:
         # Force math-only SDPA backend at generation time — cutlassF/flash crash on older GPUs
         with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
-            return _do_generate(text, voice_path, exaggeration, cfg_weight, temperature)
-    return _do_generate(text, voice_path, exaggeration, cfg_weight, temperature)
+            return _do_generate(text, voice_path, exaggeration, cfg_weight, temperature, language)
+    return _do_generate(text, voice_path, exaggeration, cfg_weight, temperature, language)
 
 
 @app.post("/v1/audio/speech")
@@ -274,7 +344,7 @@ def synthesise(req: SpeechRequest):
 
     chunks = split_into_chunks(req.input)
     log.info(f"Generating {len(req.input)} chars in {len(chunks)} chunk(s) | "
-             f"voice={req.voice} exag={req.exaggeration} cfg={req.cfg_weight} temp={req.temperature}")
+             f"voice={req.voice} lang={req.language} exag={req.exaggeration} cfg={req.cfg_weight} temp={req.temperature}")
 
     try:
         audio_parts = []
@@ -283,6 +353,7 @@ def synthesise(req: SpeechRequest):
             wav = generate_chunk(
                 chunk, voice_path,
                 float(req.exaggeration), float(req.cfg_weight), float(req.temperature),
+                req.language,
             )
             audio_parts.append(wav.squeeze().cpu().float().numpy())
     except Exception as e:
