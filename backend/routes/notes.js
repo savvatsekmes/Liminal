@@ -4,6 +4,7 @@ const db = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
+const { buildCardContext } = require('./cards');
 
 router.use(requireAuth);
 
@@ -160,6 +161,9 @@ router.post('/:id/reflect', async (req, res) => {
   if (!note) return res.status(404).json({ error: 'Note not found' });
   if (!note.body?.trim()) return res.status(400).json({ error: 'Note has no content to reflect on' });
 
+  const { archetype } = req.body || {};
+  const singleArchetype = archetype && archetype !== 'Auto' ? archetype : null;
+
   const llm = require('../services/llmService');
   const memoryService = require('../services/memoryService');
   const db2 = require('../database');
@@ -177,7 +181,42 @@ router.post('/:id/reflect', async (req, res) => {
 
   const typePrompt = typeContext[note.type] || 'Reflect thoughtfully on this note.';
 
-  const systemPrompt = `You are Liminal's Mirror — a reflection system for a personal journaling app.
+  // Resolve voice for single-archetype mode (custom prompt overrides built-in)
+  let archetypeVoice = null;
+  if (singleArchetype) {
+    try {
+      const customs = JSON.parse(portrait?.custom_archetypes || '[]');
+      const match = customs.find(c => c.name === singleArchetype);
+      if (match?.prompt) archetypeVoice = match.prompt;
+    } catch {}
+    if (!archetypeVoice) archetypeVoice = memoryService.getArchetypeVoice(singleArchetype);
+  }
+  const shortMemory = memorySummary && memorySummary.length > 600 ? memorySummary.slice(0, 600) + '…' : (memorySummary || '');
+
+  const systemPrompt = singleArchetype
+    ? `You are the ${singleArchetype} voice. Speak ONLY as ${singleArchetype} — no other voice, tradition, or register.
+
+${archetypeVoice || ''}
+
+${typePrompt}
+
+${shortMemory ? `Brief context about this person (do not let it pull you out of voice):\n${shortMemory}\n` : ''}
+
+Respond with a JSON object:
+{
+  "blocks": [
+    { "title": "A named theme", "body": "Prose reflection in the ${singleArchetype} voice", "quote": null, "archetype": "${singleArchetype}" }
+  ]
+}
+
+Rules:
+- 1-2 blocks only (notes are shorter than journal entries)
+- Write in prose, no bullet points
+- Speak directly to the person ("you")
+- Return ONLY the JSON
+
+VOICE REMINDER: stay unmistakably in the ${singleArchetype} voice. Vocabulary, rhythm, and imagery must make it obvious which voice is speaking.`
+    : `You are Liminal's Mirror — a reflection system for a personal journaling app.
 ${typePrompt}
 
 ${portrait?.character_description ? `CHARACTER PORTRAIT:\n${portrait.character_description}\n` : ''}
@@ -198,12 +237,18 @@ Rules:
 
   const ytContext = buildYoutubeContext(req.userId, note.body || '');
   const imgContext = buildImageContext(req.userId, note.body || '');
-  // Strip inline base64 image data from body before sending to LLM — descriptions are injected via imgContext
-  const cleanBody = (note.body || '').replace(/data-src="data:image\/[^"]*"/g, 'data-src=""');
+  const cardContext = buildCardContext(note.body || '');
+  // Strip inline base64 image data + card-reading divs from body before sending
+  // to LLM — both are injected as decoded context below.
+  const cleanBody = (note.body || '')
+    .replace(/data-src="data:image\/[^"]*"/g, 'data-src=""')
+    .replace(/<div\b[^>]*\bdata-card-reading\b[^>]*><\/div>/g, '')
+    .replace(/<div\b[^>]*\bdata-card-reading\b[^>]*>[\s\S]*?<\/div>/g, '');
   const noteText = note.type === 'quote' ? `"${cleanBody}"${note.attribution ? '\n— ' + note.attribution : ''}` : cleanBody;
   const userMessage = noteText
     + (ytContext ? `\n\n---\nVIDEOS EMBEDDED IN THIS NOTE:\n${ytContext}` : '')
-    + (imgContext ? `\n\n---\nIMAGES IN THIS NOTE:\n${imgContext}` : '');
+    + (imgContext ? `\n\n---\nIMAGES IN THIS NOTE:\n${imgContext}` : '')
+    + (cardContext ? `\n\n---\nCARDS PULLED IN THIS NOTE:\n${cardContext}` : '');
 
   try {
     const raw = await llm.call(systemPrompt, userMessage, { maxTokens: 1000 });
@@ -214,7 +259,13 @@ Rules:
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) blocks = JSON.parse(match[0]).blocks || [];
     } catch {
-      blocks = [{ title: 'Reflection', body: raw.trim(), quote: null, archetype: 'Mirror' }];
+      blocks = [{ title: 'Reflection', body: raw.trim(), quote: null, archetype: singleArchetype || 'Mirror' }];
+    }
+
+    // Force-tag every block with the chosen archetype so the frontend voice
+    // override resolves correctly even if the LLM forgot the field.
+    if (singleArchetype) {
+      blocks = blocks.map(b => ({ ...b, archetype: singleArchetype }));
     }
 
     // Persist the reflection

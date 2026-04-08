@@ -9,6 +9,7 @@ const TABS = [
   { id: 'llm',     labelKey: 'settings.tabLLM' },
   { id: 'tts',     labelKey: 'settings.tabVoice' },
   { id: 'data',    labelKey: 'settings.tabData' },
+  { id: 'about',   labelKey: 'settings.tabAbout' },
 ];
 
 const s = {
@@ -272,7 +273,7 @@ function StatusIndicator({ ok, message }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarChange }) {
+export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarChange, onNavigate }) {
   const { t } = useLanguage();
   const [cfg, setCfg] = useState(null);
   const [activeTab, setActiveTab] = useState('account');
@@ -325,9 +326,10 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
       {/* Tab content */}
       <div style={s.tabContent}>
         {activeTab === 'llm'     && <LLMSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
-        {activeTab === 'tts'     && <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
+        {activeTab === 'tts'     && <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} onNavigate={onNavigate} />}
         {activeTab === 'account' && <AccountSection cfg={cfg} set={set} save={save} showToast={showToast} username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />}
         {activeTab === 'data'    && <DataSection showToast={showToast} />}
+        {activeTab === 'about'   && <AboutSection showToast={showToast} />}
       </div>
 
       {toast && <div style={s.toast}>{toast}</div>}
@@ -918,7 +920,7 @@ function WeatherLocationField() {
 }
 
 // ── TTS Section ───────────────────────────────────────────────────────────────
-function TTSSection({ cfg, set, save, saving, showToast }) {
+function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
   const { t } = useLanguage();
   const mode = cfg.tts_mode || 'chatterbox';
   const [voices, setVoices] = useState([]);
@@ -1027,7 +1029,12 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
           </Field>
 
           {gpus && (
-            <Field label={t('settings.gpuForTts')} hint="Restart TTS server after changing. Use GPU name to survive index changes.">
+            <Field
+              label={t('settings.gpuForTts')}
+              hint={gpus.mps
+                ? "Restart TTS server after changing."
+                : "Restart TTS server after changing. Use GPU name to survive index changes."}
+            >
               <select
                 style={s.select}
                 value={cfg.tts_device || 'auto'}
@@ -1035,9 +1042,12 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
               >
                 <option value="auto">Auto (first available GPU)</option>
                 <option value="cpu">CPU (slow)</option>
+                {gpus.mps && (
+                  <option value="mps">Apple Silicon GPU (Metal)</option>
+                )}
                 {gpus.gpus?.map(g => (
                   <option key={g.id} value={g.name}>
-                    {g.name} ({g.vram_gb} GB)
+                    {g.name}{typeof g.vram_gb === 'number' ? ` (${g.vram_gb} GB)` : ''}
                   </option>
                 ))}
               </select>
@@ -1088,6 +1098,18 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
             <div style={{ ...s.sublabel, marginTop: '6px' }}>
               {t('settings.voiceFileHint')}
             </div>
+            {onNavigate && (
+              <div style={{ ...s.sublabel, marginTop: '4px' }}>
+                Want a different voice per archetype?{' '}
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); onNavigate('memory'); }}
+                  style={{ color: 'var(--strong)', textDecoration: 'underline', cursor: 'pointer' }}
+                >
+                  Set them in Context → Archetypes
+                </a>
+              </div>
+            )}
           </Field>
 
           <Field label={t('settings.voicesFolderPath')} hint={t('settings.voicesFolderHint')}>
@@ -1114,7 +1136,7 @@ function TTSSection({ cfg, set, save, saving, showToast }) {
               label={t('settings.voiceFidelity')}
               hint={t('settings.voiceFidelityHint')}
               min={0} max={1} step={0.05}
-              value={parseFloat(cfg.chatterbox_cfg_weight ?? 0.9)}
+              value={parseFloat(cfg.chatterbox_cfg_weight ?? 0.10)}
               onChange={v => { set('chatterbox_cfg_weight', v); save({ chatterbox_cfg_weight: v }); }}
             />
             <TtsSlider
@@ -1765,6 +1787,133 @@ function DataSection({ showToast }) {
             </div>
           </div>
         )}
+      </Section>
+    </>
+  );
+}
+
+// ── About Section ─────────────────────────────────────────────────────────────
+
+function AboutSection({ showToast }) {
+  const { t } = useLanguage();
+  const [info, setInfo] = useState(null);   // { current, latest, hasUpdate, releaseUrl, releaseName, checkedAt, error }
+  const [checking, setChecking] = useState(false);
+
+  // On mount: cached check (no network unless cache is stale)
+  useEffect(() => {
+    apiFetch('/api/version/check')
+      .then(r => r.json())
+      .then(setInfo)
+      .catch(() => {
+        // Fall back to just the current version
+        apiFetch('/api/version').then(r => r.json()).then(d => setInfo({ current: d.current })).catch(() => {});
+      });
+  }, []);
+
+  async function checkNow() {
+    setChecking(true);
+    try {
+      const res = await apiFetch('/api/version/check?refresh=1');
+      const data = await res.json();
+      setInfo(data);
+      if (data.error === 'offline') {
+        showToast(t('settings.aboutOffline') || 'Could not reach update server');
+      } else if (data.hasUpdate) {
+        showToast(t('settings.aboutUpdateAvailable') || 'Update available');
+      } else {
+        showToast(t('settings.aboutUpToDate') || 'You are up to date');
+      }
+    } catch {
+      showToast(t('settings.aboutOffline') || 'Could not reach update server');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  const current = info?.current || '…';
+  const checkedLabel = info?.checkedAt
+    ? new Date(info.checkedAt).toLocaleString()
+    : null;
+
+  return (
+    <>
+      <Section title={t('settings.tabAbout') || 'About'}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--strong)' }}>Liminal</div>
+          <div style={{
+            fontSize: '11px',
+            padding: '3px 10px',
+            borderRadius: '12px',
+            background: 'var(--near-white)',
+            border: 'var(--border-style)',
+            color: 'var(--muted)',
+            fontFamily: 'var(--font-mono, monospace)',
+          }}>
+            v{current}
+          </div>
+        </div>
+
+        {info?.hasUpdate && info?.latest && (
+          <div style={{
+            padding: '14px 16px',
+            border: 'var(--border-style)',
+            borderRadius: '12px',
+            background: 'var(--near-white)',
+            marginBottom: '20px',
+          }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--strong)', marginBottom: '4px' }}>
+              {t('settings.aboutUpdateAvailable') || 'Update available'}: v{info.latest}
+            </div>
+            {info.releaseName && info.releaseName !== `v${info.latest}` && (
+              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>{info.releaseName}</div>
+            )}
+            {info.releaseUrl && (
+              <a
+                href={info.releaseUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-block',
+                  padding: '7px 14px',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  borderRadius: '20px',
+                  background: 'var(--strong)',
+                  color: 'var(--white)',
+                  textDecoration: 'none',
+                }}
+              >
+                {t('settings.aboutDownload') || 'Download'}
+              </a>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+          <Btn onClick={checkNow} disabled={checking}>
+            {checking ? '…' : (t('settings.aboutCheck') || 'Check for updates')}
+          </Btn>
+          {!info?.hasUpdate && info?.latest && !info?.error && (
+            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+              ✓ {t('settings.aboutUpToDate') || 'Up to date'}
+            </span>
+          )}
+          {info?.error === 'offline' && (
+            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+              {t('settings.aboutOffline') || 'Offline'}
+            </span>
+          )}
+        </div>
+        {checkedLabel && (
+          <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
+            {(t('settings.aboutCheckedAt') || 'Last checked')}: {checkedLabel}
+          </div>
+        )}
+
+        <div style={{ marginTop: '32px', fontSize: '11px', color: 'var(--muted)', lineHeight: 1.6 }}>
+          Liminal — a personal AI journaling space.<br />
+          Crafted by Savva Tsekmes.
+        </div>
       </Section>
     </>
   );

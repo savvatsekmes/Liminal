@@ -140,7 +140,7 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode }) {
         }}
       >
         <div style={{
-          borderRadius: '4px',
+          borderRadius: '14px',
           border: 'var(--border-style)',
           overflow: 'hidden',
           background: 'var(--near-white)',

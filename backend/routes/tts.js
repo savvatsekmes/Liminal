@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const { DATA_DIR } = require('../paths');
 
 function getChatterboxUrl() {
   return require('../services/settingsService').get('chatterbox_url') || 'http://localhost:8100';
@@ -14,7 +15,7 @@ function getTtsDefaults() {
   return {
     voice:       s.get('chatterbox_voice') || 'Abigail.wav',
     exaggeration: parseFloat(s.get('chatterbox_exaggeration') || '0.6'),
-    cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.9'),
+    cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.10'),
     temperature:  parseFloat(s.get('chatterbox_temperature')  || '1.3'),
   };
 }
@@ -25,7 +26,7 @@ const voiceStorage = multer.diskStorage({
     const s = require('../services/settingsService');
     let voicesDir = s.get('voices_path');
     if (!voicesDir) {
-      voicesDir = path.join(__dirname, '..', 'data', 'voices');
+      voicesDir = path.join(DATA_DIR, 'voices');
     }
     fs.mkdirSync(voicesDir, { recursive: true });
     cb(null, voicesDir);
@@ -67,7 +68,7 @@ router.get('/status', async (req, res) => {
 // ── GET /api/tts/voices ───────────────────────────────────────────────────────
 router.get('/voices', async (req, res) => {
   const s = require('../services/settingsService');
-  const voicesDir = s.get('voices_path') || path.join(__dirname, '..', 'data', 'voices');
+  const voicesDir = s.get('voices_path') || path.join(DATA_DIR, 'voices');
   let voices = [];
   if (fs.existsSync(voicesDir)) {
     voices = fs.readdirSync(voicesDir)
@@ -92,7 +93,7 @@ router.post('/voices', voiceUpload.single('voice'), (req, res) => {
 // ── DELETE /api/tts/voices/:filename ─────────────────────────────────────────
 router.delete('/voices/:filename', (req, res) => {
   const s = require('../services/settingsService');
-  const voicesDir = s.get('voices_path') || path.join(__dirname, '..', 'data', 'voices');
+  const voicesDir = s.get('voices_path') || path.join(DATA_DIR, 'voices');
   const filename = path.basename(req.params.filename); // prevent path traversal
   const filePath = path.join(voicesDir, filename);
 
@@ -126,6 +127,7 @@ async function speakChatterbox(req, res, s) {
     temperature  = defaults.temperature,
     model        = 'chatterbox',
   } = req.body;
+  console.log(`[tts] /speak voice=${voice} (req.body.voice=${req.body.voice || '(none)'}) default=${defaults.voice}`);
 
   const url = getChatterboxUrl();
   const processedText = preprocessText(text);

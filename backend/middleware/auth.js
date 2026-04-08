@@ -1,14 +1,16 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
+// Fresh per-process JWT secret. Intentionally NOT persisted: rotating the
+// secret on every backend restart invalidates all existing tokens, so closing
+// and reopening Liminal forces the user back through PasswordGate. This is the
+// desired behaviour for a single-user, locally-stored journal — the cost of
+// re-typing a password on launch is worth not leaving the app silently
+// authenticated for 30 days after a single login.
+const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+
 function getSecret() {
-  const s = require('../services/settingsService');
-  let secret = s.get('jwt_secret');
-  if (!secret) {
-    secret = crypto.randomBytes(32).toString('hex');
-    s.set('jwt_secret', secret);
-  }
-  return secret;
+  return SESSION_SECRET;
 }
 
 function requireAuth(req, res, next) {

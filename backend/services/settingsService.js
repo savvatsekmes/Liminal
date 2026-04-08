@@ -11,7 +11,7 @@ const SECRET_KEYS = new Set(['anthropic_api_key', 'openai_api_key', 'tavily_api_
 
 // Defaults (used when neither DB nor .env has a value)
 const DEFAULTS = {
-  llm_provider:              'claude',
+  llm_provider:              'ollama',
   claude_model:              'claude-opus-4-6',
   openai_model:              'gpt-4.1',
   ollama_url:                'http://localhost:11434',
@@ -20,7 +20,7 @@ const DEFAULTS = {
   chatterbox_url:            'http://localhost:8100',
   chatterbox_voice:          'Abigail.wav',
   chatterbox_exaggeration:   '0.6',
-  chatterbox_cfg_weight:     '0.9',
+  chatterbox_cfg_weight:     '0.10',
   chatterbox_temperature:    '1.3',
   tts_mode:                  'chatterbox',
   openai_tts_voice:          'nova',

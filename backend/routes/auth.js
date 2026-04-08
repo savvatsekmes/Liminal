@@ -5,9 +5,10 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const db = require('../database');
+const { DATA_DIR } = require('../paths');
 const { signToken, requireAuth } = require('../middleware/auth');
 
-const avatarDir = path.join(__dirname, '..', 'data', 'avatars');
+const avatarDir = path.join(DATA_DIR, 'avatars');
 if (!fs.existsSync(avatarDir)) fs.mkdirSync(avatarDir, { recursive: true });
 
 const avatarUpload = multer({
@@ -93,6 +94,7 @@ router.get('/me', requireAuth, (req, res) => {
   const user = db.prepare('SELECT username, onboarding_complete, avatar_path FROM users WHERE id = ?').get(req.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({
+    user_id: req.userId,
     username: user.username,
     onboarding_complete: !!user.onboarding_complete,
     avatar_url: user.avatar_path ? `/api/auth/avatar/${req.userId}?t=${Date.now()}` : null,
@@ -111,7 +113,7 @@ router.post('/avatar', requireAuth, avatarUpload.single('avatar'), (req, res) =>
 router.get('/avatar/:userId', (req, res) => {
   const user = db.prepare('SELECT avatar_path FROM users WHERE id = ?').get(req.params.userId);
   if (!user?.avatar_path) return res.status(404).json({ error: 'No avatar' });
-  const filePath = path.join(__dirname, '..', 'data', user.avatar_path);
+  const filePath = path.join(DATA_DIR, user.avatar_path);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
   res.sendFile(filePath);
 });
@@ -152,9 +154,7 @@ router.delete('/account', requireAuth, async (req, res) => {
   db.prepare('DELETE FROM users WHERE id = ?').run(uid);
 
   // Clean vectra index
-  const path = require('path');
-  const fs = require('fs');
-  const vectraDir = path.join(__dirname, '..', 'data', 'vectra');
+  const vectraDir = path.join(DATA_DIR, 'vectra');
   if (fs.existsSync(vectraDir)) {
     fs.rmSync(vectraDir, { recursive: true, force: true });
   }

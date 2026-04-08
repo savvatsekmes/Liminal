@@ -7,6 +7,7 @@ const { indexEntry } = require('../services/embeddingService');
 const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
+const { buildCardContext } = require('./cards');
 
 router.use(requireAuth);
 
@@ -14,8 +15,9 @@ router.use(requireAuth);
 // Body: { entryId, entryBody, entryText }
 // Returns: { blocks: [{title, body, quote, archetype}] }
 router.post('/', async (req, res) => {
-  const { entryId, entryBody, entryText } = req.body;
-  console.log(`[reflect] POST entryId=${entryId} userId=${req.userId} textLen=${(entryText||entryBody||'').length}`);
+  const { entryId, entryBody, entryText, archetype } = req.body;
+  const singleArchetype = archetype && archetype !== 'Auto' ? archetype : null;
+  console.log(`[reflect] POST entryId=${entryId} userId=${req.userId} textLen=${(entryText||entryBody||'').length} archetype=${singleArchetype || 'Auto'}`);
 
   if (!entryText && !entryBody) {
     return res.status(400).json({ error: 'entryText is required' });
@@ -27,46 +29,53 @@ router.post('/', async (req, res) => {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
 
   try {
-    // 1. Embed current entry and kick off retrieval + system prompt assembly
+    // 1. Build system prompt — single-archetype voice if requested, otherwise blended Auto
     const preferredName = portrait?.preferred_name?.trim() || null;
-    const systemPrompt = await memory.buildReflectSystemPrompt(portrait, text, entryId || null, req.userId, preferredName);
+    const systemPrompt = singleArchetype
+      ? await buildSingleArchetypeReflectPrompt(portrait, singleArchetype, req.userId)
+      : await memory.buildReflectSystemPrompt(portrait, text, entryId || null, req.userId, preferredName);
 
     // 2. LLM call — read HTML body from DB to avoid sending huge base64 over HTTP
     const entryRow = entryId ? db.prepare('SELECT body FROM entries WHERE id = ? AND user_id = ?').get(entryId, req.userId) : null;
     const htmlBody = entryRow?.body || entryBody || '';
     const ytContext = buildYoutubeContext(req.userId, htmlBody);
     const imgContext = buildImageContext(req.userId, htmlBody);
+    const cardContext = buildCardContext(htmlBody);
     const userMessage = `Here is today's journal entry:\n\n${text}`
       + (ytContext ? `\n\n---\nVIDEOS EMBEDDED IN THIS ENTRY:\n${ytContext}` : '')
-      + (imgContext ? `\n\n---\nIMAGES IN THIS ENTRY:\n${imgContext}` : '');
+      + (imgContext ? `\n\n---\nIMAGES IN THIS ENTRY:\n${imgContext}` : '')
+      + (cardContext ? `\n\n---\nCARDS PULLED IN THIS ENTRY:\n${cardContext}` : '');
     const rawResponse = await llm.call(systemPrompt, userMessage, { maxTokens: 2500 });
 
     // 3. Parse Mirror blocks from JSON response
+    //
+    // The LLM is asked to return strict JSON, but in practice it sometimes:
+    //   a) wraps the JSON in ```json fences
+    //   b) prefaces it with a sentence ("Here's your reflection: { ... }")
+    //   c) adds a trailing question or remark *after* the closing brace
+    // (a) and (c) both make JSON.parse(rawResponse) throw. We handle all three
+    // by locating the outermost { ... } via brace-matching and parsing that.
     let blocks = [];
     let opening = null;
-    try {
-      const parsed = JSON.parse(rawResponse.trim());
+    const parsed = extractJsonObject(rawResponse);
+    if (parsed) {
       blocks = parsed.blocks || [];
       opening = parsed.opening || null;
-    } catch {
-      // LLM wrapped JSON in markdown — strip it
-      const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[1]);
-          blocks = parsed.blocks || [];
-          opening = parsed.opening || null;
-        } catch {}
-      }
-      // Final fallback: treat the whole response as a single prose block
-      if (!blocks.length) {
-        blocks = [{ title: 'Reflection', body: rawResponse, quote: null, archetype: 'Auto' }];
-      }
+    }
+    // Final fallback: treat the whole response as a single prose block
+    if (!blocks.length) {
+      blocks = [{ title: 'Reflection', body: rawResponse, quote: null, archetype: singleArchetype || 'Auto' }];
+    }
+
+    // Force-tag every block with the chosen archetype so the frontend voice
+    // override resolves correctly even if the LLM forgot the field.
+    if (singleArchetype) {
+      blocks = blocks.map(b => ({ ...b, archetype: singleArchetype }));
     }
 
     // 4. Save blocks (with opening) and return response
     const savedData = { opening, blocks };
-    console.log(`[reflect] Saving ${blocks.length} blocks for entryId=${entryId}`);
+    console.log(`[reflect] Saving ${blocks.length} blocks for entryId=${entryId}, archetypes=${blocks.map(b => b.archetype).join(',')}`);
     if (entryId) {
       try {
         db.prepare(
@@ -129,8 +138,10 @@ router.get('/:entryId', (req, res) => {
   const saved = JSON.parse(row.blocks);
   // Support old format (plain array) and new format ({ opening, blocks })
   if (Array.isArray(saved)) {
+    console.log(`[reflect] GET archetypes=${saved.map(b => b.archetype).join(',')}`);
     res.json({ opening: null, blocks: saved });
   } else {
+    console.log(`[reflect] GET archetypes=${(saved.blocks || []).map(b => b.archetype).join(',')}`);
     res.json({ opening: saved.opening || null, blocks: saved.blocks || [] });
   }
 });
@@ -175,18 +186,28 @@ Return JSON with this shape:
 Rules: prose only, no bullets, bold sparingly (1-2 phrases max). Speak as one coherent voice — do not label which archetype you draw from. Show both sides. Speak directly using "you".
 Return ONLY the JSON object.`;
   } else {
-    // Single archetype voice — check for custom archetype prompt
-    let customContext = '';
+    // Single archetype voice — custom archetype prompt overrides built-in voice
+    let voice = null;
     try {
       const customs = JSON.parse(portrait?.custom_archetypes || '[]');
       const match = customs.find(c => c.name === archetype);
-      if (match?.prompt) customContext = `\nCharacter context: ${match.prompt}\n`;
+      if (match?.prompt) voice = match.prompt;
     } catch {}
+    if (!voice) voice = memory.getArchetypeVoice(archetype);
 
-    systemPrompt = `You are the ${archetype} voice in Liminal's reflection system.${customContext}
-${summary ? `Context about this person:\n${summary}\n` : ''}
+    // Voice anchoring strategy: lead with the voice instructions, keep the
+    // biographical summary short so it can't drown out the voice's attention
+    // mass, then ECHO the voice anchor immediately before generation. Smaller
+    // models (qwen 9B etc) need the voice to be both first AND last in context.
+    const shortSummary = summary && summary.length > 600 ? summary.slice(0, 600) + '…' : (summary || '');
 
-Respond to the journal entry below as the ${archetype} archetype — one block only, focused on the theme: "${blockTitle || 'this entry'}".
+    systemPrompt = `You are the ${archetype} voice. Speak ONLY as ${archetype} — no other voice, tradition, or register.
+
+${voice || ''}
+
+${shortSummary ? `Brief context about this person (do not let it pull you out of voice):\n${shortSummary}\n` : ''}
+
+Task: respond to the journal entry below with ONE reflection block focused on the theme: "${blockTitle || 'this entry'}".
 
 Return JSON with this shape:
 {
@@ -196,20 +217,17 @@ Return JSON with this shape:
   "archetype": "${archetype}"
 }
 
-Rules: prose only, no bullets, bold sparingly (1-2 phrases max), warm and direct, show both sides.
+Format rules: prose only, no bullets, bold sparingly (1-2 phrases max). Show both sides. Speak directly as "you".
+
+VOICE REMINDER — this is the most important rule: stay unmistakably in the ${archetype} voice throughout. Your vocabulary, sentence rhythm, imagery, and frame must make it obvious to a reader which voice is speaking. If you sound like a generic "wise reflection", you have failed. Re-read the USE / AVOID list above before writing.
+
 Return ONLY the JSON object.`;
   }
 
   try {
     const raw = await llm.call(systemPrompt, `Journal entry:\n\n${entryText}`, { maxTokens: 600 });
-    let block = {};
-    try {
-      block = JSON.parse(raw.trim());
-    } catch {
-      const m = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
-      if (m) block = JSON.parse(m[1]);
-      else block = { title: blockTitle || 'Reflection', body: raw, quote: null, archetype: isAuto ? 'Auto' : archetype };
-    }
+    const parsed = extractJsonObject(raw);
+    const block = parsed || { title: blockTitle || 'Reflection', body: raw, quote: null, archetype: isAuto ? 'Auto' : archetype };
     res.json(block);
   } catch (err) {
     console.error('[reflect/block] Error:', err.message);
@@ -282,6 +300,98 @@ Rules:
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Extract the first balanced { ... } object from an LLM response and JSON.parse
+// it. Tolerates leading prose, trailing prose, and ```json fences. Returns the
+// parsed object or null if no parseable object is found. We try the largest
+// candidate first (outermost braces) and progressively shrink on failure to
+// handle the rare case where the response contains an inner JSON-shaped string.
+function extractJsonObject(raw) {
+  if (!raw) return null;
+
+  // Strip ```json or ``` fences if present — the JSON often lives inside.
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
+  const haystack = fenced ? fenced[1] : raw;
+
+  const start = haystack.indexOf('{');
+  if (start === -1) return null;
+
+  // Walk forward tracking string state + brace depth so braces inside string
+  // literals are ignored. Try parsing each balanced candidate from largest to
+  // smallest match.
+  const candidates = [];
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < haystack.length; i++) {
+    const ch = haystack[i];
+    if (inStr) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"')  { inStr = false; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        candidates.push(haystack.slice(start, i + 1));
+        break; // outermost match — that's what we want
+      }
+    }
+  }
+
+  for (const c of candidates) {
+    try { return JSON.parse(c); } catch {}
+  }
+  return null;
+}
+
+// Build a single-archetype reflect prompt: same multi-block JSON shape that
+// /api/reflect normally returns, but spoken in ONE specific voice (Taoist, Zen,
+// custom etc) instead of the blended Auto voice. Voice anchored at start AND
+// end so smaller models stay in-character.
+async function buildSingleArchetypeReflectPrompt(portrait, archetype, userId) {
+  const summary = await memory.synthesizeMemory(userId);
+  const shortSummary = summary && summary.length > 600 ? summary.slice(0, 600) + '…' : (summary || '');
+
+  // Custom archetype prompt overrides the built-in voice if the user defined one
+  let voice = null;
+  try {
+    const customs = JSON.parse(portrait?.custom_archetypes || '[]');
+    const match = customs.find(c => c.name === archetype);
+    if (match?.prompt) voice = match.prompt;
+  } catch {}
+  if (!voice) voice = memory.getArchetypeVoice(archetype);
+
+  return `You are the ${archetype} voice. Speak ONLY as ${archetype} — no other voice, tradition, or register.
+
+${voice || ''}
+
+${shortSummary ? `Brief context about this person (do not let it pull you out of voice):\n${shortSummary}\n` : ''}
+
+Task: respond to the journal entry below with 2–4 reflection blocks, each focused on a different theme you notice in the entry.
+
+Return JSON with this exact shape:
+{
+  "opening": "One short evocative line that names what you sense in this entry, in the ${archetype} voice",
+  "blocks": [
+    {
+      "title": "A Named Theme",
+      "body": "Prose reflection in the ${archetype} voice",
+      "quote": "Optional quote or null",
+      "archetype": "${archetype}"
+    }
+  ]
+}
+
+Format rules: prose only, no bullets, bold sparingly (1-2 phrases max). Show both sides. Speak directly as "you". Each block titled with the THEME, not the archetype name.
+
+VOICE REMINDER — this is the most important rule: stay unmistakably in the ${archetype} voice throughout every block. Your vocabulary, sentence rhythm, imagery, and frame must make it obvious to a reader which voice is speaking. If you sound like a generic "wise reflection", you have failed. Re-read the USE / AVOID list above before writing.
+
+Return ONLY the JSON object.`;
+}
 
 function buildPortraitString(portrait) {
   if (!portrait) return '';

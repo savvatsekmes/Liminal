@@ -8,6 +8,7 @@ router.use(requireAuth);
 // ── GET /api/portrait ────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
   const row = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
+  console.log(`[portrait] GET userId=${req.userId} archetype_voices_raw=${row?.archetype_voices}`);
   if (!row) return res.json({});
 
   // Parse JSON arrays
@@ -16,6 +17,7 @@ router.get('/', (req, res) => {
     archetypes: parseJSON(row.archetypes, []),
     active_archetypes: parseJSON(row.active_archetypes, []),
     custom_archetypes: parseJSON(row.custom_archetypes, []),
+    archetype_voices: parseJSON(row.archetype_voices, {}),
   };
   res.json(parsed);
 });
@@ -46,6 +48,7 @@ router.put('/', (req, res) => {
     life_path_number, soul_card, life_path_card,
     working_tarot_card, season_of_life, current_intention,
     custom_archetypes,
+    archetype_voices,
     weather_city, weather_lat, weather_lng,
   } = req.body;
 
@@ -115,6 +118,12 @@ router.put('/', (req, res) => {
     params.push(JSON.stringify(custom_archetypes));
   }
 
+  if (archetype_voices !== undefined) {
+    console.log(`[portrait] PUT archetype_voices=${JSON.stringify(archetype_voices)}`);
+    fields.push('archetype_voices = ?');
+    params.push(JSON.stringify(archetype_voices || {}));
+  }
+
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 
   fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -128,6 +137,7 @@ router.put('/', (req, res) => {
     archetypes: parseJSON(updated.archetypes, []),
     active_archetypes: parseJSON(updated.active_archetypes, []),
     custom_archetypes: parseJSON(updated.custom_archetypes, []),
+    archetype_voices: parseJSON(updated.archetype_voices, {}),
   });
 });
 

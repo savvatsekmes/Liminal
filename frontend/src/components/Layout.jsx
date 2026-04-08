@@ -18,7 +18,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    paddingTop: '48px',
+    paddingTop: '12px',
     paddingBottom: '12px',
     borderRight: 'var(--border-style)',
     background: 'var(--near-white)',
@@ -139,6 +139,8 @@ const styles = {
 export default function Layout({ children, activeView, onViewChange, onLogout, onLock, avatarUrl, username }) {
   const { t, lang, setLanguage } = useLanguage();
   const [entryListOpen, setEntryListOpen] = useState(true);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
   const [entryListWidth, startEntryDrag] = useResizable(296, { min: 220, max: 480 });
   // Mirror split as percentage (0–100) of content area
   const [mirrorPct, setMirrorPct] = useState(50);
@@ -188,6 +190,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
     <div style={styles.root}>
       {/* Left icon sidebar */}
       <nav style={styles.sidebar}>
+        <div style={styles.sidebarSpacer} />
         <div style={{ ...styles.sidebarLogo, cursor: 'pointer' }} onClick={() => onViewChange('home')}><img src="/logo.png" alt="Liminal" style={styles.sidebarLogoImg} /></div>
 
         <SidebarButton
@@ -276,7 +279,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
 
         {/* User avatar + popout */}
         <div style={{ position: 'relative' }} ref={popoutRef}>
-          {avatarUrl ? (
+          {avatarUrl && !avatarFailed ? (
             <img
               src={avatarUrl}
               alt={username}
@@ -285,6 +288,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
                 borderColor: popoutOpen || activeView === 'settings' ? 'var(--strong)' : 'transparent',
               }}
               onClick={() => setPopoutOpen((v) => !v)}
+              onError={() => setAvatarFailed(true)}
             />
           ) : (
             <div

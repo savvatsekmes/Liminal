@@ -6,12 +6,12 @@
 
 const path = require('path');
 const fs = require('fs');
+const { DATA_DIR } = require('../paths');
 
 let pipeline = null;
 let pipelineLoading = false;
 let pipelineError = null;
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
 const VECTRA_DIR = path.join(DATA_DIR, 'vectra');
 
 if (!fs.existsSync(VECTRA_DIR)) fs.mkdirSync(VECTRA_DIR, { recursive: true });

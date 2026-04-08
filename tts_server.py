@@ -35,8 +35,13 @@ log = logging.getLogger("tts_server")
 
 PORT       = int(os.environ.get("TTS_PORT", 8100))
 BASE_DIR   = Path(__file__).parent
-VOICES_DIR = Path(os.environ.get("VOICES_DIR", BASE_DIR / "backend" / "data" / "voices"))
-DB_PATH    = BASE_DIR / "backend" / "data" / "liminal.db"
+
+# Production override: Electron sets LIMINAL_USER_DATA to the per-OS user data
+# directory. In dev (no env var), fall back to the original repo-relative paths
+# so the existing workflow (`python tts_server.py` from repo root) keeps working.
+USER_DATA_DIR = Path(os.environ.get("LIMINAL_USER_DATA", BASE_DIR / "backend" / "data"))
+VOICES_DIR    = Path(os.environ.get("VOICES_DIR", USER_DATA_DIR / "voices"))
+DB_PATH       = USER_DATA_DIR / "liminal.db"
 
 def resolve_gpu_by_name(name: str) -> str | None:
     """Find cuda:N index by GPU name substring (e.g. '4090' matches 'NVIDIA GeForce RTX 4090')."""
@@ -49,9 +54,16 @@ def resolve_gpu_by_name(name: str) -> str | None:
             return f"cuda:{i}"
     return None
 
+def _mps_available() -> bool:
+    """Check for Apple Silicon MPS (Metal) backend."""
+    try:
+        return bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
+    except Exception:
+        return False
+
 def resolve_device() -> str:
     """Pick the device to run on, checking env → DB → auto.
-    Supports cuda:N indices or GPU name substrings (e.g. '4090', 'RTX 5090')."""
+    Supports cuda:N indices, GPU name substrings (e.g. '4090'), 'mps', or 'cpu'."""
     raw = None
 
     # 1. Explicit env var
@@ -74,15 +86,19 @@ def resolve_device() -> str:
     if raw:
         if raw.startswith("cuda:") or raw == "cpu":
             return raw
-        # Treat as GPU name substring
+        if raw == "mps":
+            return "mps" if _mps_available() else "cpu"
+        # Treat as GPU name substring (CUDA only — MPS has only one device)
         match = resolve_gpu_by_name(raw)
         if match:
             return match
         log.warning(f"GPU '{raw}' not found, falling back to auto")
 
-    # 4. Auto: first CUDA GPU, else CPU
+    # 4. Auto: first CUDA GPU → MPS (Apple Silicon) → CPU
     if torch.cuda.is_available() and torch.cuda.device_count() > 0:
         return "cuda:0"
+    if _mps_available():
+        return "mps"
     return "cpu"
 
 _requested = resolve_device()
@@ -164,7 +180,12 @@ def list_models():
 
 @app.get("/device")
 def device_info():
-    info = {"device": DEVICE, "cuda": torch.cuda.is_available(), "compat_mode": COMPAT_MODE}
+    info = {
+        "device": DEVICE,
+        "cuda": torch.cuda.is_available(),
+        "mps": _mps_available(),
+        "compat_mode": COMPAT_MODE,
+    }
     if DEVICE.startswith("cuda"):
         idx = int(DEVICE.split(":")[-1]) if ":" in DEVICE else 0
         major, minor = torch.cuda.get_device_capability(idx)
@@ -172,6 +193,9 @@ def device_info():
         info["vram_gb"]  = round(torch.cuda.get_device_properties(idx).total_memory / 1e9, 1)
         info["bfloat16"] = torch.cuda.is_bf16_supported()
         info["compute_capability"] = f"{major}.{minor}"
+    elif DEVICE == "mps":
+        info["gpu_name"] = "Apple Silicon GPU (Metal)"
+        info["vram_gb"] = "shared"
     return info
 
 # ── Text chunking ─────────────────────────────────────────────────────────────

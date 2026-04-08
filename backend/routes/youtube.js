@@ -7,10 +7,50 @@ const db = require('../database');
 router.use(requireAuth);
 
 // ── Transcript fetcher ─────────────────────────────────────────────────────
-// Uses the youtube-transcript package (InnerTube API) — much more reliable
-// than HTML scraping. Falls back to direct XML approach if unavailable.
+// Calls YouTube's InnerTube API directly with the ANDROID client. This is the
+// only approach that consistently works in 2025 — the web `timedtext` endpoint
+// requires session-bound auth and returns empty bodies otherwise, and the
+// `youtube-transcript` npm package is broken (its package.json declares
+// "type":"module" but ships CJS, so require() returns an empty object).
+const ANDROID_CLIENT = {
+  context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } },
+};
+const ANDROID_UA = 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)';
+
+function decodeEntities(s) {
+  return s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)));
+}
+
+function parseTimedtextXml(xml) {
+  // YouTube serves two XML formats depending on track + client:
+  //   1. New: <p t="ms" d="ms">text<s>...</s></p>     (most common today)
+  //   2. Old: <text start="s" dur="s">text</text>     (legacy)
+  const parts = [];
+  const pRegex = /<p\b[^>]*>([\s\S]*?)<\/p>/g;
+  let m;
+  while ((m = pRegex.exec(xml)) !== null) {
+    let inner = m[1];
+    // Strip any nested <s> tags but keep their text content
+    inner = inner.replace(/<s\b[^>]*>([^<]*)<\/s>/g, '$1').replace(/<[^>]+>/g, '');
+    const text = decodeEntities(inner).trim();
+    if (text) parts.push(text);
+  }
+  if (parts.length === 0) {
+    const tRegex = /<text\b[^>]*>([\s\S]*?)<\/text>/g;
+    while ((m = tRegex.exec(xml)) !== null) {
+      const text = decodeEntities(m[1].replace(/<[^>]+>/g, '')).trim();
+      if (text) parts.push(text);
+    }
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 async function fetchYoutubeTranscript(videoId) {
-  // ── Title (always try to get this) ──────────────────────────────────────
+  // ── Title (always try to get this, even if captions fail) ───────────────
   let title = '';
   try {
     const oembedRes = await fetch(
@@ -22,65 +62,41 @@ async function fetchYoutubeTranscript(videoId) {
     }
   } catch {}
 
-  // ── Transcript via youtube-transcript package ────────────────────────────
+  // ── InnerTube ANDROID call → captionTracks ──────────────────────────────
   try {
-    const { YoutubeTranscript } = require('youtube-transcript');
-    const items = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
-    const transcript = items.map((i) => i.text).join(' ').replace(/\s+/g, ' ').trim();
+    const playerRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': ANDROID_UA },
+      body: JSON.stringify({ ...ANDROID_CLIENT, videoId }),
+    });
+    if (!playerRes.ok) throw new Error(`InnerTube ${playerRes.status}`);
+    const player = await playerRes.json();
+
+    if (!title) {
+      title = player?.videoDetails?.title || '';
+    }
+
+    const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!Array.isArray(tracks) || tracks.length === 0) {
+      return { title, transcript: '', hadCaptions: false };
+    }
+
+    // Prefer manual English → ASR English → first available
+    const track =
+      tracks.find((t) => t.languageCode === 'en' && t.kind !== 'asr') ||
+      tracks.find((t) => t.languageCode === 'en') ||
+      tracks[0];
+
+    if (!track?.baseUrl) return { title, transcript: '', hadCaptions: false };
+
+    const xmlRes = await fetch(track.baseUrl, { headers: { 'User-Agent': ANDROID_UA } });
+    if (!xmlRes.ok) return { title, transcript: '', hadCaptions: false };
+    const xml = await xmlRes.text();
+    const transcript = parseTimedtextXml(xml);
+
     return { title, transcript, hadCaptions: !!transcript };
-  } catch (pkgErr) {
-    // Package not installed or video has no captions in English —
-    // try any available language before giving up
-    try {
-      const { YoutubeTranscript } = require('youtube-transcript');
-      const items = await YoutubeTranscript.fetchTranscript(videoId);
-      const transcript = items.map((i) => i.text).join(' ').replace(/\s+/g, ' ').trim();
-      return { title, transcript, hadCaptions: !!transcript };
-    } catch {}
-
-    // ── Fallback: scrape captionTracks from the page HTML ─────────────────
-    try {
-      const html = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Cookie': 'CONSENT=YES+cb; YSC=dummy; VISITOR_INFO1_LIVE=dummy',
-        },
-      }).then((r) => r.text());
-
-      if (!title) {
-        const tm = html.match(/<title>([^<]+)<\/title>/);
-        if (tm) title = tm[1].replace(' - YouTube', '').trim();
-      }
-
-      const markerIdx = html.indexOf('"captionTracks":');
-      if (markerIdx === -1) return { title, transcript: '', hadCaptions: false };
-
-      const start = markerIdx + '"captionTracks":'.length;
-      let depth = 0, end = start;
-      while (end < html.length) {
-        if (html[end] === '[') depth++;
-        if (html[end] === ']') { depth--; if (depth === 0) { end++; break; } }
-        end++;
-      }
-
-      const tracks = JSON.parse(html.slice(start, end));
-      const track =
-        tracks.find((t) => t.languageCode === 'en' && !t.kind) ||
-        tracks.find((t) => t.languageCode === 'en') ||
-        tracks[0];
-
-      if (!track?.baseUrl) return { title, transcript: '', hadCaptions: false };
-
-      const xml = await fetch(track.baseUrl.replace(/&amp;/g, '&')).then((r) => r.text());
-      const transcript = xml
-        .replace(/<text[^>]*>/g, '').replace(/<\/text>/g, ' ').replace(/<[^>]+>/g, '')
-        .replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"')
-        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
-
-      return { title, transcript, hadCaptions: !!transcript };
-    } catch {}
-
+  } catch (err) {
+    console.error('[youtube] InnerTube fetch failed:', err.message);
     return { title, transcript: '', hadCaptions: false };
   }
 }

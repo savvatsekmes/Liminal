@@ -19,7 +19,7 @@ export const CardReading = Node.create({
   group: 'block',
   atom: true,
   selectable: false, // prevents accidental selection + deletion when adjacent nodes are deleted
-  draggable: true,
+  draggable: true,   // gated to only fire from [data-drag-handle] via editor-level dragstart guard
   isolating: true,
 
   addAttributes() {
@@ -64,7 +64,7 @@ const st = {
   wrapper: {
     margin: '20px 0',
     border: 'var(--border-style)',
-    borderRadius: '4px',
+    borderRadius: '14px',
     overflow: 'hidden',
     background: 'var(--near-white)',
     position: 'relative',
@@ -221,7 +221,7 @@ const st = {
     maxHeight: '80vh',
     background: 'var(--white)',
     border: 'var(--border-style)',
-    borderRadius: '4px',
+    borderRadius: '14px',
     boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
     display: 'flex',
     flexDirection: 'column',
@@ -343,6 +343,7 @@ function CardReadingView({ node, deleteNode }) {
         <div style={st.header}>
           <div
             data-drag-handle
+            draggable="true"
             style={{ ...st.dragHandle, opacity: hovered ? 0.8 : 0.3 }}
             title="Drag to reorder"
           >

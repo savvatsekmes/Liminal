@@ -45,6 +45,19 @@ app.use('/api/cards',    require('./routes/cards'));
 app.use('/api/sky',      require('./routes/sky'));
 app.use('/api/home',     require('./routes/home'));
 app.use('/api/layouts',  require('./routes/layouts'));
+app.use('/api/version',  require('./routes/version'));
+
+// ── Production: serve built frontend SPA from same origin (no CORS needed) ──
+// Electron main process sets LIMINAL_FRONTEND_DIST to the absolute path of
+// the built frontend (frontend/dist) bundled into the installer.
+if (process.env.LIMINAL_FRONTEND_DIST) {
+  const distDir = path.resolve(process.env.LIMINAL_FRONTEND_DIST);
+  app.use(express.static(distDir));
+  // SPA fallback for client-side routing — exclude /api/*
+  app.get(/^\/(?!api\/).*/, (req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
 
 // ── JSON error handler (prevents HTML 500 pages) ─────────────────────────────
 // Must be registered AFTER all routes.

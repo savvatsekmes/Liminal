@@ -838,7 +838,12 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     if (playingMsgId === msg.id) { stopSpeak(audioRef, cancelRef); setPlayingMsgId(null); return; }
     cancelRef.current = false;
     setPlayingMsgId(msg.id);
-    await streamSpeak(msg.content, audioRef, cancelRef);
+    // Current dropdown selection wins over the archetype the message was
+    // generated with — switching the dropdown updates the voice immediately.
+    const speakArch = (archetype && archetype !== 'Auto') ? archetype : msg.archetype;
+    await streamSpeak(msg.content, audioRef, cancelRef, {
+      archetype: speakArch && speakArch !== 'Auto' ? speakArch : undefined,
+    });
     setPlayingMsgId(null);
   }
 

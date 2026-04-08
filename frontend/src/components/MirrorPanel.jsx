@@ -3,6 +3,7 @@ import MirrorBlock from './MirrorBlock';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from './ArchetypeAvatar';
+import { parseSqliteUtc } from '../utils/dates';
 import { apiFetch } from '../utils/api';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
@@ -147,7 +148,7 @@ const s = {
     transition: 'background 0.1s',
   },
   contextPopup: {
-    position: 'absolute',
+    position: 'fixed',
     display: 'flex',
     alignItems: 'center',
     gap: '2px',
@@ -257,22 +258,30 @@ export default function MirrorPanel({
         setContextPopup(null);
         return;
       }
-      const rootRect = bodyRef.current.closest('[style]')?.getBoundingClientRect() || { left: 0, top: 0 };
-      setContextPopup({
-        x: e.clientX - rootRect.left,
-        y: e.clientY - rootRect.top,
-        below: e.clientY > window.innerHeight * 0.6,
-        text,
-      });
+      setContextPopup({ x: e.clientX, y: e.clientY, text });
     }
   }, []);
+
+  // Voice selection for read-all / opening / selected-text reads:
+  //  1. If the user has a non-Auto archetype selected in the dropdown, use that
+  //     voice immediately — no need to re-reflect to hear the new voice.
+  //  2. Otherwise, if every block shares the same non-Auto archetype (from a
+  //     prior single-archetype reflect), fall back to that.
+  //  3. Otherwise leave unset so streamSpeak uses the system default.
+  function activeReadArchetype() {
+    if (selectedArchetype && selectedArchetype !== 'Auto') return selectedArchetype;
+    if (!blocks.length) return undefined;
+    const first = blocks[0]?.archetype;
+    if (!first || first === 'Auto') return undefined;
+    return blocks.every(b => b.archetype === first) ? first : undefined;
+  }
 
   async function handleReadOpening() {
     if (readingOpening) { stopSpeak(openingAudioRef, readingCancelledRef); setReadingOpening(false); return; }
     if (!opening) return;
     readingCancelledRef.current = false;
     setReadingOpening(true);
-    await streamSpeak(opening, openingAudioRef, readingCancelledRef);
+    await streamSpeak(opening, openingAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
     setReadingOpening(false);
   }
 
@@ -283,14 +292,14 @@ export default function MirrorPanel({
     if (!fullText.trim()) return;
     readingCancelledRef.current = false;
     setReadingAll(true);
-    await streamSpeak(fullText, ttsAudioRef, readingCancelledRef);
+    await streamSpeak(fullText, ttsAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
     setReadingAll(false);
   }
 
   function readSelectedText(text) {
     setContextPopup(null);
     readingCancelledRef.current = false;
-    streamSpeak(text, ttsAudioRef, readingCancelledRef);
+    streamSpeak(text, ttsAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
   }
 
   if (previewVersion) {
@@ -328,7 +337,7 @@ export default function MirrorPanel({
       </div>
 
       {/* Body */}
-      <div style={s.body} ref={bodyRef} onContextMenu={handleContextMenu}>
+      <div style={s.body} ref={bodyRef} data-page-context-menu onContextMenu={handleContextMenu}>
         {loading && <LoadingState />}
         {!loading && error && <div style={s.error}>{error}</div>}
         {!loading && !error && blocks.length === 0 && <EmptyState />}
@@ -360,7 +369,7 @@ export default function MirrorPanel({
           </div>
         )}
         {!loading && !error && blocks.map((block, i) => (
-          <MirrorBlock key={i} block={block} />
+          <MirrorBlock key={i} block={block} overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined} />
         ))}
       </div>
 
@@ -368,9 +377,8 @@ export default function MirrorPanel({
       {contextPopup && (
         <div ref={contextPopupRef} style={{
           ...s.contextPopup,
-          left: `${contextPopup.x}px`,
-          top: contextPopup.below ? `${contextPopup.y + 11}px` : `${contextPopup.y - 11}px`,
-          transform: contextPopup.below ? 'translate(0, 0)' : 'translate(0, -100%)',
+          left: `${contextPopup.x + 4}px`,
+          top: `${contextPopup.y + 4}px`,
         }}>
           <div
             style={s.contextBtn}
@@ -379,6 +387,19 @@ export default function MirrorPanel({
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             <WaveformIcon playing={false} /> {t('common.readAloud')}
+          </div>
+          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
+          <div
+            style={s.contextBtn}
+            onClick={async () => {
+              const text = contextPopup.text;
+              setContextPopup(null);
+              try { await navigator.clipboard.writeText(text); } catch {}
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            Copy
           </div>
         </div>
       )}
@@ -428,7 +449,7 @@ export default function MirrorPanel({
       <div style={s.footer}>
         <button
           style={{ ...s.reflectBtn, flex: 1, ...(loading ? s.reflectBtnLoading : {}) }}
-          onClick={onReflect}
+          onClick={() => onReflect(selectedArchetype)}
           disabled={loading}
         >
           {loading ? t('mirror.reflecting') : t('mirror.reflect')}
@@ -483,7 +504,7 @@ export default function MirrorPanel({
 
 function formatVersionDate(isoStr) {
   if (!isoStr) return '';
-  const d = new Date(isoStr);
+  const d = parseSqliteUtc(isoStr);
   const now = new Date();
   const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   if (d.toDateString() === now.toDateString()) return `Today, ${time}`;

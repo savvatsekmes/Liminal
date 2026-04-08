@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../utils/api';
+import { clearArchetypeVoiceCache } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES, isBuiltIn } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
@@ -187,6 +188,19 @@ const s = {
     lineHeight: '1.5',
     marginTop: '2px',
   },
+  voiceSelect: {
+    fontSize: '11px',
+    padding: '5px 8px',
+    border: 'var(--border-style)',
+    borderRadius: '12px',
+    background: 'var(--white)',
+    fontFamily: 'var(--font)',
+    color: 'var(--body)',
+    outline: 'none',
+    cursor: 'pointer',
+    maxWidth: '150px',
+    flexShrink: 0,
+  },
 };
 
 const TAB_LABELS = { style: 'context.responseStyle', archetypes: 'Archetypes', memory: 'context.memory' };
@@ -210,6 +224,8 @@ export default function MemoryPage() {
   const [customArchetypes, setCustomArchetypes] = useState([]);
   const [editingArch, setEditingArch] = useState(null); // null | { name, prompt, color, isNew }
   const [savingArch, setSavingArch] = useState(false);
+  const [archetypeVoices, setArchetypeVoices] = useState({}); // { archetypeName: voiceFilename }
+  const [availableVoices, setAvailableVoices] = useState([]); // [{ filename, name }]
 
   useEffect(() => {
     apiFetch('/api/memories')
@@ -226,9 +242,31 @@ export default function MemoryPage() {
         vals.slider_portrait_weight = p.slider_portrait_weight ?? 50;
         setSliders(vals);
         setCustomArchetypes(p.custom_archetypes || []);
+        setArchetypeVoices(p.archetype_voices || {});
       })
       .catch(() => {});
+
+    apiFetch('/api/tts/voices')
+      .then((r) => r.json())
+      .then((voices) => setAvailableVoices(Array.isArray(voices) ? voices : []))
+      .catch(() => {});
   }, []);
+
+  // ── Per-archetype voice helpers ──
+  async function setArchetypeVoice(name, voiceFilename) {
+    const updated = { ...archetypeVoices };
+    if (voiceFilename) updated[name] = voiceFilename;
+    else delete updated[name];
+    setArchetypeVoices(updated);
+    try {
+      await apiFetch('/api/portrait', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archetype_voices: updated }),
+      });
+      clearArchetypeVoiceCache();
+    } catch {}
+  }
 
   // ── Slider helpers ──
   function setSlider(key, val) {
@@ -347,6 +385,7 @@ export default function MemoryPage() {
 
   function handleDeleteArch(name) {
     saveCustomArchetypes(customArchetypes.filter((a) => a.name !== name));
+    if (archetypeVoices[name]) setArchetypeVoice(name, '');
   }
 
   const pinnedCount = memories.filter((m) => m.pinned).length;
@@ -463,6 +502,17 @@ export default function MemoryPage() {
                   <div style={s.archName}>{arch.value}</div>
                   <div style={s.archDesc}>{arch.description}</div>
                 </div>
+                <select
+                  style={s.voiceSelect}
+                  value={archetypeVoices[arch.value] || ''}
+                  onChange={(e) => setArchetypeVoice(arch.value, e.target.value)}
+                  title="Voice for this archetype"
+                >
+                  <option value="">System default</option>
+                  {availableVoices.map((v) => (
+                    <option key={v.filename} value={v.filename}>{v.name}</option>
+                  ))}
+                </select>
               </div>
             ))}
           </div>
@@ -484,6 +534,17 @@ export default function MemoryPage() {
                   <div style={s.archName}>{arch.name}</div>
                   <div style={s.archDesc}>{arch.prompt || 'No custom prompt'}</div>
                 </div>
+                <select
+                  style={s.voiceSelect}
+                  value={archetypeVoices[arch.name] || ''}
+                  onChange={(e) => setArchetypeVoice(arch.name, e.target.value)}
+                  title="Voice for this archetype"
+                >
+                  <option value="">System default</option>
+                  {availableVoices.map((v) => (
+                    <option key={v.filename} value={v.filename}>{v.name}</option>
+                  ))}
+                </select>
                 <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                   <button
                     style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '12px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'var(--font)' }}

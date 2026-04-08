@@ -6,7 +6,7 @@ import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
-import { useLayout } from '../hooks/useLayout';
+import { useLayout, WIDGET_LABELS } from '../hooks/useLayout';
 import LayoutEditor from '../components/LayoutEditor';
 import WidgetWrapper from '../components/WidgetWrapper';
 import { DndContext, pointerWithin, rectIntersection, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -240,7 +240,7 @@ const s = {
     fontSize: '14px',
     fontWeight: '600',
     color: 'var(--strong)',
-    lineHeight: 1,
+    lineHeight: 1.3,
   },
   insightLabel: {
     fontSize: '10px',
@@ -432,8 +432,9 @@ const s = {
   },
   dailyCardDivider: {
     width: '1px',
+    height: 137,
     background: 'var(--border)',
-    alignSelf: 'stretch',
+    flexShrink: 0,
     marginLeft: '40px',
   },
   dailyCardReading: {
@@ -1223,6 +1224,11 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [insight, setInsight] = useState(null);
   const [themes, setThemes] = useState([]);
   const [rhythm, setRhythm] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
+  const [sky, setSky] = useState(null);
+  const [tagged, setTagged] = useState({});
   const [insightPlaying, setInsightPlaying] = useState(false);
   const insightAudioRef = useRef(null);
   const insightCancelRef = useRef(false);
@@ -1330,7 +1336,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
     // Themes
     apiFetch('/api/home/themes').then(r => r.json()).then(data => {
-      if (data?.themes?.length >= 3) setThemes(data.themes);
+      if (data?.themes) setThemes(data.themes);
     }).catch(() => {});
 
     // Insight
@@ -1343,6 +1349,11 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       if (data?.rhythm) setRhythm(data.rhythm);
     }).catch(() => {});
 
+    // Goals
+    apiFetch('/api/home/goals').then(r => r.json()).then(data => {
+      if (data?.goals) setGoals(data.goals);
+    }).catch(() => {});
+
     apiFetch('/api/home/portrait-snippet').then(r => r.json()).then(data => {
       if (data?.snippet) setPortraitSnippet(data.snippet);
     }).catch(() => {});
@@ -1350,7 +1361,35 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     apiFetch('/api/home/weather').then(r => r.json()).then(data => {
       if (data?.weather) setWeather(data.weather);
     }).catch(() => {});
+
+    // Today's Sky widget
+    apiFetch('/api/home/sky').then(r => r.json()).then(data => {
+      if (data) setSky(data);
+    }).catch(() => {});
   }, []);
+
+  // Tag widget configs — id → backend source + tag
+  const TAG_WIDGET_CONFIG = {
+    gratitude:    { source: 'entries', tag: 'gratitude' },
+    dreams:       { source: 'entries', tag: 'dream' },
+    reading:      { source: 'notes',   tag: 'reading' },
+    bucket:       { source: 'notes',   tag: 'bucket' },
+    affirmations: { source: 'notes',   tag: 'affirmation' },
+    questions:    { source: 'notes',   tag: 'question' },
+  };
+
+  // Lazy-load each tag widget's data when it appears in the active layout
+  useEffect(() => {
+    const visible = layout.currentLayout.map(w => w.id).filter(id => TAG_WIDGET_CONFIG[id]);
+    visible.forEach(id => {
+      if (tagged[id]) return;
+      const { source, tag } = TAG_WIDGET_CONFIG[id];
+      apiFetch(`/api/home/tagged?source=${source}&tag=${tag}&limit=5`)
+        .then(r => r.json())
+        .then(data => setTagged(prev => ({ ...prev, [id]: data.items || [] })))
+        .catch(() => {});
+    });
+  }, [layout.currentLayout]);
 
   // Auto-grow textarea
   useEffect(() => {
@@ -1642,19 +1681,6 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               </div>
               {moon.meaning && <div style={s.moonMeaning}>{moon.meaning}</div>}
             </div>
-            {conditions && conditions.length > 0 && (
-              <>
-                <div style={s.moonDivider} />
-                <div style={s.conditionsInfo}>
-                  {conditions.map((c) => (
-                    <div key={c.planet} style={s.conditionRow}>
-                      <span style={s.conditionPlanet}>{c.planet}</span>
-                      <span style={s.conditionSign}>{c.sign}{c.retrograde ? ' ℞' : ''}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
             <span style={s.moonArrowLink} onClick={() => onNavigateToSky?.()} title="View Sky">&rsaquo;</span>
           </div>
         );
@@ -1854,20 +1880,73 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         );
       }
       case 'themes': {
-        if (themes.length < 3) return null;
         return (
           <div style={s.themesRhythmPill}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>Recurring Themes</span>
               <span style={s.themesPeriod}> ·  this month</span>
             </div>
-            <div style={s.themesRow}>
-              {themes.map(({ tag, count }) => {
-                const maxCount = themes[0]?.count || 1;
-                const scale = 0.85 + 0.15 * (count / maxCount);
-                return <span key={tag} style={{ ...s.themePill, fontSize: `${11 * scale}px` }} title={`${count} entries`}>{tag}</span>;
-              })}
+            {themes.length >= 3 ? (
+              <div style={s.themesRow}>
+                {themes.map(({ tag, count }) => {
+                  const maxCount = themes[0]?.count || 1;
+                  const scale = 0.85 + 0.15 * (count / maxCount);
+                  return <span key={tag} style={{ ...s.themePill, fontSize: `${11 * scale}px` }} title={`${count} entries`}>{tag}</span>;
+                })}
+              </div>
+            ) : (
+              <div style={{ ...s.themesRow, opacity: 0.55, fontSize: '12px', fontStyle: 'italic' }}>
+                No recurring themes yet — keep writing and patterns will surface here.
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'goals': {
+        return (
+          <div style={s.themesRhythmPill}>
+            <div style={s.themesHeader}>
+              <span style={s.themesLabel}>Top Goals</span>
+              <span style={s.themesPeriod}> ·  from your notes</span>
             </div>
+            {goals.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                {goals.map((g, i) => (
+                  <div
+                    key={g.id}
+                    onClick={() => onNavigateToNote?.(g.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '10px',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    title={g.preview || g.title}
+                  >
+                    <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600, minWidth: '14px', marginTop: '1px' }}>{i + 1}.</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.title || 'Untitled goal'}
+                      </div>
+                      {g.target_date && (
+                        <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+                          {new Date(g.target_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ ...s.themesRow, opacity: 0.55, fontSize: '12px', fontStyle: 'italic' }}>
+                No goals yet — create a note with type "goal" and they'll show up here.
+              </div>
+            )}
           </div>
         );
       }
@@ -1877,9 +1956,128 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           <div style={s.themesRhythmPill}>
             <div style={s.rhythmHeader}>
               <span style={s.rhythmLabel}>Your Rhythm</span>
-              <span style={s.rhythmPeriod}> ·  last 365 days</span>
             </div>
             <RhythmGrid rhythm={rhythm} />
+          </div>
+        );
+      }
+      case 'weather': {
+        return (
+          <div style={s.themesRhythmPill}>
+            <div style={s.themesHeader}>
+              <span style={s.themesLabel}>Weather</span>
+              {weather?.city && <span style={s.themesPeriod}> ·  {weather.city}</span>}
+            </div>
+            {weather ? (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginTop: '10px' }}>
+                <span style={{ fontSize: '28px' }}>{weather.icon}</span>
+                <span style={{ fontSize: '22px', fontWeight: 500, color: 'var(--strong)' }}>{weather.temp}°</span>
+                <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{weather.condition}</span>
+              </div>
+            ) : (
+              <div style={{ ...s.themesRow, opacity: 0.55, fontSize: '12px', fontStyle: 'italic' }}>
+                Set your location in Portrait to see today's weather.
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'sky': {
+        const hasData = (moon && moon.moonSign) || (conditions && conditions.length > 0);
+        return (
+          <div style={s.themesRhythmPill}>
+            <div style={s.themesHeader}>
+              <span style={s.themesLabel}>Today's Sky</span>
+            </div>
+            {hasData ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                {moon?.moonSign && (
+                  <div style={{ fontSize: '13px', color: 'var(--strong)' }}>
+                    Moon in {moon.moonSign} <span style={{ color: 'var(--muted)' }}>· {moon.phase}</span>
+                  </div>
+                )}
+                {conditions && conditions.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
+                    {conditions.map((c) => (
+                      <div key={c.planet} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                        <span style={{ color: 'var(--strong)' }}>{c.planet}</span>
+                        <span style={{ color: 'var(--muted)' }}>{c.sign}{c.retrograde ? ' ℞' : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {sky?.nextEvent && (
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
+                    Next: {sky.nextEvent.type}
+                    {sky.nextEvent.sign ? ` in ${sky.nextEvent.sign}` : ''}
+                    {' · '}
+                    {new Date(sky.nextEvent.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ ...s.themesRow, opacity: 0.55, fontSize: '12px', fontStyle: 'italic' }}>
+                Loading sky…
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'gratitude':
+      case 'dreams':
+      case 'reading':
+      case 'bucket':
+      case 'affirmations':
+      case 'questions': {
+        const cfg = TAG_WIDGET_CONFIG[widgetId];
+        const items = tagged[widgetId] || [];
+        const label = WIDGET_LABELS[widgetId];
+        const onClick = cfg.source === 'entries' ? onNavigateToEntry : onNavigateToNote;
+        const sourceLabel = cfg.source === 'entries' ? 'journal' : 'notes';
+        return (
+          <div style={s.themesRhythmPill}>
+            <div style={s.themesHeader}>
+              <span style={s.themesLabel}>{label}</span>
+              <span style={s.themesPeriod}> ·  from your {sourceLabel}</span>
+            </div>
+            {items.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                {items.map((it, i) => (
+                  <div
+                    key={it.id}
+                    onClick={() => onClick?.(it.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '10px',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    title={it.preview || it.title}
+                  >
+                    <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600, minWidth: '14px', marginTop: '1px' }}>{i + 1}.</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {it.title || `Untitled ${label.toLowerCase()}`}
+                      </div>
+                      {it.date && (
+                        <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+                          {new Date(it.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ ...s.themesRow, opacity: 0.55, fontSize: '12px', fontStyle: 'italic' }}>
+                Nothing here yet — tag a {cfg.source === 'entries' ? 'journal entry' : 'note'} with "{cfg.tag}".
+              </div>
+            )}
           </div>
         );
       }
@@ -1896,12 +2094,12 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     <div style={s.root}>
       <div style={s.inner}>
         {/* Greeting + Quick Ask row */}
-        <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
+        <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', minHeight: '160px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
           <img src="/logo.png" alt="Liminal" style={{ width: '120px', objectFit: 'contain', alignSelf: 'center', opacity: 0.85, flexShrink: 0, marginRight: '8px' }} />
-          <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '20px 28px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+          <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '32px 28px 16px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+              {avatarUrl && !avatarFailed ? (
+                <img src={avatarUrl} alt="" onError={() => setAvatarFailed(true)} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
               ) : (
                 <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', fontWeight: '600', color: 'var(--muted)', flexShrink: 0 }}>
                   {(displayName || '?')[0].toUpperCase()}
@@ -1919,9 +2117,11 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             {!layout.editMode && (
               <button
                 onClick={() => layout.setEditMode(true)}
-                style={{ alignSelf: 'flex-end', marginTop: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px', padding: 0, opacity: 0.6 }}
+                style={{ alignSelf: 'flex-end', marginTop: 'auto', marginRight: '-14px', marginBottom: '-4px', background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
               >
-                <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
                 Edit layout
               </button>
             )}
@@ -2095,7 +2295,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         {/* Widget zone */}
         <DndContext sensors={sensors} collisionDetection={customCollision} onDragEnd={handleDragEnd}>
           <SortableContext items={layout.currentLayout.map(w => w.id)} strategy={() => []}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'stretch' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '16px', alignItems: 'stretch' }}>
               {layout.currentLayout.map((widget) => {
                 const content = renderWidget(widget.id, widget.width);
                 if (!content && !layout.editMode) return null;

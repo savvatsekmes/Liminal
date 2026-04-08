@@ -21,12 +21,14 @@ import { useDictation } from '../hooks/useDictation';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
 import { apiFetch } from '../utils/api';
+import { parseSqliteUtc } from '../utils/dates';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
 import MicButton from '../components/MicButton';
 import CardPullModal from '../components/CardPullModal';
 import DoodleModal from '../components/DoodleModal';
 import { CardReading } from '../extensions/CardReading';
+import { atomDragGuard } from '../extensions/atomDragGuard';
 import VersionsPanel from '../components/VersionsPanel';
 import { useResizable } from '../hooks/useResizable';
 import Calendar from '../components/Calendar';
@@ -136,12 +138,18 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
       .catch(() => {});
   }, [activeNote?.id]);
 
-  async function handleReflect() {
+  async function handleReflect(archetype) {
     if (!activeNote?.id) return;
     setReflecting(true);
     setReflectError(null);
     try {
-      const res = await apiFetch(`/api/notes/${activeNote.id}/reflect`, { method: 'POST' });
+      const res = await apiFetch(`/api/notes/${activeNote.id}/reflect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          archetype: archetype && archetype !== 'Auto' ? archetype : undefined,
+        }),
+      });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setReflectBlocks(data.blocks || []);
@@ -907,10 +915,9 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         setContextPopup(null);
         return;
       }
-      const rootRect = editorWrapRef.current.getBoundingClientRect();
       setContextPopup({
-        x: e.clientX - rootRect.left,
-        y: e.clientY - rootRect.top,
+        x: e.clientX,
+        y: e.clientY,
         below: e.clientY > window.innerHeight * 0.6,
         text,
       });
@@ -1041,6 +1048,9 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       }),
     ],
     content: note.body || '',
+    editorProps: {
+      handleDOMEvents: { dragstart: atomDragGuard },
+    },
     onUpdate: ({ editor }) => {
       const noteId = noteRef.current.id; // capture NOW
       const body = editor.getHTML();
@@ -1127,7 +1137,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       </div>
 
       {/* Scrollable content */}
-      <div ref={editorWrapRef} onContextMenu={handleEditorContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
+      <div ref={editorWrapRef} data-page-context-menu onContextMenu={handleEditorContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
         <DefaultEditor note={note} editor={editor} />
         <div
           style={{ height: '240px', cursor: 'text' }}
@@ -1143,10 +1153,9 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         {/* Right-click read-aloud popup */}
         {contextPopup && (
           <div ref={contextPopupRef} style={{
-            position: 'absolute',
-            left: `${contextPopup.x}px`,
-            top: contextPopup.below ? `${contextPopup.y + 11}px` : `${contextPopup.y - 11}px`,
-            transform: contextPopup.below ? 'translate(0, 0)' : 'translate(0, -100%)',
+            position: 'fixed',
+            left: `${contextPopup.x + 4}px`,
+            top: `${contextPopup.y + 4}px`,
             display: 'flex',
             alignItems: 'center',
             gap: '2px',
@@ -1182,6 +1191,41 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
               <WaveformIcon playing={false} /> {t('common.readAloud')}
+            </div>
+            <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
+            <div
+              style={{
+                color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
+                padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
+                transition: 'background 0.12s',
+              }}
+              onClick={async () => {
+                const text = contextPopup.text;
+                setContextPopup(null);
+                try { await navigator.clipboard.writeText(text); } catch {}
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              Copy
+            </div>
+            <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
+            <div
+              style={{
+                color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
+                padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
+                transition: 'background 0.12s',
+              }}
+              onClick={async () => {
+                setContextPopup(null);
+                let clip = '';
+                try { clip = await navigator.clipboard.readText(); } catch {}
+                if (clip && editor) editor.chain().focus().insertContent(clip).run();
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              Paste
             </div>
           </div>
         )}
@@ -1399,7 +1443,7 @@ function GoalEditor({ note, onChange, editor }) {
 
 function formatVersionDate(isoStr) {
   if (!isoStr) return '';
-  const d = new Date(isoStr);
+  const d = parseSqliteUtc(isoStr);
   const now = new Date();
   const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   if (d.toDateString() === now.toDateString()) return `Today, ${time}`;
@@ -1474,15 +1518,26 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         setContextPopup(null);
         return;
       }
-      const rootRect = bodyRef.current.closest('[style]')?.getBoundingClientRect() || { left: 0, top: 0 };
       setContextPopup({
-        x: e.clientX - rootRect.left,
-        y: e.clientY - rootRect.top,
+        x: e.clientX,
+        y: e.clientY,
         below: e.clientY > window.innerHeight * 0.6,
         text,
       });
     }
   }, []);
+
+  // Voice for read-all / selected-text reads:
+  //  1. Dropdown selection (if non-Auto) — voice updates immediately, no re-reflect needed
+  //  2. Else, common archetype across all blocks (from a prior single-archetype reflect)
+  //  3. Else undefined → system default
+  function activeReadArchetype() {
+    if (selectedArchetype && selectedArchetype !== 'Auto') return selectedArchetype;
+    if (!blocks.length) return undefined;
+    const first = blocks[0]?.archetype;
+    if (!first || first === 'Auto') return undefined;
+    return blocks.every(b => b.archetype === first) ? first : undefined;
+  }
 
   async function handleReadAll() {
     if (readingAll) { stopSpeak(ttsAudioRef, readingCancelledRef); setReadingAll(false); return; }
@@ -1491,14 +1546,14 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
     if (!fullText.trim()) return;
     readingCancelledRef.current = false;
     setReadingAll(true);
-    await streamSpeak(fullText, ttsAudioRef, readingCancelledRef);
+    await streamSpeak(fullText, ttsAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
     setReadingAll(false);
   }
 
   function readSelectedText(text) {
     setContextPopup(null);
     readingCancelledRef.current = false;
-    streamSpeak(text, ttsAudioRef, readingCancelledRef);
+    streamSpeak(text, ttsAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
   }
 
   const panelStyle = {
@@ -1568,7 +1623,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
       </div>
 
       {/* Blocks */}
-      <div ref={bodyRef} onContextMenu={handleContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
+      <div ref={bodyRef} data-page-context-menu onContextMenu={handleContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
         {loading && (
           <div style={{ padding: '40px 24px', textAlign: 'center' }}>
             <div style={{ fontSize: '24px', color: 'var(--muted)', letterSpacing: '4px', animation: 'pulse 1.4s ease-in-out infinite' }}>· · ·</div>
@@ -1595,17 +1650,16 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         )}
 
         {blocks.map((block, i) => (
-          <MirrorBlock key={i} block={block} />
+          <MirrorBlock key={i} block={block} overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined} />
         ))}
       </div>
 
       {/* Right-click read-aloud popup */}
       {contextPopup && (
         <div ref={mirrorContextRef} style={{
-          position: 'absolute',
-          left: `${contextPopup.x}px`,
-          top: contextPopup.below ? `${contextPopup.y + 11}px` : `${contextPopup.y - 11}px`,
-          transform: contextPopup.below ? 'translate(0, 0)' : 'translate(0, -100%)',
+          position: 'fixed',
+          left: `${contextPopup.x + 4}px`,
+          top: `${contextPopup.y + 4}px`,
           display: 'flex',
           alignItems: 'center',
           gap: '2px',
@@ -1636,6 +1690,23 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             <WaveformIcon playing={false} /> {t('common.readAloud')}
+          </div>
+          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
+          <div
+            style={{
+              color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
+              padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
+              transition: 'background 0.12s',
+            }}
+            onClick={async () => {
+              const text = contextPopup.text;
+              setContextPopup(null);
+              try { await navigator.clipboard.writeText(text); } catch {}
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            Copy
           </div>
         </div>
       )}
@@ -1725,7 +1796,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         <button
           className="btn-primary"
           style={{ flex: 1, fontSize: '12px', padding: '9px 0', borderRadius: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)', opacity: (!hasContent || loading) ? 0.45 : 1 }}
-          onClick={onReflect}
+          onClick={() => onReflect(selectedArchetype)}
           disabled={!hasContent || loading}
         >
           {loading ? t('notes.reflecting') : t('notes.reflect')}

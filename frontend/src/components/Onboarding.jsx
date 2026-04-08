@@ -160,6 +160,7 @@ export default function Onboarding({ username, onComplete }) {
   const [data, setData] = useState({
     preferred_name: username || '',
     pronouns: '',
+    sex: '',
     birth_date: '',
     birth_time: '',
     birth_location: '',
@@ -377,6 +378,20 @@ function WhoYouAreStep({ data, set, onContinue, onSkipForNow, onSkipCompletely, 
         onChange={(e) => set('pronouns', e.target.value)}
         placeholder={t('onboarding.pronounsPlaceholder')}
       />
+      <div style={s.hint}>{t('common.optional')}</div>
+
+      <label style={s.label}>{t('onboarding.sex') || 'Sex'}</label>
+      <select
+        style={s.input}
+        value={data.sex}
+        onChange={(e) => set('sex', e.target.value)}
+      >
+        <option value="">—</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+        <option value="intersex">Intersex</option>
+        <option value="prefer_not_to_say">Prefer not to say</option>
+      </select>
       <div style={s.hint}>{t('common.optional')}</div>
 
       <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>

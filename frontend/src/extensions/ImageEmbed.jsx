@@ -20,7 +20,9 @@ export const ImageEmbed = Node.create({
   name: 'imageEmbed',
   group: 'block',
   atom: true,
-  draggable: true,
+  selectable: false, // prevents accidental NodeSelection + delete on adjacent edits
+  isolating: true,
+  draggable: true,   // gated to only fire from [data-drag-handle] via editor-level dragstart guard
 
   addAttributes() {
     return {
@@ -221,6 +223,7 @@ function ImageEmbedView({ node, updateAttributes, deleteNode }) {
         {/* Drag handle */}
         <div
           data-drag-handle
+          draggable="true"
           title="Drag to reorder"
           style={{
             position: 'absolute', top: '6px', left: '6px', zIndex: 10,
@@ -257,7 +260,7 @@ function ImageEmbedView({ node, updateAttributes, deleteNode }) {
           draggable={false}
           style={{
             display: 'block', width: '100%', height: 'auto',
-            borderRadius: '4px', border: 'var(--border-style)',
+            borderRadius: '14px', border: 'var(--border-style)',
           }}
         />
 

@@ -131,11 +131,39 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// True if a Tiptap HTML body contains a non-text node worth versioning even
+// when no prose has been typed (card pull, image, youtube embed, drawing, etc.).
+function hasNonTextNode(html) {
+  if (!html) return false;
+  return /(data-card-reading|data-image-embed|data-youtube-embed|data-drawing|<img\b|<canvas\b)/i.test(html);
+}
+
 // ── POST /api/entries/:id/snapshot ───────────────────────────────────────────
 // Called by the frontend after a successful save (throttled client-side to ~1 min).
 router.post('/:id/snapshot', (req, res) => {
   const existing = db.prepare('SELECT * FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!existing?.body) return res.json({ skipped: true });
+
+  // Skip empty Tiptap docs ("<p></p>", whitespace-only). An empty editor
+  // still serialises to "<p></p>" which is truthy, so we need to check for
+  // actual content. Accept the snapshot if there's either typed text OR a
+  // non-text node (card pull, image, youtube embed, etc.) — so a card-only
+  // or image-only entry still gets versioned.
+  const hasText = !!(existing.body_text && existing.body_text.trim());
+  const hasNonTextContent = hasNonTextNode(existing.body);
+  if (!hasText && !hasNonTextContent) {
+    return res.json({ skipped: true });
+  }
+
+  // Skip if the latest version already has identical content — avoids
+  // duplicate snapshots when the autosave fires repeatedly without changes
+  // (e.g. cursor moves, formatting toggles that produce no text diff).
+  const latest = db.prepare(
+    'SELECT body FROM entry_versions WHERE entry_id = ? ORDER BY saved_at DESC LIMIT 1'
+  ).get(req.params.id);
+  if (latest && latest.body === existing.body) {
+    return res.json({ skipped: true });
+  }
 
   db.prepare(
     'INSERT INTO entry_versions (entry_id, user_id, title, body, body_text) VALUES (?, ?, ?, ?, ?)'
@@ -147,6 +175,33 @@ router.post('/:id/snapshot', (req, res) => {
   if (old.length) db.prepare(`DELETE FROM entry_versions WHERE id IN (${old.map(() => '?').join(',')})`).run(...old.map(v => v.id));
 
   res.json({ ok: true });
+});
+
+// ── DELETE /api/entries/:id/versions/blank — clean up empty snapshots ───────
+// Removes versions with no body_text content. Called once on mount from the
+// VersionsPanel so existing users don't have to live with the historical
+// blank snapshots created before the guard above existed.
+router.delete('/:id/versions/blank', (req, res) => {
+  const existing = db.prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  if (!existing) return res.status(404).json({ error: 'Entry not found' });
+
+  // Delete versions with no typed text AND no non-text content (cards,
+  // images, embeds, drawings). The body LIKE checks mirror hasNonTextNode().
+  const result = db.prepare(
+    `DELETE FROM entry_versions
+     WHERE entry_id = ? AND user_id = ?
+       AND (body_text IS NULL OR TRIM(body_text) = '')
+       AND (body IS NULL OR (
+            body NOT LIKE '%data-card-reading%'
+        AND body NOT LIKE '%data-image-embed%'
+        AND body NOT LIKE '%data-youtube-embed%'
+        AND body NOT LIKE '%data-drawing%'
+        AND body NOT LIKE '%<img %'
+        AND body NOT LIKE '%<canvas%'
+       ))`
+  ).run(req.params.id, req.userId);
+
+  res.json({ deleted: result.changes });
 });
 
 // ── GET /api/entries/:id/versions ────────────────────────────────────────────

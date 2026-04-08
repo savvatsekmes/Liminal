@@ -24,6 +24,7 @@ import VersionsPanel from './VersionsPanel';
 import CardPullModal from './CardPullModal';
 import DoodleModal from './DoodleModal';
 import { CardReading } from '../extensions/CardReading';
+import { atomDragGuard } from '../extensions/atomDragGuard';
 import { apiFetch } from '../utils/api';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -196,12 +197,10 @@ export default function WritingCanvas({
         return;
       }
       // Don't prevent default — let the native context menu show too
-      const rootEl = editorWrapRef.current.closest('[data-canvas-root]');
-      const rootRect = rootEl ? rootEl.getBoundingClientRect() : { left: 0, top: 0 };
       setContextSaved(false);
       setContextPopup({
-        x: e.clientX - rootRect.left,
-        y: e.clientY - rootRect.top,
+        x: e.clientX,
+        y: e.clientY,
         below: e.clientY > window.innerHeight * 0.6,
         text,
       });
@@ -212,6 +211,9 @@ export default function WritingCanvas({
     if (!entry?.id) return;
     setVersionsLoading(true);
     try {
+      // Best-effort cleanup of historical blank snapshots created before the
+      // backend guard existed. Failure here must not block the load.
+      try { await apiFetch(`/api/entries/${entry.id}/versions/blank`, { method: 'DELETE' }); } catch {}
       const res = await apiFetch(`/api/entries/${entry.id}/versions`);
       const data = await res.json();
       setVersions(Array.isArray(data) ? data : []);
@@ -349,6 +351,7 @@ export default function WritingCanvas({
     content: entry?.body || '',
     editorProps: {
       attributes: { spellcheck: 'true' },
+      handleDOMEvents: { dragstart: atomDragGuard },
     },
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
@@ -399,7 +402,7 @@ export default function WritingCanvas({
   const words = wordCount(editor?.getText() || '');
 
   return (
-    <div style={s.root} data-canvas-root onContextMenu={handleContextMenu} onClick={() => contextPopup && setContextPopup(null)}>
+    <div style={s.root} data-canvas-root data-page-context-menu onContextMenu={handleContextMenu} onClick={() => contextPopup && setContextPopup(null)}>
       {/* Toolbar */}
       <div style={s.toolbar}>
         <button
@@ -648,10 +651,9 @@ export default function WritingCanvas({
       {/* Life context selection popup */}
       {contextPopup && (
         <div style={{
-          position: 'absolute',
-          left: `${contextPopup.x}px`,
-          top: contextPopup.below ? `${contextPopup.y + 11}px` : `${contextPopup.y - 11}px`,
-          transform: contextPopup.below ? 'translate(0, 0)' : 'translate(0, -100%)',
+          position: 'fixed',
+          left: `${contextPopup.x + 4}px`,
+          top: `${contextPopup.y + 4}px`,
           display: 'flex',
           alignItems: 'center',
           gap: '2px',
@@ -705,6 +707,39 @@ export default function WritingCanvas({
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             <WaveformIcon playing={false} /> {t('common.readAloud')}
+          </div>
+          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
+          <div style={{
+            color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
+            padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
+            transition: 'background 0.12s',
+          }}
+            onClick={async () => {
+              const text = contextPopup.text;
+              setContextPopup(null);
+              try { await navigator.clipboard.writeText(text); } catch {}
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            Copy
+          </div>
+          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
+          <div style={{
+            color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
+            padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
+            transition: 'background 0.12s',
+          }}
+            onClick={async () => {
+              setContextPopup(null);
+              let clip = '';
+              try { clip = await navigator.clipboard.readText(); } catch {}
+              if (clip && editor) editor.chain().focus().insertContent(clip).run();
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            Paste
           </div>
         </div>
       )}

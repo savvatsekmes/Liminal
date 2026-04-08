@@ -35,6 +35,8 @@ router.get('/pulse', async (req, res) => {
   let context = '';
   if (portrait) {
     if (portrait.preferred_name) context += `Name: ${portrait.preferred_name}. `;
+    if (portrait.pronouns) context += `Pronouns: ${portrait.pronouns}. `;
+    if (portrait.sex) context += `Sex: ${portrait.sex}. `;
     if (portrait.current_intention) context += `Intention: ${portrait.current_intention}. `;
     if (portrait.season_of_life) context += `Season: ${portrait.season_of_life}. `;
   }
@@ -87,6 +89,8 @@ router.get('/insight', async (req, res) => {
   let context = '';
   if (portrait) {
     if (portrait.preferred_name) context += `Name: ${portrait.preferred_name}. `;
+    if (portrait.pronouns) context += `Pronouns: ${portrait.pronouns}. `;
+    if (portrait.sex) context += `Sex: ${portrait.sex}. `;
     if (portrait.current_intention) context += `Intention: ${portrait.current_intention}. `;
     if (portrait.season_of_life) context += `Season: ${portrait.season_of_life}. `;
   }
@@ -168,6 +172,117 @@ router.get('/rhythm', (req, res) => {
   }));
 
   res.json({ rhythm });
+});
+
+// ── GET /api/home/goals — top 5 notes tagged "goal", soonest target first ──
+router.get('/goals', (req, res) => {
+  // Notes are categorized via the `tags` JSON array in this codebase, not the
+  // `type` column — so we match notes whose tags array contains "goal".
+  // Soonest target_date first (NULLs last), then most recently updated.
+  const rows = db.prepare(
+    `SELECT id, title, body, target_date, updated_at
+     FROM notes
+     WHERE user_id = ? AND tags LIKE '%"goal"%'
+     ORDER BY (target_date IS NULL), target_date ASC, updated_at DESC
+     LIMIT 5`
+  ).all(req.userId);
+
+  // Strip HTML from body for a clean preview snippet
+  function stripHtml(html) {
+    if (!html) return '';
+    return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  const goals = rows.map(r => {
+    const plain = stripHtml(r.body);
+    const title = r.title && r.title.trim() ? r.title.trim() : plain.slice(0, 80);
+    const preview = plain.slice(0, 140);
+    return {
+      id: r.id,
+      title,
+      preview: preview && preview !== title ? preview : '',
+      target_date: r.target_date || null,
+    };
+  });
+
+  res.json({ goals });
+});
+
+// ── GET /api/home/tagged — generic tag-list lookup for home widgets ─────────
+// Backs the Gratitude / Dreams / Reading List / Bucket List / Affirmations /
+// Open Questions widgets. Goals has its own dedicated route above; this one
+// is for the new tag widgets so they can share a single backend handler.
+router.get('/tagged', (req, res) => {
+  const source = req.query.source === 'entries' ? 'entries' : 'notes';
+  // Sanitise — tag goes straight into a LIKE pattern, so allow only safe chars.
+  const tag = String(req.query.tag || '').replace(/[^a-z0-9_-]/gi, '');
+  const limit = Math.min(Number(req.query.limit) || 5, 20);
+  if (!tag) return res.json({ items: [] });
+
+  const tagPattern = `%"${tag}"%`;
+  const rows = source === 'entries'
+    ? db.prepare(
+        `SELECT id, title, body_text, date, created_at, updated_at
+         FROM entries
+         WHERE user_id = ? AND tags LIKE ?
+         ORDER BY COALESCE(date, date(created_at)) DESC, updated_at DESC
+         LIMIT ?`
+      ).all(req.userId, tagPattern, limit)
+    : db.prepare(
+        `SELECT id, title, body, target_date, updated_at
+         FROM notes
+         WHERE user_id = ? AND tags LIKE ?
+         ORDER BY (target_date IS NULL), target_date ASC, updated_at DESC
+         LIMIT ?`
+      ).all(req.userId, tagPattern, limit);
+
+  function stripHtml(html) {
+    if (!html) return '';
+    return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  const items = rows.map(r => {
+    const plain = source === 'entries' ? (r.body_text || '') : stripHtml(r.body);
+    const title = r.title && r.title.trim() ? r.title.trim() : plain.slice(0, 80);
+    const preview = plain.slice(0, 140);
+    return {
+      id: r.id,
+      title,
+      preview: preview && preview !== title ? preview : '',
+      date: source === 'entries' ? (r.date || null) : (r.target_date || null),
+    };
+  });
+
+  res.json({ items });
+});
+
+// ── GET /api/home/sky — moon sign + retrogrades + next event, daily cache ───
+router.get('/sky', (req, res) => {
+  const sky = require('../services/skyService');
+  const today = new Date().toISOString().slice(0, 10);
+
+  const cached = db.prepare(
+    "SELECT data, entry_hash FROM home_cache WHERE user_id = ? AND cache_key = 'sky'"
+  ).get(req.userId);
+  if (cached && cached.entry_hash === today) return res.json(JSON.parse(cached.data));
+
+  const now = new Date();
+  const moon = sky.getMoonPhase(now);
+  const planets = sky.getPlanetaryConditions(now);
+  const upcoming = sky.getUpcomingEvents(now, 60);
+
+  const result = {
+    moonSign: moon.moonSign,
+    phase: moon.phase,
+    retrogrades: planets.filter(p => p.retrograde).map(p => ({ planet: p.planet, sign: p.sign })),
+    nextEvent: upcoming[0] || null,
+  };
+
+  db.prepare(
+    "INSERT OR REPLACE INTO home_cache (user_id, cache_key, data, entry_hash) VALUES (?, 'sky', ?, ?)"
+  ).run(req.userId, JSON.stringify(result), today);
+
+  res.json(result);
 });
 
 // ── GET /api/home/weather — current weather from portrait location ───────────

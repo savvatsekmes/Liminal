@@ -4,7 +4,15 @@ A journal for the in-between.
 
 ---
 
-## Prerequisites
+> **Just want to use Liminal?** Grab a prebuilt installer for Windows, macOS
+> (Apple Silicon), or Linux — see [INSTALL.md](INSTALL.md). The rest of this
+> README covers the **developer setup** for working on Liminal from source.
+
+---
+
+## Developer setup
+
+### Prerequisites
 
 1. **Node.js** — Install from https://nodejs.org (LTS version, 20.x or higher)
    - During install, check "Add to PATH"

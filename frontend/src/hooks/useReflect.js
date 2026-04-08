@@ -9,7 +9,7 @@ export function useReflect() {
   const [error, setError] = useState(null);
   const ttsOnline = useTtsOnline();
 
-  async function reflect(entry) {
+  async function reflect(entry, archetype) {
     if (!entry || !entry.body_text) return;
     setLoading(true);
     setError(null);
@@ -24,6 +24,7 @@ export function useReflect() {
           entryId: entry.id,
           entryText: entry.body_text || '',
           entryBody: strippedBody,
+          archetype: archetype && archetype !== 'Auto' ? archetype : undefined,
         }),
       });
 

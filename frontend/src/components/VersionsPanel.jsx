@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { parseSqliteUtc } from '../utils/dates';
 
 function formatVersion(isoStr) {
-  const d = new Date(isoStr);
+  const d = parseSqliteUtc(isoStr);
   const now = new Date();
   const today = now.toDateString();
   const yesterday = new Date(now - 86400000).toDateString();

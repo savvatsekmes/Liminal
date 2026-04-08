@@ -7,6 +7,11 @@ backend/node_modules/
 frontend/dist/
 frontend/build/
 
+# Electron-builder output (huge — packaged app + bundled node_modules)
+build/
+dist/
+dist-installers/
+
 # Database & data
 backend/data/
 !backend/data/*.js
@@ -41,3 +46,9 @@ __pycache__/
 *.pyo
 venv/
 .venv/
+
+# Bundled TTS voices (shipped via installer, too large for git)
+backend/default-voices/
+
+# Personal data exports
+notion_import_data.json

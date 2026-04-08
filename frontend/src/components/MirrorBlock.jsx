@@ -52,7 +52,7 @@ const s = {
   },
 };
 
-export default function MirrorBlock({ block }) {
+export default function MirrorBlock({ block, overrideArchetype }) {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
   const cancelRef = useRef(false);
@@ -62,7 +62,10 @@ export default function MirrorBlock({ block }) {
     const text = (block.title ? block.title + '. ' : '') + block.body + (block.quote ? ' ' + block.quote : '');
     cancelRef.current = false;
     setPlaying(true);
-    await streamSpeak(text, audioRef, cancelRef);
+    // Override (current dropdown selection) wins over the block's stored archetype
+    // so changing the dropdown updates the voice immediately, no re-reflect needed.
+    const arch = overrideArchetype || block.archetype;
+    await streamSpeak(text, audioRef, cancelRef, { archetype: arch });
     setPlaying(false);
   }
 

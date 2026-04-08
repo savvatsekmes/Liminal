@@ -97,7 +97,11 @@ export default function WidgetWrapper({ id, editMode, isLiminalDefault, width, o
   const cleanTransform = transform ? { ...transform, scaleX: 1, scaleY: 1 } : transform;
 
   const currentWidth = width || 100;
-  const flexBasis = currentWidth === 100 ? '100%' : `calc(${currentWidth}% - 8px)`;
+  // Parent is a 10-column CSS grid, so widths map directly to column spans:
+  // 20%→2, 30%→3, 40%→4, 50%→5, 60%→6, 70%→7, 80%→8, 100%→10. Grid `gap`
+  // is built into the track sizing, so any combination of widths summing to
+  // 100% (e.g. 30+40+30) lays out cleanly without overflow.
+  const colSpan = Math.max(1, Math.round(currentWidth / 10));
 
   const isMin = currentWidth <= WIDTH_OPTIONS[0];
   const isMax = currentWidth >= WIDTH_OPTIONS[WIDTH_OPTIONS.length - 1];
@@ -109,12 +113,11 @@ export default function WidgetWrapper({ id, editMode, isLiminalDefault, width, o
     transition,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10 : 'auto',
-    flex: `0 0 ${flexBasis}`,
-    maxWidth: flexBasis,
+    gridColumn: `span ${colSpan}`,
   };
 
   if (!editMode) {
-    return <div style={{ flex: `0 0 ${flexBasis}`, maxWidth: flexBasis, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>{children}</div>;
+    return <div style={{ gridColumn: `span ${colSpan}`, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>{children}</div>;
   }
 
   return (

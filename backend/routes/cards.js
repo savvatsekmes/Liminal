@@ -65,6 +65,8 @@ router.get('/daily', async (req, res) => {
     let context = '';
     if (portrait) {
       if (portrait.preferred_name) context += `Name: ${portrait.preferred_name}. `;
+      if (portrait.pronouns) context += `Pronouns: ${portrait.pronouns}. `;
+      if (portrait.sex) context += `Sex: ${portrait.sex}. `;
       if (portrait.mbti) context += `MBTI: ${portrait.mbti}. `;
       if (portrait.current_intention) context += `Current intention: ${portrait.current_intention}. `;
       if (portrait.season_of_life) context += `Season of life: ${portrait.season_of_life}. `;
@@ -341,4 +343,58 @@ Respond with ONLY a JSON array, no other text:
   }
 });
 
+// ── Shared helper ──────────────────────────────────────────────────────────
+// Extract card-pull context from HTML content containing <div data-card-reading>
+// blocks. Used by reflect + notes reflect endpoints so card pulls are visible
+// to the LLM. The frontend (CardReading.jsx) base64-encodes the cards JSON and
+// reading text via btoa(unescape(encodeURIComponent(str))) — Buffer.from(...,
+// 'base64').toString('utf-8') is the matching decoder on the Node side.
+function decodeB64Utf8(s) {
+  try { return Buffer.from(s || '', 'base64').toString('utf-8'); } catch { return ''; }
+}
+
+function buildCardContext(htmlContent) {
+  if (!htmlContent) return '';
+
+  // Match each card-reading block. Attribute order is fixed by renderHTML in
+  // CardReading.jsx but we use a tolerant per-attribute regex anyway.
+  const blockRegex = /<div\b[^>]*\bdata-card-reading\b[^>]*>/g;
+  const blocks = [...htmlContent.matchAll(blockRegex)];
+  if (!blocks.length) return '';
+
+  const sections = [];
+  for (const m of blocks) {
+    const tag = m[0];
+    const cardsB64    = (tag.match(/data-cards="([^"]*)"/)       || [])[1] || '';
+    const readingB64  = (tag.match(/data-reading="([^"]*)"/)     || [])[1] || '';
+    const deckType    = (tag.match(/data-deck-type="([^"]*)"/)   || [])[1] || 'tarot';
+    const spreadName  = (tag.match(/data-spread-name="([^"]*)"/) || [])[1] || '';
+
+    let cards = [];
+    try { cards = JSON.parse(decodeB64Utf8(cardsB64) || '[]'); } catch {}
+    const reading = decodeB64Utf8(readingB64).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (!cards.length && !reading) continue;
+
+    const deckLabel = deckType === 'tarot' ? 'Tarot' : 'Liminal Oracle';
+    const header = `${deckLabel}${spreadName ? ' — ' + spreadName : ''}`;
+    const cardLines = cards.map((c, i) => {
+      const pos     = c.position ? `[${c.position}] ` : '';
+      const rev     = c.reversed ? ' (Reversed)' : '';
+      const meaning = c.reversed
+        ? (c.reversedMeaning || c.reversed_meaning || '')
+        : (c.uprightMeaning  || c.upright_meaning  || c.meaning || '');
+      return `${i + 1}. ${pos}${c.name || 'Unknown'}${rev}${meaning ? ' — ' + meaning : ''}`;
+    }).join('\n');
+
+    let section = `${header}\n${cardLines}`;
+    if (reading) section += `\n\nReading given:\n${reading.slice(0, 1500)}`;
+    sections.push(section);
+  }
+
+  if (!sections.length) return '';
+  return sections.join('\n\n---\n\n');
+}
+
 module.exports = router;
+module.exports.buildCardContext = buildCardContext;

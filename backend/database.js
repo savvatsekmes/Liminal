@@ -1,9 +1,6 @@
 const Database = require('better-sqlite3');
 const path = require('path');
-const fs = require('fs');
-
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const { DATA_DIR } = require('./paths');
 
 const db = new Database(path.join(DATA_DIR, 'liminal.db'));
 
@@ -165,6 +162,7 @@ addColumnSafe('portrait', 'current_intention', 'TEXT');
 addColumnSafe('portrait', 'sex', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'pronouns', 'TEXT DEFAULT \'\'');
 addColumnSafe('portrait', 'custom_archetypes', "TEXT NOT NULL DEFAULT '[]'");
+addColumnSafe('portrait', 'archetype_voices', "TEXT NOT NULL DEFAULT '{}'");
 addColumnSafe('portrait', 'slider_sky_weight', 'INTEGER DEFAULT 50');
 addColumnSafe('portrait', 'slider_portrait_weight', 'INTEGER DEFAULT 50');
 addColumnSafe('portrait', 'weather_city', 'TEXT');

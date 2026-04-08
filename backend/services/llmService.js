@@ -9,7 +9,7 @@ function getSettings() {
   // Lazy-require to avoid circular deps at startup
   const s = require('./settingsService');
   return {
-    provider:         s.get('llm_provider') || 'claude',
+    provider:         s.get('llm_provider') || 'ollama',
     anthropicKey:     s.get('anthropic_api_key'),
     claudeModel:      s.get('claude_model') || 'claude-opus-4-6',
     openaiKey:        s.get('openai_api_key'),

@@ -6,6 +6,7 @@ import WritingCanvas from './components/WritingCanvas';
 import MirrorPanel from './components/MirrorPanel';
 import PasswordGate from './components/PasswordGate';
 import Onboarding from './components/Onboarding';
+import SelectionMenu from './components/SelectionMenu';
 import HomePage from './pages/HomePage';
 import PortraitPage from './pages/PortraitPage';
 import NotesPage from './pages/NotesPage';
@@ -113,9 +114,9 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     }
   }
 
-  async function handleReflect() {
+  async function handleReflect(archetype) {
     if (!activeEntry) return;
-    await reflect(activeEntry);
+    await reflect(activeEntry, archetype);
   }
 
   return (
@@ -155,7 +156,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
           if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} />;
           if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
           if (activeView === 'memory') return <MemoryPage />;
-          if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />;
+          if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} onNavigate={handleViewChange} />;
 
           return (
             <WritingCanvas
@@ -190,6 +191,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
         ),
       }}
     </Layout>
+    <SelectionMenu />
     </>
   );
 }
@@ -212,7 +214,10 @@ export default function App() {
         .then((r) => r.json())
         .then((data) => {
           setUsername(data.username || getStoredUsername() || '');
+          // Optimistically construct the avatar URL even if /me reports null —
+          // the img onError fallback in Layout/HomePage handles a 404 cleanly.
           if (data.avatar_url) setAvatarUrl(data.avatar_url);
+          else if (data.user_id) setAvatarUrl(`/api/auth/avatar/${data.user_id}?t=${Date.now()}`);
           // Fetch language setting
           apiFetch('/api/settings').then(r => r.json()).then(s => {
             if (s.language && s.language !== 'en') setLanguage(s.language);
@@ -237,6 +242,15 @@ export default function App() {
 
   function handleAuthSuccess(u, onboardingComplete) {
     setUsername(u);
+    // After fresh login, fetch /me to pick up avatar_url and user_id —
+    // otherwise the avatar stays null until the user re-uploads or restarts.
+    apiFetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.avatar_url) setAvatarUrl(data.avatar_url);
+        else if (data.user_id) setAvatarUrl(`/api/auth/avatar/${data.user_id}?t=${Date.now()}`);
+      })
+      .catch(() => {});
     if (onboardingComplete) {
       setAuthStatus('ok');
     } else {

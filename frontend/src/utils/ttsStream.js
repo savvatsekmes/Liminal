@@ -4,17 +4,44 @@
  */
 
 import { waitForChatterbox } from './ttsStatus';
+import { apiFetch } from './api';
+
+// Lazy-loaded cache of { archetype → voice filename } overrides from the user's
+// portrait. Refreshed on demand via clearArchetypeVoiceCache() after the user
+// edits voices in MemoryPage so the next playback uses the new mapping.
+let _archetypeVoicesPromise = null;
+function loadArchetypeVoices() {
+  if (!_archetypeVoicesPromise) {
+    _archetypeVoicesPromise = apiFetch('/api/portrait')
+      .then((r) => r.json())
+      .then((p) => (p && p.archetype_voices) || {})
+      .catch(() => ({}));
+  }
+  return _archetypeVoicesPromise;
+}
+export function clearArchetypeVoiceCache() {
+  _archetypeVoicesPromise = null;
+}
 
 /**
  * Stream TTS sentence-by-sentence with prefetch pipeline.
  * @param {string} text - Full text to speak
  * @param {React.MutableRefObject} audioRef - Ref to store current Audio for cancellation
  * @param {React.MutableRefObject} cancelRef - Ref boolean to signal cancellation
- * @param {object} opts - { exaggeration: 0.5 }
+ * @param {object} opts - { exaggeration: 0.5, archetype: 'Zen', voice: 'Abigail.wav' }
  * @returns {Promise<void>} Resolves when done or cancelled
  */
 export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
   if (!text?.trim()) return;
+
+  // Resolve per-archetype voice override (if any). An explicit opts.voice always
+  // wins; otherwise look up the archetype in the user's portrait override map.
+  let resolvedVoice = opts.voice || null;
+  if (!resolvedVoice && opts.archetype) {
+    const map = await loadArchetypeVoices();
+    console.log('[tts] archetype=', opts.archetype, 'voiceMap=', map, 'resolved=', map[opts.archetype] || '(none)');
+    if (map[opts.archetype]) resolvedVoice = map[opts.archetype];
+  }
 
   // Clean text for TTS: strip markdown bold, replace em/en-dashes with commas,
   // remove other non-speech characters that confuse the TTS engine
@@ -60,7 +87,11 @@ export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
     const res = await fetch('/api/tts/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: sentence, exaggeration: opts.exaggeration ?? 0.5 }),
+      body: JSON.stringify({
+        text: sentence,
+        exaggeration: opts.exaggeration ?? 0.5,
+        ...(resolvedVoice ? { voice: resolvedVoice } : {}),
+      }),
     });
     if (!res.ok) throw new Error('TTS failed');
     const blob = await res.blob();

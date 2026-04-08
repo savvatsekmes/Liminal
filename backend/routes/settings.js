@@ -5,6 +5,7 @@ const fs = require('fs');
 const db = require('../database');
 const s = require('../services/settingsService');
 const llm = require('../services/llmService');
+const { DATA_DIR } = require('../paths');
 
 // ── GET /api/settings ─────────────────────────────────────────────────────────
 // Returns all settings with secrets masked
@@ -65,10 +66,32 @@ router.post('/test-llm', async (req, res) => {
 });
 
 // ── GET /api/settings/gpus ────────────────────────────────────────────────────
-// Returns list of CUDA GPUs available on this machine
-router.get('/gpus', (req, res) => {
+// Returns list of GPUs available on this machine.
+// Windows/Linux: nvidia-smi (CUDA). macOS: ask the running TTS server about MPS.
+router.get('/gpus', async (req, res) => {
+  // macOS: there's no nvidia-smi. Apple Silicon GPU is exposed via PyTorch MPS,
+  // which only the Python tts_server can detect. Ask it directly.
+  if (process.platform === 'darwin') {
+    const ttsUrl = s.get('chatterbox_url') || 'http://localhost:8100';
+    try {
+      const r = await fetch(`${ttsUrl}/device`, { signal: AbortSignal.timeout(2000) });
+      const d = await r.json();
+      if (d.mps) {
+        return res.json({
+          cuda: false,
+          mps: true,
+          gpus: [{ id: 0, name: 'Apple Silicon GPU (Metal)', vram_gb: 'shared' }],
+        });
+      }
+      return res.json({ cuda: false, mps: false, gpus: [] });
+    } catch {
+      // tts_server not up yet — return empty, UI will fall back to CPU option
+      return res.json({ cuda: false, mps: false, gpus: [] });
+    }
+  }
+
+  // Windows/Linux: nvidia-smi
   const { execSync } = require('child_process');
-  // Try nvidia-smi first (works even when torch CUDA init fails)
   try {
     const out = execSync(
       'nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader,nounits',
@@ -82,19 +105,10 @@ router.get('/gpus', (req, res) => {
         return { id: parseInt(id), name: name.trim(), vram_gb: Math.round(parseFloat(memMiB) / 1024 * 10) / 10 };
       })
       .filter(g => !isNaN(g.id));
-    return res.json({ cuda: gpus.length > 0, gpus });
-  } catch {}
-  // Fallback to torch
-  const python = process.env.PYTHON_PATH ||
-    'C:\\Users\\Savva Tsekmes\\AppData\\Local\\Programs\\Python\\Python313\\python.exe';
-  try {
-    const out = execSync(
-      `"${python}" -c "import torch,json; gpus=[{'id':i,'name':torch.cuda.get_device_name(i),'vram_gb':round(torch.cuda.get_device_properties(i).total_memory/1e9,1)} for i in range(torch.cuda.device_count())]; print(json.dumps({'cuda':torch.cuda.is_available(),'gpus':gpus}))"`,
-      { timeout: 10000 }
-    );
-    res.json(JSON.parse(out.toString().trim()));
+    return res.json({ cuda: gpus.length > 0, mps: false, gpus });
   } catch {
-    res.json({ cuda: false, gpus: [] });
+    // No nvidia-smi (no NVIDIA GPU, or driver not installed). CPU-only.
+    return res.json({ cuda: false, mps: false, gpus: [] });
   }
 });
 
@@ -114,7 +128,7 @@ router.post('/test-tts', async (req, res) => {
         input: 'Liminal is listening. Your voice is ready and working.',
         voice: voice || s.get('chatterbox_voice') || 'Abigail.wav',
         exaggeration: parseFloat(s.get('chatterbox_exaggeration') || '0.6'),
-        cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.9'),
+        cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.10'),
       }),
       signal: AbortSignal.timeout(60000),
     });
@@ -248,7 +262,7 @@ router.delete('/data', async (req, res) => {
   db.prepare('DELETE FROM entry_embeddings').run();
 
   // Wipe vectra index
-  const vectraDir = path.join(__dirname, '..', 'data', 'vectra');
+  const vectraDir = path.join(DATA_DIR, 'vectra');
   if (fs.existsSync(vectraDir)) {
     fs.rmSync(vectraDir, { recursive: true, force: true });
   }

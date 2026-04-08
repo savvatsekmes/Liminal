@@ -12,6 +12,15 @@ export const WIDGETS = {
   INSIGHT:    'insight',
   THEMES:     'themes',
   RHYTHM:     'rhythm',
+  GOALS:      'goals',
+  WEATHER:      'weather',
+  SKY:          'sky',
+  GRATITUDE:    'gratitude',
+  DREAMS:       'dreams',
+  READING:      'reading',
+  BUCKET:       'bucket',
+  AFFIRMATIONS: 'affirmations',
+  QUESTIONS:    'questions',
 };
 
 export const ALL_WIDGET_IDS = Object.values(WIDGETS);
@@ -26,6 +35,15 @@ export const WIDGET_LABELS = {
   insight:    'Insight',
   themes:     'Recurring Themes',
   rhythm:     'Your Rhythm',
+  goals:      'Top Goals',
+  weather:      'Weather',
+  sky:          "Today's Sky",
+  gratitude:    'Gratitude',
+  dreams:       'Dreams',
+  reading:      'Reading List',
+  bucket:       'Bucket List',
+  affirmations: 'Affirmations',
+  questions:    'Open Questions',
 };
 
 // Width options as percentages (mapped to grid column spans out of 10)
@@ -42,6 +60,15 @@ export const WIDGET_WIDTHS = {
   insight:  { default: 100 },
   themes:   { default: 50 },
   rhythm:   { default: 50 },
+  goals:    { default: 50 },
+  weather:      { default: 30 },
+  sky:          { default: 50 },
+  gratitude:    { default: 50 },
+  dreams:       { default: 50 },
+  reading:      { default: 50 },
+  bucket:       { default: 50 },
+  affirmations: { default: 50 },
+  questions:    { default: 50 },
 };
 
 // Default Liminal layout — hardcoded, never stored in DB
