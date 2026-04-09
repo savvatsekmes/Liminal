@@ -275,6 +275,7 @@ export default {
   'mirror.regenerate': 'إعادة توليد هذا المقطع',
   'mirror.listen': 'استماع',
   'mirror.stop': 'إيقاف',
+  'mirror.addBlock': 'إضافة تأمل',
 
   // ── Notes ──
   'notes.title': 'الملاحظات',

@@ -87,5 +87,71 @@ export function useReflect() {
     setError(null);
   }
 
-  return { blocks, opening, loading, error, ttsOnline, reflect, regenerateBlock, clearBlocks, loadReflections };
+  // Persist the current blocks array to the backend. Used after manual edits,
+  // additions, and deletions. Pass the latest array explicitly so we don't race
+  // React's state batching.
+  async function saveBlocks(entryId, nextBlocks, nextOpening) {
+    if (!entryId) return;
+    try {
+      await apiFetch(`/api/reflect/${entryId}/blocks`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          opening: nextOpening !== undefined ? nextOpening : opening,
+          blocks: nextBlocks,
+        }),
+      });
+    } catch (err) {
+      console.error('[useReflect] saveBlocks failed:', err.message);
+    }
+  }
+
+  function updateBlock(entryId, index, patch) {
+    setBlocks((prev) => {
+      const next = prev.map((b, i) => (i === index ? { ...b, ...patch } : b));
+      saveBlocks(entryId, next);
+      return next;
+    });
+  }
+
+  // Patch a single field on a block. Sends a PATCH so the server merges the
+  // change into the stored row, and we don't depend on local React state being
+  // up-to-date — important when the user edits and immediately switches entries
+  // (which would otherwise clobber `blocks` to [] before the save fires).
+  async function patchBlock(entryId, index, patch) {
+    if (!entryId || index == null) return;
+    // Optimistic local update so UI updates instantly when not switching entries
+    setBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    try {
+      await apiFetch(`/api/reflect/${entryId}/blocks/${index}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patch }),
+      });
+    } catch (err) {
+      console.error('[useReflect] patchBlock failed:', err.message);
+    }
+  }
+
+  function deleteBlock(entryId, index) {
+    setBlocks((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      saveBlocks(entryId, next);
+      return next;
+    });
+  }
+
+  function addBlock(entryId) {
+    setBlocks((prev) => {
+      const next = [...prev, { title: '', body: '', quote: null, archetype: 'Manual' }];
+      saveBlocks(entryId, next);
+      return next;
+    });
+  }
+
+  return {
+    blocks, opening, loading, error, ttsOnline,
+    reflect, regenerateBlock, clearBlocks, loadReflections,
+    updateBlock, patchBlock, deleteBlock, addBlock,
+  };
 }

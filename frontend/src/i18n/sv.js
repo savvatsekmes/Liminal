@@ -275,6 +275,7 @@ export default {
   'mirror.regenerate': 'Generera om detta block',
   'mirror.listen': 'Lyssna',
   'mirror.stop': 'Stopp',
+  'mirror.addBlock': 'Lägg till en reflektion',
 
   // ── Notes ──
   'notes.title': 'Anteckningar',

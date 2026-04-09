@@ -275,6 +275,7 @@ export default {
   'mirror.regenerate': 'Bu bloğu yeniden oluştur',
   'mirror.listen': 'Dinle',
   'mirror.stop': 'Durdur',
+  'mirror.addBlock': 'Yansıma ekle',
 
   // ── Notes ──
   'notes.title': 'Notlar',

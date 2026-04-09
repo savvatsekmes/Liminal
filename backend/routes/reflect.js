@@ -146,6 +146,67 @@ router.get('/:entryId', (req, res) => {
   }
 });
 
+// ── PUT /api/reflect/:entryId/blocks ─────────────────────────────────────────
+// Overwrite the saved reflection for an entry with a user-edited blocks array.
+// Body: { opening?: string|null, blocks: [{title, body, quote, archetype}] }
+router.put('/:entryId/blocks', (req, res) => {
+  const entryId = Number(req.params.entryId);
+  if (!entryId) return res.status(400).json({ error: 'invalid entryId' });
+  const { opening = null, blocks } = req.body || {};
+  if (!Array.isArray(blocks)) return res.status(400).json({ error: 'blocks must be an array' });
+
+  // Verify the entry belongs to this user before writing
+  const owns = db.prepare('SELECT 1 FROM entries WHERE id = ? AND user_id = ?').get(entryId, req.userId);
+  if (!owns) return res.status(404).json({ error: 'entry not found' });
+
+  try {
+    db.prepare(
+      `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+    ).run(entryId, req.userId, JSON.stringify({ opening, blocks }));
+    res.json({ opening, blocks });
+  } catch (err) {
+    console.error('[reflect] PUT blocks failed:', err.message);
+    res.status(500).json({ error: 'Save failed.' });
+  }
+});
+
+// ── PATCH /api/reflect/:entryId/blocks/:index ────────────────────────────────
+// Patch a single block in the saved reflection. Server reads existing blocks,
+// merges the patch into the indexed block, writes back. Lets the frontend save
+// a single field without needing the full blocks array (avoids races when the
+// user edits and immediately switches entries).
+// Body: { patch: { title?, body?, quote?, archetype? } }
+router.patch('/:entryId/blocks/:index', (req, res) => {
+  const entryId = Number(req.params.entryId);
+  const index = Number(req.params.index);
+  if (!entryId || Number.isNaN(index)) return res.status(400).json({ error: 'invalid params' });
+  const { patch } = req.body || {};
+  if (!patch || typeof patch !== 'object') return res.status(400).json({ error: 'patch required' });
+
+  const owns = db.prepare('SELECT 1 FROM entries WHERE id = ? AND user_id = ?').get(entryId, req.userId);
+  if (!owns) return res.status(404).json({ error: 'entry not found' });
+
+  const row = db.prepare('SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?').get(entryId, req.userId);
+  if (!row) return res.status(404).json({ error: 'reflection not found' });
+
+  try {
+    const saved = JSON.parse(row.blocks);
+    const opening = Array.isArray(saved) ? null : (saved.opening || null);
+    const blocks = Array.isArray(saved) ? saved : (saved.blocks || []);
+    if (index < 0 || index >= blocks.length) return res.status(400).json({ error: 'index out of range' });
+    blocks[index] = { ...blocks[index], ...patch };
+    db.prepare(
+      `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+    ).run(entryId, req.userId, JSON.stringify({ opening, blocks }));
+    res.json({ opening, blocks });
+  } catch (err) {
+    console.error('[reflect] PATCH block failed:', err.message);
+    res.status(500).json({ error: 'Save failed.' });
+  }
+});
+
 // ── POST /api/reflect/block ──────────────────────────────────────────────────
 // Regenerate a single Mirror block with an optional archetype override.
 // Body: { entryText, archetype, blockTitle }

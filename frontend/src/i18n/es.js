@@ -266,6 +266,7 @@ export default {
   'mirror.regenerate': 'Regenerar este bloque',
   'mirror.listen': 'Escuchar',
   'mirror.stop': 'Detener',
+  'mirror.addBlock': 'Añadir una reflexión',
 
   // ── Notes ──
   'notes.title': 'Notas',

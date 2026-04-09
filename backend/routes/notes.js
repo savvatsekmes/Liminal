@@ -281,6 +281,64 @@ Rules:
   }
 });
 
+// ── PUT /api/notes/:id/reflect/blocks ───────────────────────────────────────
+// Overwrite the saved reflection for a note with a user-edited blocks array.
+// Body: { blocks: [{title, body, quote, archetype}] }
+router.put('/:id/reflect/blocks', (req, res) => {
+  const noteId = Number(req.params.id);
+  if (!noteId) return res.status(400).json({ error: 'invalid id' });
+  const { blocks } = req.body || {};
+  if (!Array.isArray(blocks)) return res.status(400).json({ error: 'blocks must be an array' });
+
+  const owns = db.prepare('SELECT 1 FROM notes WHERE id = ? AND user_id = ?').get(noteId, req.userId);
+  if (!owns) return res.status(404).json({ error: 'note not found' });
+
+  try {
+    db.prepare(`
+      INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
+    `).run(noteId, req.userId, JSON.stringify(blocks));
+    res.json({ blocks });
+  } catch (err) {
+    console.error('[notes] PUT reflect/blocks failed:', err.message);
+    res.status(500).json({ error: 'Save failed.' });
+  }
+});
+
+// ── PATCH /api/notes/:id/reflect/blocks/:index ───────────────────────────────
+// Patch a single block of a note's reflection. Avoids edit-vs-switch races.
+router.patch('/:id/reflect/blocks/:index', (req, res) => {
+  const noteId = Number(req.params.id);
+  const index = Number(req.params.index);
+  if (!noteId || Number.isNaN(index)) return res.status(400).json({ error: 'invalid params' });
+  const { patch } = req.body || {};
+  if (!patch || typeof patch !== 'object') return res.status(400).json({ error: 'patch required' });
+
+  const owns = db.prepare('SELECT 1 FROM notes WHERE id = ? AND user_id = ?').get(noteId, req.userId);
+  if (!owns) return res.status(404).json({ error: 'note not found' });
+
+  const row = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?').get(noteId, req.userId);
+  if (!row) return res.status(404).json({ error: 'reflection not found' });
+
+  try {
+    const blocks = JSON.parse(row.blocks);
+    if (!Array.isArray(blocks) || index < 0 || index >= blocks.length) {
+      return res.status(400).json({ error: 'index out of range' });
+    }
+    blocks[index] = { ...blocks[index], ...patch };
+    db.prepare(`
+      INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
+    `).run(noteId, req.userId, JSON.stringify(blocks));
+    res.json({ blocks });
+  } catch (err) {
+    console.error('[notes] PATCH reflect block failed:', err.message);
+    res.status(500).json({ error: 'Save failed.' });
+  }
+});
+
 // ── GET /api/notes/:id/reflect ─────────────────────────────────────────────
 // Load a previously saved reflection for a note
 router.get('/:id/reflect', (req, res) => {

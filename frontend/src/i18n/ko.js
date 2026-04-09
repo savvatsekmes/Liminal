@@ -275,6 +275,7 @@ export default {
   'mirror.regenerate': '이 블록 다시 생성',
   'mirror.listen': '듣기',
   'mirror.stop': '중지',
+  'mirror.addBlock': '성찰 추가',
 
   // ── Notes ──
   'notes.title': '노트',

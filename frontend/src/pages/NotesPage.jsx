@@ -160,6 +160,60 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
     }
   }
 
+  // Persist a manually-edited blocks array to the note's reflection.
+  async function saveNoteBlocks(noteId, nextBlocks) {
+    if (!noteId) return;
+    try {
+      await apiFetch(`/api/notes/${noteId}/reflect/blocks`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocks: nextBlocks }),
+      });
+    } catch (err) {
+      console.error('[NotesPage] saveNoteBlocks failed:', err.message);
+    }
+  }
+
+  function handleUpdateNoteBlock(noteId, index, patch) {
+    setReflectBlocks((prev) => {
+      const next = prev.map((b, i) => (i === index ? { ...b, ...patch } : b));
+      saveNoteBlocks(noteId, next);
+      return next;
+    });
+  }
+
+  // Per-field patch via PATCH endpoint — does NOT depend on local state being
+  // current, so it survives the user editing and immediately switching notes.
+  async function handlePatchNoteBlock(noteId, index, patch) {
+    if (!noteId || index == null) return;
+    setReflectBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    try {
+      await apiFetch(`/api/notes/${noteId}/reflect/blocks/${index}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patch }),
+      });
+    } catch (err) {
+      console.error('[NotesPage] handlePatchNoteBlock failed:', err.message);
+    }
+  }
+
+  function handleDeleteNoteBlock(noteId, index) {
+    setReflectBlocks((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      saveNoteBlocks(noteId, next);
+      return next;
+    });
+  }
+
+  function handleAddNoteBlock(noteId) {
+    setReflectBlocks((prev) => {
+      const next = [...prev, { title: '', body: '', quote: null, archetype: 'Manual' }];
+      saveNoteBlocks(noteId, next);
+      return next;
+    });
+  }
+
   function handleCreateNote() {
     // New note gets current active filters as its tags
     const tags = activeFilters.length > 0 ? [...activeFilters] : [];
@@ -434,6 +488,10 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           loading={reflecting}
           error={reflectError}
           onReflect={handleReflect}
+          onUpdateBlock={handleUpdateNoteBlock}
+          onPatchBlock={handlePatchNoteBlock}
+          onDeleteBlock={handleDeleteNoteBlock}
+          onAddBlock={handleAddNoteBlock}
           previewVersion={previewVersion}
           onClearPreview={() => setPreviewVersion(null)}
         />
@@ -1452,7 +1510,7 @@ function formatVersionDate(isoStr) {
 }
 
 
-function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersion, onClearPreview }) {
+function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBlock, onPatchBlock, onDeleteBlock, onAddBlock, previewVersion, onClearPreview }) {
   const { t } = useLanguage();
   const hasContent = note?.body?.trim();
   const [readingAll, setReadingAll] = useState(false);
@@ -1650,7 +1708,14 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         )}
 
         {blocks.map((block, i) => (
-          <MirrorBlock key={i} block={block} overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined} />
+          <MirrorBlock
+            key={i}
+            block={block}
+            overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined}
+            onChange={onUpdateBlock && note?.id ? (next) => onUpdateBlock(note.id, i, next) : undefined}
+            onPatch={onPatchBlock && note?.id ? (patch) => onPatchBlock(note.id, i, patch) : undefined}
+            onDelete={onDeleteBlock && note?.id ? () => onDeleteBlock(note.id, i) : undefined}
+          />
         ))}
       </div>
 
@@ -1801,6 +1866,28 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, previewVersi
         >
           {loading ? t('notes.reflecting') : t('notes.reflect')}
         </button>
+
+        {/* Add manual block */}
+        {onAddBlock && (
+          <button
+            onClick={() => onAddBlock(note?.id)}
+            title={t('mirror.addBlock')}
+            type="button"
+            disabled={!note?.id}
+            style={{
+              ...pillBtn,
+              background: 'var(--near-white)',
+              color: 'var(--muted)',
+              cursor: note?.id ? 'pointer' : 'default',
+              opacity: note?.id ? 1 : 0.35,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+              fontSize: '18px',
+              fontWeight: '300',
+              lineHeight: 1,
+              paddingBottom: '2px',
+            }}
+          >+</button>
+        )}
 
         {/* Archetype picker button */}
         <button

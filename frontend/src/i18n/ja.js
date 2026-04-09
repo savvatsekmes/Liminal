@@ -275,6 +275,7 @@ export default {
   'mirror.regenerate': 'このブロックを再生成',
   'mirror.listen': '聴く',
   'mirror.stop': '停止',
+  'mirror.addBlock': 'リフレクションを追加',
 
   // ── Notes ──
   'notes.title': 'メモ',

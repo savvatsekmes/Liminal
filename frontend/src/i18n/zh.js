@@ -275,6 +275,7 @@ export default {
   'mirror.regenerate': '重新生成此段',
   'mirror.listen': '收听',
   'mirror.stop': '停止',
+  'mirror.addBlock': '添加反思',
 
   // ── Notes ──
   'notes.title': '笔记',

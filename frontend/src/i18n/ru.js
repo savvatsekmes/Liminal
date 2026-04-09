@@ -275,6 +275,7 @@ export default {
   'mirror.regenerate': 'Перегенерировать этот блок',
   'mirror.listen': 'Слушать',
   'mirror.stop': 'Стоп',
+  'mirror.addBlock': 'Добавить размышление',
 
   // ── Notes ──
   'notes.title': 'Заметки',

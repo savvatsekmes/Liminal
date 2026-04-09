@@ -76,6 +76,10 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     reflect,
     regenerateBlock,
     loadReflections,
+    updateBlock,
+    patchBlock,
+    deleteBlock,
+    addBlock,
   } = useReflect();
 
   // Create first entry for brand new users after onboarding
@@ -180,9 +184,14 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             loading={reflectLoading}
             error={reflectError}
             entryText={activeEntry?.body_text || ''}
+            entryId={activeEntry?.id}
             ttsOnline={ttsOnline}
             onReflect={handleReflect}
             onRegenerateBlock={regenerateBlock}
+            onUpdateBlock={updateBlock}
+            onPatchBlock={patchBlock}
+            onDeleteBlock={deleteBlock}
+            onAddBlock={addBlock}
             previewVersion={previewVersion}
             onClearPreview={() => setPreviewVersion(null)}
           />

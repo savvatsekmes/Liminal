@@ -183,9 +183,14 @@ export default function MirrorPanel({
   loading,
   error,
   entryText,
+  entryId,
   ttsOnline,
   onReflect,
   onRegenerateBlock,
+  onUpdateBlock,
+  onPatchBlock,
+  onDeleteBlock,
+  onAddBlock,
   previewVersion,
   onClearPreview,
 }) {
@@ -369,7 +374,14 @@ export default function MirrorPanel({
           </div>
         )}
         {!loading && !error && blocks.map((block, i) => (
-          <MirrorBlock key={i} block={block} overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined} />
+          <MirrorBlock
+            key={i}
+            block={block}
+            overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined}
+            onChange={onUpdateBlock ? (next) => onUpdateBlock(entryId, i, next) : undefined}
+            onPatch={onPatchBlock ? (patch) => onPatchBlock(entryId, i, patch) : undefined}
+            onDelete={onDeleteBlock ? () => onDeleteBlock(entryId, i) : undefined}
+          />
         ))}
       </div>
 
@@ -454,6 +466,28 @@ export default function MirrorPanel({
         >
           {loading ? t('mirror.reflecting') : t('mirror.reflect')}
         </button>
+
+        {/* Add manual block */}
+        {onAddBlock && (
+          <button
+            onClick={() => onAddBlock(entryId)}
+            title={t('mirror.addBlock')}
+            type="button"
+            disabled={!entryId}
+            style={{
+              ...s.pillBtn,
+              background: 'var(--near-white)',
+              color: 'var(--muted)',
+              cursor: entryId ? 'pointer' : 'default',
+              opacity: entryId ? 1 : 0.35,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+              fontSize: '18px',
+              fontWeight: '300',
+              lineHeight: 1,
+              paddingBottom: '2px',
+            }}
+          >+</button>
+        )}
 
         {/* Archetype picker button */}
         <button

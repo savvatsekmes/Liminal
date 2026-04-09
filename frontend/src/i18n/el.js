@@ -266,6 +266,7 @@ export default {
   'mirror.regenerate': 'Αναδημιουργία αυτού του block',
   'mirror.listen': 'Ακρόαση',
   'mirror.stop': 'Σταμάτημα',
+  'mirror.addBlock': 'Προσθήκη στοχασμού',
 
   // ── Notes ──
   'notes.title': 'Σημειώσεις',
