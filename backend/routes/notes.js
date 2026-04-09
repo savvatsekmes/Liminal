@@ -13,7 +13,27 @@ function parseTags(raw) {
 }
 function noteRow(row) {
   if (!row) return null;
-  return { ...row, tags: parseTags(row.tags) };
+  return { ...row, tags: parseTags(row.tags), auto_tags: parseTags(row.auto_tags) };
+}
+
+// Same dedupe + manual-wins rule as entries.js — manual `tags` always
+// shadows `auto_tags` so a tag never lives in both at once.
+function normaliseTagPair(tags, autoTags) {
+  const norm = (arr) => {
+    const seen = new Set();
+    const out = [];
+    for (const t of (arr || [])) {
+      const c = String(t || '').trim().toLowerCase();
+      if (!c || seen.has(c)) continue;
+      seen.add(c);
+      out.push(c);
+    }
+    return out;
+  };
+  const manual = norm(tags);
+  const manualSet = new Set(manual);
+  const auto = norm(autoTags).filter((t) => !manualSet.has(t));
+  return { tags: manual, auto_tags: auto };
 }
 
 // ── GET /api/notes ────────────────────────────────────────────────────────────
@@ -42,13 +62,14 @@ router.delete('/custom-tags/:tag', (req, res) => {
 
 // ── POST /api/notes ───────────────────────────────────────────────────────────
 router.post('/', (req, res) => {
-  const { type = 'idea', body = '', attribution, target_date, custom_tag, tags = [] } = req.body;
+  const { type = 'idea', body = '', attribution, target_date, custom_tag, tags = [], auto_tags = [] } = req.body;
+  const normalised = normaliseTagPair(tags, auto_tags);
   const result = db
     .prepare(
-      `INSERT INTO notes (type, body, attribution, target_date, custom_tag, tags, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO notes (type, body, attribution, target_date, custom_tag, tags, auto_tags, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(type, body, attribution || null, target_date || null, custom_tag || null, JSON.stringify(tags), req.userId);
+    .run(type, body, attribution || null, target_date || null, custom_tag || null, JSON.stringify(normalised.tags), JSON.stringify(normalised.auto_tags), req.userId);
 
   res.status(201).json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(result.lastInsertRowid)));
 });
@@ -59,7 +80,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Note not found' });
 
 
-  const { type, body, attribution, target_date, custom_tag, tags } = req.body;
+  const { type, body, attribution, target_date, custom_tag, tags, auto_tags } = req.body;
   const fields = [];
   const params = [];
 
@@ -68,8 +89,17 @@ router.put('/:id', (req, res) => {
   if (attribution !== undefined) { fields.push('attribution = ?'); params.push(attribution || null); }
   if (target_date !== undefined) { fields.push('target_date = ?'); params.push(target_date || null); }
   if (custom_tag !== undefined)  { fields.push('custom_tag = ?');  params.push(custom_tag || null); }
-  if (tags !== undefined)        { fields.push('tags = ?');        params.push(JSON.stringify(tags)); }
   if (req.body.title !== undefined) { fields.push('title = ?');    params.push(req.body.title); }
+
+  // Tag updates: merge with existing values for the field that wasn't passed,
+  // then normalise so manual `tags` always shadows `auto_tags`.
+  if (tags !== undefined || auto_tags !== undefined) {
+    const existingTags = tags !== undefined ? tags : parseTags(existing.tags);
+    const existingAuto = auto_tags !== undefined ? auto_tags : parseTags(existing.auto_tags);
+    const normalised = normaliseTagPair(existingTags, existingAuto);
+    fields.push('tags = ?');      params.push(JSON.stringify(normalised.tags));
+    fields.push('auto_tags = ?'); params.push(JSON.stringify(normalised.auto_tags));
+  }
 
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 

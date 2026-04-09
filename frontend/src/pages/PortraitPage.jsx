@@ -400,10 +400,6 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
         <div style={s.sectionTitle}>{t('portrait.personality')}</div>
         <div style={s.grid}>
           <div style={s.field}>
-            <label style={s.label}>{t('portrait.preferredName')}</label>
-            <input style={s.input} value={portrait.preferred_name || ''} onChange={(e) => set('preferred_name', e.target.value)} placeholder={t('portrait.preferredNamePlaceholder')} />
-          </div>
-          <div style={s.field}>
             <label style={s.label}>{t('portrait.sex')}</label>
             <select style={s.input} value={portrait.sex || ''} onChange={(e) => set('sex', e.target.value)}>
               <option value="">{t('portrait.selectDefault')}</option>

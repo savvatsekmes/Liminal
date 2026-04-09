@@ -12,14 +12,34 @@ function parseTags(raw) {
 }
 function sessionRow(row) {
   if (!row) return null;
-  return { ...row, tags: parseTags(row.tags) };
+  return { ...row, tags: parseTags(row.tags), auto_tags: parseTags(row.auto_tags) };
+}
+
+// Same dedupe + manual-wins rule as entries/notes — manual `tags` always
+// shadows `auto_tags` so a tag never lives in both at once.
+function normaliseTagPair(tags, autoTags) {
+  const norm = (arr) => {
+    const seen = new Set();
+    const out = [];
+    for (const t of (arr || [])) {
+      const c = String(t || '').trim().toLowerCase();
+      if (!c || seen.has(c)) continue;
+      seen.add(c);
+      out.push(c);
+    }
+    return out;
+  };
+  const manual = norm(tags);
+  const manualSet = new Set(manual);
+  const auto = norm(autoTags).filter((t) => !manualSet.has(t));
+  return { tags: manual, auto_tags: auto };
 }
 
 // ── GET /api/oracle/sessions ───────────────────────────────────────────────
 router.get('/sessions', (req, res) => {
   const sessions = db.prepare(`
     SELECT
-      s.id, s.archetype, s.title, s.tag, s.tags, s.created_at,
+      s.id, s.archetype, s.title, s.tag, s.tags, s.auto_tags, s.created_at,
       COUNT(m.id) AS message_count,
       (SELECT content FROM oracle_messages
        WHERE session_id = s.id AND role = 'user'
@@ -62,12 +82,17 @@ router.put('/sessions/:id/tag', (req, res) => {
 
 // ── PUT /api/oracle/sessions/:id/tags ─────────────────────────────────────
 router.put('/sessions/:id/tags', (req, res) => {
-  const session = db.prepare('SELECT id FROM oracle_sessions WHERE id = ? AND user_id = ?')
+  const session = db.prepare('SELECT id, tags, auto_tags FROM oracle_sessions WHERE id = ? AND user_id = ?')
     .get(req.params.id, req.userId);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
-  const { tags } = req.body;
-  db.prepare('UPDATE oracle_sessions SET tags = ? WHERE id = ?').run(JSON.stringify(tags || []), session.id);
+  const { tags, auto_tags } = req.body;
+  // Merge with existing for the field that wasn't passed, then normalise.
+  const existingTags = tags !== undefined ? tags : parseTags(session.tags);
+  const existingAuto = auto_tags !== undefined ? auto_tags : parseTags(session.auto_tags);
+  const normalised = normaliseTagPair(existingTags, existingAuto);
+  db.prepare('UPDATE oracle_sessions SET tags = ?, auto_tags = ? WHERE id = ?')
+    .run(JSON.stringify(normalised.tags), JSON.stringify(normalised.auto_tags), session.id);
   res.json({ success: true });
 });
 

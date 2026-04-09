@@ -158,7 +158,7 @@ export default function Onboarding({ username, onComplete }) {
   const [saving, setSaving] = useState(false);
 
   const [data, setData] = useState({
-    preferred_name: username || '',
+    display_name: username || '',
     pronouns: '',
     sex: '',
     birth_date: '',
@@ -192,14 +192,18 @@ export default function Onboarding({ username, onComplete }) {
   async function saveAndComplete() {
     setSaving(true);
     try {
-      // Save portrait data
-      const portrait = { ...data };
-      delete portrait.sun_sign; delete portrait.moon_sign; delete portrait.rising_sign;
-      delete portrait.chinese_zodiac; delete portrait.chinese_element;
-      delete portrait.life_path_number; delete portrait.soul_card; delete portrait.life_path_card;
+      // display_name lives in settings, not portrait
+      if (data.display_name) {
+        await apiFetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ display_name: data.display_name }),
+        }).catch(() => {});
+      }
 
-      // Include calculated astro data
+      // Save portrait data (everything except display_name)
       const full = { ...data };
+      delete full.display_name;
       await apiFetch('/api/portrait', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -227,12 +231,21 @@ export default function Onboarding({ username, onComplete }) {
   // Permanently skip — marks onboarding complete, saves any partial data
   async function handleSkipCompletely() {
     setSaving(true);
-    const hasData = Object.entries(data).some(([k, v]) => v && k !== 'preferred_name');
-    if (hasData || data.preferred_name !== username) {
+    const hasData = Object.entries(data).some(([k, v]) => v && k !== 'display_name');
+    if (data.display_name && data.display_name !== username) {
+      await apiFetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: data.display_name }),
+      }).catch(() => {});
+    }
+    if (hasData) {
+      const portraitData = { ...data };
+      delete portraitData.display_name;
       await apiFetch('/api/portrait', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(portraitData),
       }).catch(() => {});
     }
     await apiFetch('/api/auth/complete-onboarding', { method: 'POST' }).catch(() => {});
@@ -365,8 +378,8 @@ function WhoYouAreStep({ data, set, onContinue, onSkipForNow, onSkipCompletely, 
       <label style={s.label}>{t('onboarding.preferredName')}</label>
       <input
         style={s.input}
-        value={data.preferred_name}
-        onChange={(e) => set('preferred_name', e.target.value)}
+        value={data.display_name}
+        onChange={(e) => set('display_name', e.target.value)}
         placeholder={t('onboarding.preferredNamePlaceholder')}
         autoFocus
       />

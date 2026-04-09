@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useDictation } from '../hooks/useDictation';
+import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
@@ -538,7 +539,16 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
   const [activeFilters, setActiveFilters] = useState([]);
   const [addingTag, setAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
-  const allSessionTags = [...new Set(sessions.flatMap(s => s.tags || []))].sort();
+  // Manual tags above LLM-applied auto tags. Manual wins: anything in `tags`
+  // is filtered out of `auto_tags` so a tag never appears in both lists.
+  const allManualSessionTags = [...new Set(sessions.flatMap(s => s.tags || []))].sort();
+  const allAutoSessionTags = (() => {
+    const manualSet = new Set(allManualSessionTags);
+    return [...new Set(sessions.flatMap(s => s.auto_tags || []))]
+      .filter((t) => !manualSet.has(t))
+      .sort();
+  })();
+  const allSessionTags = [...allManualSessionTags, ...allAutoSessionTags];
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
 
   // Per-message TTS state
@@ -798,16 +808,59 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     );
   }
 
+  // Local mirror of server's normaliseTagPair: lowercase, dedupe, manual wins.
+  function normaliseTagPair(manualArr, autoArr) {
+    const norm = (arr) => {
+      const seen = new Set();
+      const out = [];
+      for (const t of (arr || [])) {
+        const c = String(t || '').trim().toLowerCase();
+        if (!c || seen.has(c)) continue;
+        seen.add(c);
+        out.push(c);
+      }
+      return out;
+    };
+    const m = norm(manualArr);
+    const mSet = new Set(m);
+    return { tags: m, auto_tags: norm(autoArr).filter((t) => !mSet.has(t)) };
+  }
+
   async function handleSessionTagsChange(tags) {
     if (!currentSession) return;
+    const next = normaliseTagPair(tags, currentSession.auto_tags || []);
     await apiFetch(`/api/oracle/sessions/${currentSession.id}/tags`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags }),
+      body: JSON.stringify({ tags: next.tags }),
     });
-    setCurrentSession((s) => s ? { ...s, tags } : s);
-    setSessions((prev) => prev.map((s) => s.id === currentSession.id ? { ...s, tags } : s));
+    setCurrentSession((s) => s ? { ...s, tags: next.tags, auto_tags: next.auto_tags } : s);
+    setSessions((prev) => prev.map((s) => s.id === currentSession.id ? { ...s, tags: next.tags, auto_tags: next.auto_tags } : s));
   }
+
+  async function handleSessionAutoTagsChange(auto_tags) {
+    if (!currentSession) return;
+    const next = normaliseTagPair(currentSession.tags || [], auto_tags);
+    await apiFetch(`/api/oracle/sessions/${currentSession.id}/tags`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_tags: next.auto_tags }),
+    });
+    setCurrentSession((s) => s ? { ...s, tags: next.tags, auto_tags: next.auto_tags } : s);
+    setSessions((prev) => prev.map((s) => s.id === currentSession.id ? { ...s, tags: next.tags, auto_tags: next.auto_tags } : s));
+  }
+
+  // Live tag suggestions for the conversation. The "text" we feed the LLM is
+  // the joined transcript of every message in the current session — that way
+  // tags reflect the whole exchange, not just the last user line.
+  const conversationText = useMemo(
+    () => messages.map((m) => m?.content || '').join('\n\n').trim(),
+    [messages]
+  );
+  const { suggestions: oracleSuggestedTags, dismiss: dismissOracleSuggestion } = useTagSuggestions(
+    conversationText,
+    [...(currentSession?.tags || []), ...(currentSession?.auto_tags || [])]
+  );
 
   async function handleCreateArchetype() {
     const name = newArchetypeName.trim();
@@ -959,6 +1012,8 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       {/* Tag strip */}
       <TagStrip
         tags={allSessionTags}
+        manualTags={allManualSessionTags}
+        autoTags={allAutoSessionTags}
         activeFilters={activeFilters}
         onToggle={toggleFilter}
         onClear={clearFilters}
@@ -981,8 +1036,12 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
       {currentSession && (
         <SessionTagSelector
           tags={currentSession.tags || []}
+          autoTags={currentSession.auto_tags || []}
           allTags={allSessionTags}
+          suggestedTags={oracleSuggestedTags}
+          onDismissSuggestion={dismissOracleSuggestion}
           onTagsChange={handleSessionTagsChange}
+          onAutoTagsChange={handleSessionAutoTagsChange}
         />
       )}
 
@@ -1246,13 +1305,18 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
 
 // ── Tag strip ───────────────────────────────────────────────────────────────
 
-function TagStrip({ tags, activeFilters, onToggle, onClear, addingTag, newTagInput, onAddingTag, onNewTagInput, onAddTag, onDeleteTag }) {
+function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear, addingTag, newTagInput, onAddingTag, onNewTagInput, onAddTag, onDeleteTag }) {
   const { t } = useLanguage();
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (addingTag) inputRef.current?.focus();
   }, [addingTag]);
+
+  // Manual tags above LLM-applied auto tags. Falls back to a single list if
+  // the parent didn't pass the split arrays.
+  const manual = manualTags || tags;
+  const auto = autoTags || [];
 
   return (
     <div style={s.tagStrip}>
@@ -1263,17 +1327,39 @@ function TagStrip({ tags, activeFilters, onToggle, onClear, addingTag, newTagInp
         onClick={onClear}
       />
 
-      {tags.length > 0 && (
+      {(manual.length > 0 || auto.length > 0) && (
         <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
       )}
 
-      {tags.map((tag) => (
+      {manual.map((tag) => (
         <TagCustomPill
-          key={tag}
+          key={`m-${tag}`}
           label={tag}
           active={activeFilters.includes(tag)}
           onClick={() => onToggle(tag)}
           onDelete={() => onDeleteTag(tag)}
+        />
+      ))}
+
+      {auto.length > 0 && (
+        <div style={{
+          width: '50px',
+          height: '1px',
+          background: 'var(--border)',
+          opacity: 0.6,
+          margin: '4px 0',
+          flexShrink: 0,
+        }} title="LLM-suggested tags" />
+      )}
+
+      {auto.map((tag) => (
+        <TagCustomPill
+          key={`a-${tag}`}
+          label={tag}
+          active={activeFilters.includes(tag)}
+          onClick={() => onToggle(tag)}
+          onDelete={() => onDeleteTag(tag)}
+          auto
         />
       ))}
 
@@ -1351,9 +1437,14 @@ function TagFilterPill({ label, active, onClick }) {
   );
 }
 
-function TagCustomPill({ label, active, onClick, onDelete }) {
+function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
+  // Auto (LLM-applied) tags get a dashed border + italic so they read as
+  // distinct from user-typed manual tags at a glance.
+  const borderStyle = auto
+    ? (active ? '1px solid var(--strong)' : '1px dashed var(--border)')
+    : (active ? '1px solid var(--strong)' : '1px solid var(--border)');
   return (
     <div
       style={{
@@ -1361,7 +1452,7 @@ function TagCustomPill({ label, active, onClick, onDelete }) {
         alignItems: 'center',
         width: '62px',
         borderRadius: '20px',
-        border: active ? '1px solid var(--strong)' : '1px solid var(--border)',
+        border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
         overflow: 'hidden',
         transition: 'all 0.12s',
@@ -1377,10 +1468,11 @@ function TagCustomPill({ label, active, onClick, onDelete }) {
           padding: '5px 0 5px 6px',
           fontSize: '10px',
           fontWeight: active ? '600' : '400',
+          fontStyle: auto && !active ? 'italic' : 'normal',
           letterSpacing: '0.03em',
           background: 'none',
           border: 'none',
-          color: active ? 'var(--white)' : 'var(--body)',
+          color: active ? 'var(--white)' : (auto ? 'var(--muted)' : 'var(--body)'),
           cursor: 'pointer',
           textAlign: 'left',
           fontFamily: 'var(--font)',
@@ -1488,12 +1580,31 @@ function WaveformIcon({ playing }) {
   );
 }
 
-function SessionTagSelector({ tags, allTags, onTagsChange }) {
+function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismissSuggestion, onTagsChange, onAutoTagsChange }) {
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState('');
 
+  // Manual pills toggle in `tags`, auto pills toggle in `auto_tags`. A pill
+  // not on the session yet (e.g. a filter from another conversation) is
+  // added to manual tags.
   function toggleTag(tag) {
-    onTagsChange(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]);
+    if (tags.includes(tag)) {
+      onTagsChange(tags.filter(t => t !== tag));
+    } else if (autoTags.includes(tag)) {
+      onAutoTagsChange?.(autoTags.filter(t => t !== tag));
+    } else {
+      onTagsChange([...tags, tag]);
+    }
+  }
+
+  // Promote a suggestion → write into `auto_tags`. The user can later
+  // promote to manual by clicking the auto pill (server normaliseTagPair
+  // ensures a tag never lives in both arrays).
+  function applySuggestion(tag) {
+    if (!tags.includes(tag) && !autoTags.includes(tag)) {
+      onAutoTagsChange?.([...autoTags, tag]);
+    }
+    onDismissSuggestion?.(tag);
   }
 
   function addTag() {
@@ -1503,7 +1614,9 @@ function SessionTagSelector({ tags, allTags, onTagsChange }) {
     setAdding(false);
   }
 
-  const displayTags = [...new Set([...allTags, ...tags])].sort();
+  const ownSet = new Set([...tags, ...autoTags]);
+  const otherTags = allTags.filter((t) => !ownSet.has(t));
+  const freshSuggestions = suggestedTags.filter((s) => !tags.includes(s) && !autoTags.includes(s) && !otherTags.includes(s));
 
   const pillBase = {
     fontSize: '10px',
@@ -1526,6 +1639,25 @@ function SessionTagSelector({ tags, allTags, onTagsChange }) {
     fontWeight: '600',
   };
 
+  // Visually distinct pill for live LLM-suggested tags.
+  const pillSuggested = {
+    border: '1px dashed var(--border)',
+    background: 'var(--near-white)',
+    color: 'var(--muted)',
+    fontStyle: 'italic',
+  };
+
+  // Auto-applied (LLM) tags already on the session: dashed border, no italic.
+  const pillAuto = {
+    border: '1px dashed var(--border)',
+    background: 'transparent',
+    color: 'var(--muted)',
+  };
+
+  const sortedManual = [...tags].sort();
+  const sortedAuto = [...autoTags].sort();
+  const sortedOther = [...otherTags].sort();
+
   return (
     <div style={{
       display: 'flex',
@@ -1536,13 +1668,44 @@ function SessionTagSelector({ tags, allTags, onTagsChange }) {
       flexWrap: 'wrap',
       flexShrink: 0,
     }}>
-      {displayTags.map((tag) => (
+      {sortedManual.map((tag) => (
         <button
-          key={tag}
-          style={{ ...pillBase, ...(tags.includes(tag) ? pillActive : {}) }}
+          key={'m-' + tag}
+          style={{ ...pillBase, ...pillActive }}
           onClick={() => toggleTag(tag)}
+          title="Manual tag — click to remove"
         >
           {tag}
+        </button>
+      ))}
+      {sortedAuto.map((tag) => (
+        <button
+          key={'a-' + tag}
+          style={{ ...pillBase, ...pillAuto }}
+          onClick={() => toggleTag(tag)}
+          title="Suggested tag — click to remove"
+        >
+          {tag}
+        </button>
+      ))}
+      {sortedOther.map((tag) => (
+        <button
+          key={'o-' + tag}
+          style={{ ...pillBase }}
+          onClick={() => toggleTag(tag)}
+          title="Filter tag — click to add to this conversation"
+        >
+          {tag}
+        </button>
+      ))}
+      {freshSuggestions.map((tag) => (
+        <button
+          key={'sug-' + tag}
+          style={{ ...pillBase, ...pillSuggested }}
+          onClick={() => applySuggestion(tag)}
+          title="Suggested — click to add"
+        >
+          + {tag}
         </button>
       ))}
       {adding ? (

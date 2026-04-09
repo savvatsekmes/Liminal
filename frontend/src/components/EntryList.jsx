@@ -201,7 +201,12 @@ function formatEntryDate(dateStr) {
   }
 }
 
-export default function EntryList({ entries, activeId, onSelect, onNew, onDelete, allTags = [], onDeleteTag }) {
+export default function EntryList({ entries, activeId, onSelect, onNew, onDelete, allTags = [], allManualTags, allAutoTags, onDeleteTag, onAddTag }) {
+  // Manual tags above LLM-applied auto tags with a divider between them.
+  // If the parent didn't pass the split arrays, fall back to treating allTags
+  // as a single manual list — keeps the component backward-compatible.
+  const manualTags = allManualTags || allTags;
+  const autoTags = allAutoTags || [];
   const { t } = useLanguage();
   const [search, setSearch] = useState('');
   const [showCal, setShowCal] = useState(true);
@@ -313,13 +318,38 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
           onClick={() => setFilterTag(ALL_TAG)}
         />
 
-        {allTags.map((tag) => (
+        {manualTags.map((tag) => (
           <TagCustomPill
-            key={tag}
+            key={`m-${tag}`}
             label={tag}
             active={filterTag === tag}
             onClick={() => setFilterTag(tag)}
             onDelete={() => handleDeleteTag(tag)}
+          />
+        ))}
+
+        {autoTags.length > 0 && (
+          <div
+            style={{
+              width: '50px',
+              height: '1px',
+              background: 'var(--border)',
+              opacity: 0.6,
+              margin: '4px 0',
+              flexShrink: 0,
+            }}
+            title="LLM-suggested tags"
+          />
+        )}
+
+        {autoTags.map((tag) => (
+          <TagCustomPill
+            key={`a-${tag}`}
+            label={tag}
+            active={filterTag === tag}
+            onClick={() => setFilterTag(tag)}
+            onDelete={() => handleDeleteTag(tag)}
+            auto
           />
         ))}
 
@@ -330,7 +360,13 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
             onChange={(e) => setNewTagInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && newTagInput.trim()) {
-                setFilterTag(newTagInput.trim());
+                // Persist the new tag by adding it to the active entry —
+                // otherwise the pill vanishes the next time the user clicks
+                // anything because it never made it into any entry's tags
+                // and `allManualTags` is derived from entries.
+                const clean = newTagInput.trim().toLowerCase();
+                onAddTag?.(clean);
+                setFilterTag(clean);
                 setNewTagInput('');
                 setAddingTag(false);
               }
@@ -410,8 +446,13 @@ function TagPill({ label, active, onClick }) {
   );
 }
 
-function TagCustomPill({ label, active, onClick, onDelete }) {
+function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const [hover, setHover] = useState(false);
+  // Auto (LLM-applied) tags get a dashed border + italic so they read as
+  // distinct from user-typed manual tags at a glance.
+  const borderStyle = auto
+    ? (active ? '1px solid var(--strong)' : '1px dashed var(--border)')
+    : (active ? '1px solid var(--strong)' : '1px solid var(--border)');
   return (
     <div
       style={{
@@ -419,7 +460,7 @@ function TagCustomPill({ label, active, onClick, onDelete }) {
         alignItems: 'center',
         width: '62px',
         borderRadius: '20px',
-        border: active ? '1px solid var(--strong)' : '1px solid var(--border)',
+        border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
         overflow: 'hidden',
         transition: 'all 0.12s',
@@ -435,10 +476,11 @@ function TagCustomPill({ label, active, onClick, onDelete }) {
           padding: '5px 0 5px 4px',
           fontSize: '10px',
           fontWeight: active ? '600' : '400',
+          fontStyle: auto && !active ? 'italic' : 'normal',
           letterSpacing: '0.03em',
           background: 'none',
           border: 'none',
-          color: active ? 'var(--white)' : 'var(--body)',
+          color: active ? 'var(--white)' : (auto ? 'var(--muted)' : 'var(--body)'),
           cursor: 'pointer',
           textAlign: 'center',
           fontFamily: 'var(--font)',

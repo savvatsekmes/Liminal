@@ -21,9 +21,7 @@ import { LanguageProvider } from './i18n/LanguageContext';
 // ── Authenticated shell ───────────────────────────────────────────────────────
 // Mounted only after auth is confirmed — ensures hooks fetch with valid token.
 
-const LOCK_TIMEOUT = 30 * 60 * 1000; // 30 minutes
-
-function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange }) {
+function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange, lockTimeoutMinutes }) {
   const [activeView, setActiveView] = useState(() => {
     const saved = sessionStorage.getItem('liminal_view');
     if (saved && ['home','journal','notes','oracle','portrait','memory','settings'].includes(saved)) return saved;
@@ -35,11 +33,15 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   }, []);
   const [locked, setLocked] = useState(false);
   const lockTimerRef = useRef(null);
+  // 0 (or any non-positive value) means "never lock" — the user opted out
+  // of the inactivity gate via Settings → Auto-lock after.
+  const lockTimeoutMs = lockTimeoutMinutes > 0 ? lockTimeoutMinutes * 60 * 1000 : null;
 
   const resetLockTimer = useCallback(() => {
     if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
-    lockTimerRef.current = setTimeout(() => setLocked(true), LOCK_TIMEOUT);
-  }, []);
+    if (lockTimeoutMs == null) return;
+    lockTimerRef.current = setTimeout(() => setLocked(true), lockTimeoutMs);
+  }, [lockTimeoutMs]);
 
   useEffect(() => {
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove'];
@@ -50,7 +52,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
       events.forEach(e => window.removeEventListener(e, handler));
       if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
     };
-  }, [locked, resetLockTimer]);
+  }, [locked, resetLockTimer, lockTimeoutMs]);
   const [previewVersion, setPreviewVersion] = useState(null);
   const [pendingNoteId, setPendingNoteId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
@@ -65,6 +67,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     selectEntry,
     refreshEntries,
     allTags,
+    allManualTags,
+    allAutoTags,
   } = useEntries();
 
   const {
@@ -111,11 +115,29 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   }
 
   async function handleDeleteTag(tag) {
-    // Remove tag from all entries that have it
-    const tagged = entries.filter(e => (e.tags || []).includes(tag));
-    for (const entry of tagged) {
-      await updateEntry(entry.id, { tags: (entry.tags || []).filter(t => t !== tag) });
+    // Remove tag from every entry's manual `tags` AND auto `auto_tags`.
+    // Since the filter column shows both kinds of pill and the user can
+    // hit × on either, we need to clear from whichever list it lives in.
+    const affected = entries.filter(e =>
+      (e.tags || []).includes(tag) || (e.auto_tags || []).includes(tag)
+    );
+    for (const entry of affected) {
+      const fields = {};
+      if ((entry.tags || []).includes(tag)) {
+        fields.tags = (entry.tags || []).filter(t => t !== tag);
+      }
+      if ((entry.auto_tags || []).includes(tag)) {
+        fields.auto_tags = (entry.auto_tags || []).filter(t => t !== tag);
+      }
+      await updateEntry(entry.id, fields);
     }
+  }
+
+  async function handleAddTagToActive(tag) {
+    if (!activeEntry?.id) return;
+    const current = activeEntry.tags || [];
+    if (current.includes(tag)) return;
+    await updateEntry(activeEntry.id, { tags: [...current, tag] });
   }
 
   async function handleReflect(archetype) {
@@ -136,7 +158,10 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             onNew={handleNew}
             onDelete={deleteEntry}
             allTags={allTags}
+            allManualTags={allManualTags}
+            allAutoTags={allAutoTags}
             onDeleteTag={handleDeleteTag}
+            onAddTag={handleAddTagToActive}
           />
         ),
 
@@ -194,6 +219,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             onAddBlock={addBlock}
             previewVersion={previewVersion}
             onClearPreview={() => setPreviewVersion(null)}
+            onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
           />
         ) : (
           <div style={{ display: 'none' }} />
@@ -214,6 +240,7 @@ export default function App() {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [isFirstSession, setIsFirstSession] = useState(false);
   const [language, setLanguage] = useState('en');
+  const [lockTimeoutMinutes, setLockTimeoutMinutes] = useState(30);
 
   useEffect(() => {
     // Check for valid stored JWT first
@@ -227,9 +254,11 @@ export default function App() {
           // the img onError fallback in Layout/HomePage handles a 404 cleanly.
           if (data.avatar_url) setAvatarUrl(data.avatar_url);
           else if (data.user_id) setAvatarUrl(`/api/auth/avatar/${data.user_id}?t=${Date.now()}`);
-          // Fetch language setting
+          // Fetch language + lock timeout setting
           apiFetch('/api/settings').then(r => r.json()).then(s => {
             if (s.language) setLanguage(s.language);
+            const lt = parseInt(s.lock_timeout_minutes, 10);
+            if (!isNaN(lt)) setLockTimeoutMinutes(lt);
           }).catch(() => {});
           if (data.onboarding_complete) {
             setAuthStatus('ok');
@@ -249,6 +278,19 @@ export default function App() {
     setAuthStatus('gate');
   }, []);
 
+  // React to live settings changes from the Settings page so things like
+  // lock_timeout_minutes take effect without requiring a re-login.
+  useEffect(() => {
+    function onChange(e) {
+      const s = e.detail || {};
+      if (s.language) setLanguage(s.language);
+      const lt = parseInt(s.lock_timeout_minutes, 10);
+      if (!isNaN(lt)) setLockTimeoutMinutes(lt);
+    }
+    window.addEventListener('liminal:settings-changed', onChange);
+    return () => window.removeEventListener('liminal:settings-changed', onChange);
+  }, []);
+
   function handleAuthSuccess(u, onboardingComplete) {
     setUsername(u);
     // After fresh login, fetch /me to pick up avatar_url and user_id —
@@ -264,7 +306,11 @@ export default function App() {
     // after a fresh password-gate login (not just on auto-resume).
     apiFetch('/api/settings')
       .then((r) => r.json())
-      .then((s) => { if (s.language) setLanguage(s.language); })
+      .then((s) => {
+        if (s.language) setLanguage(s.language);
+        const lt = parseInt(s.lock_timeout_minutes, 10);
+        if (!isNaN(lt)) setLockTimeoutMinutes(lt);
+      })
       .catch(() => {});
     if (onboardingComplete) {
       setAuthStatus('ok');
@@ -305,7 +351,7 @@ export default function App() {
     <LanguageProvider initialLang={language}>
       {authStatus === 'gate' && <PasswordGate onSuccess={handleAuthSuccess} />}
       {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
-      {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} />}
+      {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} />}
     </LanguageProvider>
   );
 }

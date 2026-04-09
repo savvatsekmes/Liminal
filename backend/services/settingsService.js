@@ -30,6 +30,7 @@ const DEFAULTS = {
   web_search_enabled:        'false',
   display_name:              '',
   language:                  'en',
+  lock_timeout_minutes:      '30',
 };
 
 // ── Core get/set ─────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@
 // `backend/data/` for storage. The Windows .vbs scripts continue to work
 // independently — this Electron entry point is purely additive.
 
-const { app, BrowserWindow, shell, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -194,6 +194,31 @@ async function createWindow() {
     return { action: 'deny' };
   });
 
+  // The actual `context-menu` listener is registered in
+  // app.on('web-contents-created') below — that runs at the very moment the
+  // WebContents is born, which is the canonical place to attach it. We had
+  // tried registering here in createWindow before and the event never fired
+  // for reasons we never identified; the earlier attachment point fixes it.
+
+  // Renderer asks main to replace the misspelled word the user right-clicked
+  // (uses Electron's webContents.replaceMisspelling, which knows the spell-
+  // check anchor in the focused editable element).
+  ipcMain.on('liminal:debug', (_event, msg) => {
+    try {
+      fs.appendFileSync(path.join(USER_DATA, 'ctxmenu-debug.log'),
+        `[${new Date().toISOString()}] [renderer] ${msg}\n`);
+    } catch {}
+  });
+
+  ipcMain.on('liminal:replace-misspelling', (_event, word) => {
+    if (typeof word === 'string') mainWindow.webContents.replaceMisspelling(word);
+  });
+  ipcMain.on('liminal:add-to-dictionary', (_event, word) => {
+    if (typeof word === 'string' && word.length) {
+      mainWindow.webContents.session.addWordToSpellCheckerDictionary(word);
+    }
+  });
+
   await mainWindow.loadURL(`http://127.0.0.1:${BACKEND_PORT}/`);
 
   // Register a reliable DevTools shortcut. Electron's default Ctrl+Shift+I is
@@ -217,6 +242,33 @@ app.on('second-instance', () => {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+});
+
+// Register the WebContents `context-menu` listener at creation time. This
+// gives us spell-check params (`misspelledWord`, `dictionarySuggestions`)
+// which are NOT available anywhere in the renderer. Forwarded over IPC; the
+// renderer-side SelectionMenu merges these into the popup it already opened
+// from the DOM contextmenu event, so spell suggestions appear inline.
+app.on('web-contents-created', (_event, contents) => {
+  try {
+    fs.appendFileSync(path.join(USER_DATA, 'ctxmenu-debug.log'),
+      `[${new Date().toISOString()}] web-contents-created — attaching context-menu listener\n`);
+  } catch {}
+
+  contents.on('context-menu', (_e, params) => {
+    try {
+      fs.appendFileSync(path.join(USER_DATA, 'ctxmenu-debug.log'),
+        `[${new Date().toISOString()}] context-menu fired misspelled="${params.misspelledWord||''}" suggestions=${(params.dictionarySuggestions||[]).length}\n`);
+    } catch {}
+    contents.send('liminal:context-menu', {
+      x: params.x,
+      y: params.y,
+      isEditable: params.isEditable,
+      selectionText: params.selectionText || '',
+      misspelledWord: params.misspelledWord || '',
+      dictionarySuggestions: params.dictionarySuggestions || [],
+    });
+  });
 });
 
 app.whenReady().then(async () => {

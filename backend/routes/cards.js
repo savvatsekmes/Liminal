@@ -67,9 +67,10 @@ router.get('/daily', async (req, res) => {
   // Generate a personalized daily reading via LLM
   try {
     const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
+    const displayName = require('../services/settingsService').get('display_name');
     let context = '';
     if (portrait) {
-      if (portrait.preferred_name) context += `Name: ${portrait.preferred_name}. `;
+      if (displayName) context += `Name: ${displayName}. `;
       if (portrait.pronouns) context += `Pronouns: ${portrait.pronouns}. `;
       if (portrait.sex) context += `Sex: ${portrait.sex}. `;
       if (portrait.mbti) context += `MBTI: ${portrait.mbti}. `;
@@ -116,12 +117,13 @@ router.post('/reading', async (req, res) => {
 
   // Load portrait for personalisation
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
+  const displayName = require('../services/settingsService').get('display_name');
 
   // Build portrait context
   let portraitContext = '';
   if (portrait) {
     const lines = [];
-    if (portrait.preferred_name) lines.push(`Name: ${portrait.preferred_name}`);
+    if (displayName) lines.push(`Name: ${displayName}`);
     if (portrait.mbti) lines.push(`MBTI: ${portrait.mbti}`);
     if (portrait.enneagram) lines.push(`Enneagram: ${portrait.enneagram}`);
     if (portrait.sun_sign) lines.push(`Sun: ${portrait.sun_sign}`);
@@ -199,6 +201,7 @@ router.post('/pull', async (req, res) => {
 
   // Gather context
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
+  const displayName = require('../services/settingsService').get('display_name');
   const memoryService = require('../services/memoryService');
 
   // Recent journal entries (last 5)
@@ -231,7 +234,7 @@ router.post('/pull', async (req, res) => {
   // Portrait context
   const profileLines = [];
   if (portrait) {
-    if (portrait.preferred_name) profileLines.push(`Name: ${portrait.preferred_name}`);
+    if (displayName) profileLines.push(`Name: ${displayName}`);
     if (portrait.mbti) profileLines.push(`MBTI: ${portrait.mbti}`);
     if (portrait.enneagram) profileLines.push(`Enneagram: ${portrait.enneagram}`);
     if (portrait.sun_sign) profileLines.push(`Sun: ${portrait.sun_sign}`);

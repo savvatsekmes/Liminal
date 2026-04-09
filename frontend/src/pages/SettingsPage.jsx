@@ -294,6 +294,7 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
       });
       const updated = await res.json();
       setCfg(updated);
+      window.dispatchEvent(new CustomEvent('liminal:settings-changed', { detail: updated }));
       showToast(t('common.saved'));
     } catch { showToast(t('settings.saveFailed')); }
     finally { setSaving(false); }
@@ -1365,6 +1366,22 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
       </Field>
 
       <WeatherLocationField />
+
+      <Field label={t('settings.lockTimeout')} hint={t('settings.lockTimeoutHint')}>
+        <select
+          style={s.input}
+          value={cfg.lock_timeout_minutes || '30'}
+          onChange={(e) => { set('lock_timeout_minutes', e.target.value); save({ lock_timeout_minutes: e.target.value }); }}
+        >
+          <option value="1">{t('settings.lockTimeout1')}</option>
+          <option value="5">{t('settings.lockTimeout5')}</option>
+          <option value="15">{t('settings.lockTimeout15')}</option>
+          <option value="30">{t('settings.lockTimeout30')}</option>
+          <option value="60">{t('settings.lockTimeout60')}</option>
+          <option value="120">{t('settings.lockTimeout120')}</option>
+          <option value="0">{t('settings.lockTimeoutNever')}</option>
+        </select>
+      </Field>
 
       <div style={s.divider} />
 

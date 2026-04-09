@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import MirrorBlock from './MirrorBlock';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
@@ -193,6 +193,7 @@ export default function MirrorPanel({
   onAddBlock,
   previewVersion,
   onClearPreview,
+  onNavigateToEntry,
 }) {
   const { t } = useLanguage();
   const [readingAll, setReadingAll] = useState(false);
@@ -202,11 +203,10 @@ export default function MirrorPanel({
   const readingCancelledRef = useRef(false);
   const [archetypeOpen, setArchetypeOpen] = useState(false);
   const [selectedArchetype, setSelectedArchetype] = useState('Auto');
+  const [editMode, setEditMode] = useState(false);
   const archetypeRef = useRef(null);
   const [mirrorCustomArchetypes, setMirrorCustomArchetypes] = useState([]);
-  const [contextPopup, setContextPopup] = useState(null);
   const bodyRef = useRef(null);
-  const contextPopupRef = useRef(null);
 
   // Cleanup on unmount
   useEffect(() => () => {
@@ -239,35 +239,7 @@ export default function MirrorPanel({
     return () => document.removeEventListener('click', handleClick);
   }, [archetypeOpen]);
 
-  // Close context popup on click outside
-  useEffect(() => {
-    if (!contextPopup) return;
-    function close(e) {
-      if (contextPopupRef.current && contextPopupRef.current.contains(e.target)) return;
-      setContextPopup(null);
-    }
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [contextPopup]);
-
-  const handleContextMenu = useCallback((e) => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      setContextPopup(null);
-      return;
-    }
-    const text = sel.toString().trim();
-    if (bodyRef.current && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      if (!bodyRef.current.contains(range.commonAncestorContainer)) {
-        setContextPopup(null);
-        return;
-      }
-      setContextPopup({ x: e.clientX, y: e.clientY, text });
-    }
-  }, []);
-
-  // Voice selection for read-all / opening / selected-text reads:
+// Voice selection for read-all / opening / selected-text reads:
   //  1. If the user has a non-Auto archetype selected in the dropdown, use that
   //     voice immediately — no need to re-reflect to hear the new voice.
   //  2. Otherwise, if every block shares the same non-Auto archetype (from a
@@ -301,13 +273,7 @@ export default function MirrorPanel({
     setReadingAll(false);
   }
 
-  function readSelectedText(text) {
-    setContextPopup(null);
-    readingCancelledRef.current = false;
-    streamSpeak(text, ttsAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
-  }
-
-  if (previewVersion) {
+if (previewVersion) {
     return (
       <div style={s.root}>
         <div style={s.header}>
@@ -342,7 +308,7 @@ export default function MirrorPanel({
       </div>
 
       {/* Body */}
-      <div style={s.body} ref={bodyRef} data-page-context-menu onContextMenu={handleContextMenu}>
+      <div style={s.body} ref={bodyRef}>
         {loading && <LoadingState />}
         {!loading && error && <div style={s.error}>{error}</div>}
         {!loading && !error && blocks.length === 0 && <EmptyState />}
@@ -378,45 +344,15 @@ export default function MirrorPanel({
             key={i}
             block={block}
             overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined}
-            onChange={onUpdateBlock ? (next) => onUpdateBlock(entryId, i, next) : undefined}
-            onPatch={onPatchBlock ? (patch) => onPatchBlock(entryId, i, patch) : undefined}
-            onDelete={onDeleteBlock ? () => onDeleteBlock(entryId, i) : undefined}
+            onChange={editMode && onUpdateBlock ? (next) => onUpdateBlock(entryId, i, next) : undefined}
+            onPatch={editMode && onPatchBlock ? (patch) => onPatchBlock(entryId, i, patch) : undefined}
+            onDelete={editMode && onDeleteBlock ? () => onDeleteBlock(entryId, i) : undefined}
+            onNavigateToEntry={onNavigateToEntry}
           />
         ))}
       </div>
 
-      {/* Right-click read-aloud popup */}
-      {contextPopup && (
-        <div ref={contextPopupRef} style={{
-          ...s.contextPopup,
-          left: `${contextPopup.x + 4}px`,
-          top: `${contextPopup.y + 4}px`,
-        }}>
-          <div
-            style={s.contextBtn}
-            onClick={() => readSelectedText(contextPopup.text)}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            <WaveformIcon playing={false} /> {t('common.readAloud')}
-          </div>
-          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
-          <div
-            style={s.contextBtn}
-            onClick={async () => {
-              const text = contextPopup.text;
-              setContextPopup(null);
-              try { await navigator.clipboard.writeText(text); } catch {}
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            Copy
-          </div>
-        </div>
-      )}
-
-      {/* Archetype picker popup */}
+{/* Archetype picker popup */}
       {archetypeOpen && (
         <div style={s.archetypePopup} ref={archetypeRef}>
           {BUILT_IN_ARCHETYPES.map((a) => (
@@ -467,8 +403,28 @@ export default function MirrorPanel({
           {loading ? t('mirror.reflecting') : t('mirror.reflect')}
         </button>
 
-        {/* Add manual block */}
-        {onAddBlock && (
+        {/* Edit mode toggle */}
+        <button
+          onClick={() => setEditMode(v => !v)}
+          title={editMode ? t('common.done') || 'Done' : t('common.edit') || 'Edit'}
+          type="button"
+          disabled={blocks.length === 0}
+          style={{
+            ...s.pillBtn,
+            background: editMode ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+            color: editMode ? 'var(--strong)' : 'var(--muted)',
+            cursor: blocks.length === 0 ? 'default' : 'pointer',
+            opacity: blocks.length === 0 ? 0.35 : 1,
+            boxShadow: editMode
+              ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+              : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+          }}
+        >
+          <PencilIcon />
+        </button>
+
+        {/* Add manual block — only in edit mode */}
+        {onAddBlock && editMode && (
           <button
             onClick={() => onAddBlock(entryId)}
             title={t('mirror.addBlock')}
@@ -584,6 +540,14 @@ function WaveformIcon({ playing }) {
       <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
         {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
       </rect>
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
     </svg>
   );
 }

@@ -44,7 +44,7 @@ router.put('/', (req, res) => {
     language,
     chinese_zodiac, chinese_element,
     character_description,
-    sex, pronouns, preferred_name,
+    sex, pronouns,
     life_path_number, soul_card, life_path_card,
     working_tarot_card, season_of_life, current_intention,
     custom_archetypes,
@@ -62,7 +62,7 @@ router.put('/', (req, res) => {
     context_note, language,
     chinese_zodiac, chinese_element,
     character_description,
-    sex, pronouns, preferred_name,
+    sex, pronouns,
     soul_card, life_path_card,
     working_tarot_card, season_of_life, current_intention,
     weather_city,
@@ -164,7 +164,8 @@ Return only the portrait text. No headers, no preamble.`;
   const lines = ['Here is everything known about this person:'];
 
   // Identity
-  if (portrait.preferred_name) lines.push(`Name: ${portrait.preferred_name}`);
+  const displayName = require('../services/settingsService').get('display_name');
+  if (displayName)             lines.push(`Name: ${displayName}`);
   if (portrait.sex)            lines.push(`Sex: ${portrait.sex}`);
   if (portrait.pronouns)       lines.push(`Pronouns: ${portrait.pronouns}`);
 

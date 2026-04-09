@@ -11,10 +11,19 @@ export function useNotes() {
   const [loading, setLoading] = useState(false);
   const saveTimers = useRef({});
 
-  // Collect all unique tags across notes
-  const allTags = useMemo(() =>
+  // Collect manual + auto tags as separate sorted pools so the filter column
+  // can render user-typed tags above LLM-applied ones with a visual divider.
+  // Auto tags shadowed by a manual one are filtered out (manual wins).
+  const allManualTags = useMemo(() =>
     [...new Set(allNotes.flatMap(n => n.tags || []))].sort()
   , [allNotes]);
+  const allAutoTags = useMemo(() => {
+    const manualSet = new Set(allManualTags);
+    return [...new Set(allNotes.flatMap(n => n.auto_tags || []))]
+      .filter((t) => !manualSet.has(t))
+      .sort();
+  }, [allNotes, allManualTags]);
+  const allTags = useMemo(() => [...allManualTags, ...allAutoTags], [allManualTags, allAutoTags]);
 
   // Client-side filtered list — check note.tags array
   const notes = useMemo(() => {
@@ -95,11 +104,23 @@ export function useNotes() {
   }
 
   async function saveNote(id, fields) {
-    await apiFetch(`${API}/${id}`, {
+    const res = await apiFetch(`${API}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields),
     });
+    // When tag fields are involved, the server normalises so manual wins
+    // and a tag never lives in both arrays. Mirror the server's view back
+    // into local state so the UI doesn't briefly show the pre-normalised
+    // duplicate.
+    if (fields.tags !== undefined || fields.auto_tags !== undefined) {
+      try {
+        const updated = await res.json();
+        if (updated && typeof updated === 'object') {
+          updateNoteLocal(id, { tags: updated.tags, auto_tags: updated.auto_tags });
+        }
+      } catch {}
+    }
   }
 
   async function deleteNote(id) {
@@ -138,6 +159,8 @@ export function useNotes() {
     activeNote,
     activeFilters,
     allTags,
+    allManualTags,
+    allAutoTags,
     customTags,
     loading,
     createNote,

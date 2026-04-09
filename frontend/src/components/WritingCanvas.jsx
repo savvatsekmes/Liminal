@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDictation } from '../hooks/useDictation';
+import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import MicButton from './MicButton';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
@@ -163,8 +164,6 @@ export default function WritingCanvas({
   const savedTimer = useRef(null);
   const lastSnapshotAt = useRef(null);
   const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved
-  const [contextPopup, setContextPopup] = useState(null); // { x, y, text }
-  const [contextSaved, setContextSaved] = useState(false);
   const editorWrapRef = useRef(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState([]);
@@ -174,8 +173,16 @@ export default function WritingCanvas({
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
+  const [editorText, setEditorText] = useState('');
   const ttsAudioRef = useRef(null);
   const ttsCancelRef = useRef(false);
+
+  // Live LLM-suggested tags for the tag bar — debounced as the user writes,
+  // excluding tags already on the entry.
+  const { suggestions: suggestedTags, dismiss: dismissSuggestion } = useTagSuggestions(
+    editorText,
+    [...(entry?.tags || []), ...(entry?.auto_tags || [])]
+  );
 
   const editorRef = useRef(null);
   const { isRecording, isProcessing, toggle: toggleDictation } = useDictation((text) => {
@@ -183,31 +190,7 @@ export default function WritingCanvas({
     if (ed) ed.chain().focus().insertContent(text + ' ').run();
   });
 
-  const handleContextMenu = useCallback((e) => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      setContextPopup(null);
-      return;
-    }
-    const text = sel.toString().trim();
-    if (editorWrapRef.current && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      if (!editorWrapRef.current.contains(range.commonAncestorContainer)) {
-        setContextPopup(null);
-        return;
-      }
-      // Don't prevent default — let the native context menu show too
-      setContextSaved(false);
-      setContextPopup({
-        x: e.clientX,
-        y: e.clientY,
-        below: e.clientY > window.innerHeight * 0.6,
-        text,
-      });
-    }
-  }, []);
-
-  async function fetchVersions() {
+async function fetchVersions() {
     if (!entry?.id) return;
     setVersionsLoading(true);
     try {
@@ -308,20 +291,7 @@ export default function WritingCanvas({
     setReading(false);
   }
 
-  async function saveToLifeContext() {
-    if (!contextPopup) return;
-    await apiFetch('/api/memories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content: contextPopup.text,
-      }),
-    });
-    setContextSaved(true);
-    setTimeout(() => setContextPopup(null), 1200);
-  }
-
-  const editor = useEditor({
+const editor = useEditor({
     extensions: [
       Document,
       Paragraph,
@@ -357,6 +327,7 @@ export default function WritingCanvas({
       const html = editor.getHTML();
       const text = editor.getText();
       const entryId = entry?.id; // capture NOW — prevents saving to wrong entry if switched quickly
+      setEditorText(text);
 
       setSaveStatus('saving');
       clearTimeout(saveTimer.current);
@@ -385,6 +356,7 @@ export default function WritingCanvas({
     if (editor.getHTML() !== newContent) {
       editor.commands.setContent(newContent, false);
     }
+    setEditorText(editor.getText());
   }, [entry?.id]);
 
   // Reset save status and snapshot timer when switching entries
@@ -402,7 +374,7 @@ export default function WritingCanvas({
   const words = wordCount(editor?.getText() || '');
 
   return (
-    <div style={s.root} data-canvas-root data-page-context-menu onContextMenu={handleContextMenu} onClick={() => contextPopup && setContextPopup(null)}>
+    <div style={s.root} data-canvas-root>
       {/* Toolbar */}
       <div style={s.toolbar}>
         <button
@@ -527,7 +499,15 @@ export default function WritingCanvas({
 
       {/* Tag selector */}
       {entry && (
-        <TagSelector tags={entry.tags || []} allTags={allTags} onTagsChange={(tags) => onUpdate({ tags })} />
+        <TagSelector
+          tags={entry.tags || []}
+          autoTags={entry.auto_tags || []}
+          allTags={allTags}
+          suggestedTags={suggestedTags}
+          onDismissSuggestion={dismissSuggestion}
+          onTagsChange={(tags) => onUpdate({ tags })}
+          onAutoTagsChange={(auto_tags) => onUpdate({ auto_tags })}
+        />
       )}
 
       {/* Entry title + meta */}
@@ -648,103 +628,7 @@ export default function WritingCanvas({
         </div>
       )}
 
-      {/* Life context selection popup */}
-      {contextPopup && (
-        <div style={{
-          position: 'fixed',
-          left: `${contextPopup.x + 4}px`,
-          top: `${contextPopup.y + 4}px`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '2px',
-          zIndex: 100,
-          userSelect: 'none',
-          background: 'var(--white)',
-          borderRadius: '20px',
-          padding: '3px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
-        }}>
-          <div style={{
-            color: 'var(--body)',
-            fontSize: '11px',
-            fontWeight: '500',
-            borderRadius: '16px',
-            padding: '5px 12px',
-            whiteSpace: 'nowrap',
-            cursor: 'pointer',
-            fontFamily: 'var(--font)',
-            transition: 'background 0.12s',
-          }}
-            onClick={saveToLifeContext}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            {contextSaved ? t('journal.savedToMemory') : t('journal.saveToMemory')}
-          </div>
-          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
-          <div style={{
-            color: 'var(--body)',
-            fontSize: '11px',
-            fontWeight: '500',
-            borderRadius: '16px',
-            padding: '5px 12px',
-            whiteSpace: 'nowrap',
-            cursor: 'pointer',
-            fontFamily: 'var(--font)',
-            transition: 'background 0.12s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-          }}
-            onClick={() => {
-              const text = contextPopup.text;
-              setContextPopup(null);
-              const tempAudio = { current: null };
-              const tempCancel = { current: false };
-              streamSpeak(text, tempAudio, tempCancel);
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            <WaveformIcon playing={false} /> {t('common.readAloud')}
-          </div>
-          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
-          <div style={{
-            color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
-            padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
-            transition: 'background 0.12s',
-          }}
-            onClick={async () => {
-              const text = contextPopup.text;
-              setContextPopup(null);
-              try { await navigator.clipboard.writeText(text); } catch {}
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            Copy
-          </div>
-          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
-          <div style={{
-            color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
-            padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
-            transition: 'background 0.12s',
-          }}
-            onClick={async () => {
-              setContextPopup(null);
-              let clip = '';
-              try { clip = await navigator.clipboard.readText(); } catch {}
-              if (clip && editor) editor.chain().focus().insertContent(clip).run();
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            Paste
-          </div>
-        </div>
-      )}
-
-      <VersionsPanel
+<VersionsPanel
         isOpen={versionsOpen}
         onClose={() => { setVersionsOpen(false); onVersionPreview?.(null); }}
         versions={versions}
@@ -828,12 +712,33 @@ function WaveformIcon({ playing }) {
   );
 }
 
-function TagSelector({ tags, allTags, onTagsChange }) {
+function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismissSuggestion, onTagsChange, onAutoTagsChange }) {
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState('');
 
+  // A toggle on a pill flips it within whichever list currently holds it.
+  // Manual pills toggle in `tags`, auto pills toggle in `auto_tags`. A pill
+  // that's in neither (i.e. an existing filter from another entry) gets
+  // added as a manual tag — the user is opting into it explicitly.
   function toggleTag(tag) {
-    onTagsChange(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]);
+    if (tags.includes(tag)) {
+      onTagsChange(tags.filter(t => t !== tag));
+    } else if (autoTags.includes(tag)) {
+      onAutoTagsChange?.(autoTags.filter(t => t !== tag));
+    } else {
+      onTagsChange([...tags, tag]);
+    }
+  }
+
+  // Promote a suggestion → write into `auto_tags`, since suggestions come
+  // from the LLM. The user can later "promote" it to manual by clicking the
+  // pill (which adds it to `tags`; the server's normaliseTagPair drops it
+  // from auto_tags so a tag never lives in both arrays at once).
+  function applySuggestion(tag) {
+    if (!tags.includes(tag) && !autoTags.includes(tag)) {
+      onAutoTagsChange?.([...autoTags, tag]);
+    }
+    onDismissSuggestion?.(tag);
   }
 
   function addTag() {
@@ -843,7 +748,12 @@ function TagSelector({ tags, allTags, onTagsChange }) {
     setAdding(false);
   }
 
-  const displayTags = [...new Set([...allTags, ...tags])].sort();
+  // Render manual tags first, then the entry's own auto tags, then any
+  // global tags that aren't on this entry. Dedupe so a tag never appears
+  // twice (manual wins).
+  const ownSet = new Set([...tags, ...autoTags]);
+  const otherTags = allTags.filter((t) => !ownSet.has(t));
+  const freshSuggestions = suggestedTags.filter((s) => !tags.includes(s) && !autoTags.includes(s) && !otherTags.includes(s));
 
   const pillBase = {
     fontSize: '10px',
@@ -866,6 +776,28 @@ function TagSelector({ tags, allTags, onTagsChange }) {
     fontWeight: '600',
   };
 
+  // Suggested-tag pills are visually distinct: dashed border + italic so the
+  // user can tell at a glance which pills are LLM-suggested vs already-saved.
+  const pillSuggested = {
+    border: '1px dashed var(--border)',
+    background: 'var(--near-white)',
+    color: 'var(--muted)',
+    fontStyle: 'italic',
+  };
+
+  // Auto-applied (LLM) tags already on the entry: dashed border so they
+  // visually match suggestions, but not italic — they're real tags now.
+  const pillAuto = {
+    border: '1px dashed var(--border)',
+    background: 'transparent',
+    color: 'var(--muted)',
+  };
+
+  // Sorted lists so the row layout is stable as the editor refreshes.
+  const sortedManual = [...tags].sort();
+  const sortedAuto = [...autoTags].sort();
+  const sortedOther = [...otherTags].sort();
+
   return (
     <div style={{
       display: 'flex',
@@ -876,13 +808,44 @@ function TagSelector({ tags, allTags, onTagsChange }) {
       flexWrap: 'wrap',
       flexShrink: 0,
     }}>
-      {displayTags.map((tag) => (
+      {sortedManual.map((tag) => (
         <button
-          key={tag}
-          style={{ ...pillBase, ...(tags.includes(tag) ? pillActive : {}) }}
+          key={'m-' + tag}
+          style={{ ...pillBase, ...pillActive }}
           onClick={() => toggleTag(tag)}
+          title="Manual tag — click to remove"
         >
           {tag}
+        </button>
+      ))}
+      {sortedAuto.map((tag) => (
+        <button
+          key={'a-' + tag}
+          style={{ ...pillBase, ...pillAuto }}
+          onClick={() => toggleTag(tag)}
+          title="Suggested tag — click to remove"
+        >
+          {tag}
+        </button>
+      ))}
+      {sortedOther.map((tag) => (
+        <button
+          key={'o-' + tag}
+          style={{ ...pillBase }}
+          onClick={() => toggleTag(tag)}
+          title="Filter tag — click to add to this entry"
+        >
+          {tag}
+        </button>
+      ))}
+      {freshSuggestions.map((tag) => (
+        <button
+          key={'sug-' + tag}
+          style={{ ...pillBase, ...pillSuggested }}
+          onClick={() => applySuggestion(tag)}
+          title="Suggested — click to add"
+        >
+          + {tag}
         </button>
       ))}
       {adding ? (

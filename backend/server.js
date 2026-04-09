@@ -23,6 +23,7 @@ app.use('/api/ask',     extendTimeout);
 app.use('/api/home',    extendTimeout);
 app.use('/api/portrait', extendTimeout);
 app.use('/api/ollama',   extendTimeout);
+app.use('/api/tags',     extendTimeout);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth',     require('./routes/auth'));
@@ -46,6 +47,7 @@ app.use('/api/sky',      require('./routes/sky'));
 app.use('/api/home',     require('./routes/home'));
 app.use('/api/layouts',  require('./routes/layouts'));
 app.use('/api/version',  require('./routes/version'));
+app.use('/api/tags',     require('./routes/tags'));
 
 // ── Production: serve built frontend SPA from same origin (no CORS needed) ──
 // Electron main process sets LIMINAL_FRONTEND_DIST to the absolute path of

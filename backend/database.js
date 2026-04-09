@@ -183,6 +183,14 @@ addColumnSafe('life_context',    'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('oracle_sessions', 'tag',     'TEXT');
 addColumnSafe('oracle_sessions', 'tags',    "TEXT NOT NULL DEFAULT '[]'");
 
+// Auto-tags: parallel JSON array for tags applied by the LLM (background
+// auto-tagger or suggestion pills). Kept separate from `tags` so the filter
+// column can render user-typed tags above LLM-applied ones with a separator,
+// and so promotion from auto → manual is a simple move between two arrays.
+addColumnSafe('entries',         'auto_tags', "TEXT NOT NULL DEFAULT '[]'");
+addColumnSafe('notes',           'auto_tags', "TEXT NOT NULL DEFAULT '[]'");
+addColumnSafe('oracle_sessions', 'auto_tags', "TEXT NOT NULL DEFAULT '[]'");
+
 addColumnSafe('entries', 'moon_phase', 'TEXT');
 addColumnSafe('entries', 'moon_sign',  'TEXT');
 addColumnSafe('entries', 'sky_notes',  'TEXT');

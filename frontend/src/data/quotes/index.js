@@ -25,9 +25,15 @@ const POOLS = { en, el, fr, de, es, pt, it, ja, zh, ko, ru, ar, tr, nl, sv, pl }
  * Pick the daily quote for a given language. Same day-of-year index across
  * languages so the rotation is in sync — if you switch language mid-day,
  * you get the equivalent slot in the new language's pool, not a random one.
+ *
+ * `extras` is an optional array of user-authored quotes ({ text, author }) —
+ * notes with type 'quote' from the user's own collection. They join the pool
+ * so the daily rotation occasionally surfaces the user's own voice alongside
+ * the curated authors.
  */
-export function getDailyQuote(lang = 'en') {
-  const pool = POOLS[lang] || en;
+export function getDailyQuote(lang = 'en', extras = []) {
+  const base = POOLS[lang] || en;
+  const pool = extras.length ? base.concat(extras) : base;
   const now = new Date();
   const start = new Date(now.getFullYear(), 0, 0);
   const dayOfYear = Math.floor((now - start) / 86400000);

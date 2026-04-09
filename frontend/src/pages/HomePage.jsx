@@ -938,7 +938,19 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   // Portrait calculated data
   const [portrait, setPortrait] = useState(null);
   const [portraitSnippet, setPortraitSnippet] = useState(null);
-  const displayName = portrait?.preferred_name || username || '';
+  // display_name from Settings, falls back to username
+  const [settingsDisplayName, setSettingsDisplayName] = useState('');
+  const displayName = settingsDisplayName || username || '';
+
+  // Live-update display name when Settings save fires
+  useEffect(() => {
+    function onChange(e) {
+      const s = e.detail || {};
+      if (typeof s.display_name === 'string') setSettingsDisplayName(s.display_name);
+    }
+    window.addEventListener('liminal:settings-changed', onChange);
+    return () => window.removeEventListener('liminal:settings-changed', onChange);
+  }, []);
 
   // Daily card
   const [dailyCard, setDailyCard] = useState(null);
@@ -950,6 +962,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [latestEntryTitle, setLatestEntryTitle] = useState(null);
   const [latestEntryId, setLatestEntryId] = useState(null);
   const [noteCount, setNoteCount] = useState(null);
+  const [userQuotes, setUserQuotes] = useState([]);
   const [lastNoteDate, setLastNoteDate] = useState(null);
   const [latestNoteTitle, setLatestNoteTitle] = useState(null);
   const [latestNoteId, setLatestNoteId] = useState(null);
@@ -1048,6 +1061,16 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           const typePrefix = note.type ? note.type.charAt(0).toUpperCase() + note.type.slice(1) + ' — ' : '';
           setLatestNoteTitle(preview ? `${typePrefix}${preview.slice(0, 40)}` : (note.type ? typePrefix + 'Untitled' : 'Untitled'));
         }
+        // Pull user-authored quotes (notes of type "quote") into the daily
+        // quote pool — strip HTML, drop empties, use attribution as author.
+        const quotes = data
+          .filter((n) => n.type === 'quote')
+          .map((n) => ({
+            text: (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+            author: (n.attribution || '').trim(),
+          }))
+          .filter((q) => q.text);
+        setUserQuotes(quotes);
       }
     }).catch(() => {});
 
@@ -1061,6 +1084,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           setLatestOraclePreview(preview ? `${data[0].archetype} — ${preview.slice(0, 30)}` : null);
         }
       }
+    }).catch(() => {});
+
+    apiFetch('/api/settings').then((r) => r.json()).then((s) => {
+      if (s && typeof s.display_name === 'string') setSettingsDisplayName(s.display_name);
     }).catch(() => {});
 
     apiFetch('/api/portrait').then((r) => r.json()).then((p) => {
@@ -1424,7 +1451,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   function renderWidget(widgetId, size) {
     switch (widgetId) {
       case 'quote': {
-        const q = getDailyQuote(lang);
+        const q = getDailyQuote(lang, userQuotes);
         return (
           <div style={s.quoteBlock}>
             <span style={s.quoteText}>"{q.text}"</span>

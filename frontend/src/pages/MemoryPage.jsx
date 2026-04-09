@@ -228,10 +228,19 @@ export default function MemoryPage() {
   const [availableVoices, setAvailableVoices] = useState([]); // [{ filename, name }]
 
   useEffect(() => {
-    apiFetch('/api/memories')
-      .then((r) => r.json())
-      .then((data) => { setMemories(data); setLoading(false); })
-      .catch(() => setLoading(false));
+    function loadMemories() {
+      apiFetch('/api/memories')
+        .then((r) => r.json())
+        .then((data) => { setMemories(data); setLoading(false); })
+        .catch(() => setLoading(false));
+    }
+    loadMemories();
+    // Refetch when SelectionMenu's "Save to memory" creates a new row.
+    window.addEventListener('liminal:memories-changed', loadMemories);
+    return () => window.removeEventListener('liminal:memories-changed', loadMemories);
+  }, []);
+
+  useEffect(() => {
 
     apiFetch('/api/portrait')
       .then((r) => r.json())

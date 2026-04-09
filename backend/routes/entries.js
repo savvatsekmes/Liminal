@@ -22,14 +22,36 @@ function entryRow(row) {
   return {
     ...row,
     tags: parseTags(row.tags),
+    auto_tags: parseTags(row.auto_tags),
   };
+}
+
+// Dedupe + normalise: lowercase, trim, drop empties, dedupe, and (when both
+// arrays are passed) ensure manual `tags` always wins — anything in `tags`
+// is removed from `auto_tags` so a tag never appears in both at once.
+function normaliseTagPair(tags, autoTags) {
+  const norm = (arr) => {
+    const seen = new Set();
+    const out = [];
+    for (const t of (arr || [])) {
+      const c = String(t || '').trim().toLowerCase();
+      if (!c || seen.has(c)) continue;
+      seen.add(c);
+      out.push(c);
+    }
+    return out;
+  };
+  const manual = norm(tags);
+  const manualSet = new Set(manual);
+  const auto = norm(autoTags).filter((t) => !manualSet.has(t));
+  return { tags: manual, auto_tags: auto };
 }
 
 // ── GET /api/entries ─────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
   const { tag, search, limit = 100, offset = 0 } = req.query;
 
-  let query = `SELECT id, title, body_text, date, tags, created_at, updated_at
+  let query = `SELECT id, title, body_text, date, tags, auto_tags, created_at, updated_at
                FROM entries`;
   const params = [];
   const conditions = [`user_id = ?`];
@@ -94,7 +116,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
 
-  const { title, body, body_text, date, tags } = req.body;
+  const { title, body, body_text, date, tags, auto_tags } = req.body;
 
   const fields = [];
   const params = [];
@@ -103,7 +125,18 @@ router.put('/:id', (req, res) => {
   if (body !== undefined) { fields.push('body = ?'); params.push(body); }
   if (body_text !== undefined) { fields.push('body_text = ?'); params.push(body_text); }
   if (date !== undefined) { fields.push('date = ?'); params.push(date); }
-  if (tags !== undefined) { fields.push('tags = ?'); params.push(JSON.stringify(tags)); }
+
+  // Tag updates run through normalisation so a tag can never end up in both
+  // arrays. If only one of the two is being updated, merge with the existing
+  // value of the other before normalising — that way a manual-tag write
+  // automatically demotes a matching auto tag, and vice-versa.
+  if (tags !== undefined || auto_tags !== undefined) {
+    const existingTags = tags !== undefined ? tags : parseTags(existing.tags);
+    const existingAuto = auto_tags !== undefined ? auto_tags : parseTags(existing.auto_tags);
+    const normalised = normaliseTagPair(existingTags, existingAuto);
+    fields.push('tags = ?');      params.push(JSON.stringify(normalised.tags));
+    fields.push('auto_tags = ?'); params.push(JSON.stringify(normalised.auto_tags));
+  }
 
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 

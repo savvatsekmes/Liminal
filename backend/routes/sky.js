@@ -79,11 +79,12 @@ router.post('/generate', async (req, res) => {
 
     // Load portrait for personalisation
     const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
+    const displayName = require('../services/settingsService').get('display_name');
 
     let portraitContext = '';
     if (portrait) {
       const lines = [];
-      if (portrait.preferred_name) lines.push(`Name: ${portrait.preferred_name}`);
+      if (displayName) lines.push(`Name: ${displayName}`);
       if (portrait.sun_sign) lines.push(`Sun: ${portrait.sun_sign}`);
       if (portrait.moon_sign) lines.push(`Moon sign: ${portrait.moon_sign}`);
       if (portrait.rising_sign) lines.push(`Rising: ${portrait.rising_sign}`);

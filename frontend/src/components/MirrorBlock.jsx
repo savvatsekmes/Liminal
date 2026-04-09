@@ -34,6 +34,32 @@ const s = {
     marginTop: '10px',
     marginBottom: '10px',
   },
+  echo: {
+    fontSize: '11px',
+    color: 'var(--muted)',
+    fontStyle: 'italic',
+    borderLeft: '2px dashed var(--border)',
+    paddingLeft: '10px',
+    marginTop: '12px',
+    marginBottom: '6px',
+    lineHeight: '1.65',
+  },
+  echoBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    marginTop: '6px',
+    padding: '3px 9px',
+    fontSize: '10px',
+    fontFamily: 'var(--font)',
+    color: 'var(--muted)',
+    background: 'var(--near-white)',
+    border: 'var(--border-style)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontStyle: 'normal',
+    transition: 'color 0.12s, background 0.12s, border-color 0.12s',
+  },
   listenBtn: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -71,7 +97,7 @@ const s = {
   },
 };
 
-export default function MirrorBlock({ block, overrideArchetype, onChange, onPatch, onDelete }) {
+export default function MirrorBlock({ block, overrideArchetype, onChange, onPatch, onDelete, onNavigateToEntry }) {
   const [playing, setPlaying] = useState(false);
   const [hovered, setHovered] = useState(false);
   const audioRef = useRef(null);
@@ -165,6 +191,10 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
           />
         ) : block.quote ? (
           <div style={s.quote}>"{block.quote}"</div>
+        ) : null}
+
+        {block.echo && block.echo.snippet ? (
+          <EchoCallout echo={block.echo} onNavigate={onNavigateToEntry} />
         ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -280,6 +310,49 @@ function EditableField({ value, onCommit, placeholder, multiline, style, inputSt
   return (
     <div onClick={() => setEditing(true)} style={{ ...style, cursor: 'text' }}>
       {wrapInQuotes ? `"${value}"` : value}
+    </div>
+  );
+}
+
+function EchoCallout({ echo, onNavigate }) {
+  const clickable = typeof onNavigate === 'function' && echo.source_id;
+  const dateLabel = (() => {
+    if (!echo.source_date) return '';
+    try {
+      const d = new Date(echo.source_date.replace(' ', 'T') + 'Z');
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch { return ''; }
+  })();
+  return (
+    <div style={s.echo}>
+      "{echo.snippet}"
+      <div>
+        <button
+          type="button"
+          disabled={!clickable}
+          onClick={() => clickable && onNavigate(echo.source_id)}
+          title={dateLabel || undefined}
+          style={{
+            ...s.echoBadge,
+            cursor: clickable ? 'pointer' : 'default',
+            opacity: clickable ? 1 : 0.6,
+          }}
+          onMouseEnter={(e) => {
+            if (!clickable) return;
+            e.currentTarget.style.color = 'var(--strong)';
+            e.currentTarget.style.background = 'var(--white)';
+          }}
+          onMouseLeave={(e) => {
+            if (!clickable) return;
+            e.currentTarget.style.color = 'var(--muted)';
+            e.currentTarget.style.background = 'var(--near-white)';
+          }}
+        >
+          <span style={{ fontSize: '11px', lineHeight: 1 }}>↩</span>
+          <span>{echo.source_title || 'Source'}</span>
+        </button>
+      </div>
     </div>
   );
 }

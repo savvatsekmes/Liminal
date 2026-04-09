@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../database');
 const llm = require('../services/llmService');
 const memory = require('../services/memoryService');
-const { indexEntry } = require('../services/embeddingService');
+const { indexEntry, embed, querySimilar } = require('../services/embeddingService');
 const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
@@ -30,7 +30,7 @@ router.post('/', async (req, res) => {
 
   try {
     // 1. Build system prompt — single-archetype voice if requested, otherwise blended Auto
-    const preferredName = portrait?.preferred_name?.trim() || null;
+    const preferredName = require('../services/settingsService').get('display_name')?.trim() || null;
     const systemPrompt = singleArchetype
       ? await buildSingleArchetypeReflectPrompt(portrait, singleArchetype, req.userId)
       : await memory.buildReflectSystemPrompt(portrait, text, entryId || null, req.userId, preferredName);
@@ -73,7 +73,17 @@ router.post('/', async (req, res) => {
       blocks = blocks.map(b => ({ ...b, archetype: singleArchetype }));
     }
 
-    // 4. Save blocks (with opening) and return response
+    // 4. Echo: find a relevant snippet from a past entry and attach it to the
+    // most thematically related block. Best-effort, never blocks the response.
+    if (entryId && text && text.length >= 200 && blocks.length) {
+      try {
+        await attachEcho(blocks, text, entryId, req.userId);
+      } catch (e) {
+        console.warn('[reflect] echo attach failed:', e.message);
+      }
+    }
+
+    // 5. Save blocks (with opening) and return response
     const savedData = { opening, blocks };
     console.log(`[reflect] Saving ${blocks.length} blocks for entryId=${entryId}, archetypes=${blocks.map(b => b.archetype).join(',')}`);
     if (entryId) {
@@ -91,7 +101,7 @@ router.post('/', async (req, res) => {
     }
     res.json({ opening, blocks });
 
-    // 5. Background: index entry, extract memories, auto-tag
+    // 6. Background: index entry, extract memories, auto-tag
     const userId = req.userId;
     setImmediate(async () => {
       try {
@@ -106,12 +116,26 @@ router.post('/', async (req, res) => {
         // Extract discrete memory items from this entry
         await memory.extractAndStoreMemories(text, buildPortraitString(portrait), userId, entryId);
 
-        // Auto-tag
+        // Auto-tag — write to auto_tags so the LLM-origin tags stay separate
+        // from the user's manual tags. Manual wins: anything already in `tags`
+        // is dropped from the auto set so a tag never lives in both at once.
         if (entryId) {
-          const tags = await autoTag(text);
-          if (tags.length) {
-            db.prepare('UPDATE entries SET tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?').run(
-              JSON.stringify(tags),
+          const generated = await autoTag(text);
+          if (generated.length) {
+            const existing = db.prepare('SELECT tags FROM entries WHERE id = ? AND user_id = ?').get(entryId, userId);
+            let manual = [];
+            try { manual = JSON.parse(existing?.tags || '[]'); } catch {}
+            const manualSet = new Set(manual.map((t) => String(t || '').trim().toLowerCase()));
+            const seen = new Set();
+            const auto = [];
+            for (const t of generated) {
+              const c = String(t || '').trim().toLowerCase();
+              if (!c || seen.has(c) || manualSet.has(c)) continue;
+              seen.add(c);
+              auto.push(c);
+            }
+            db.prepare('UPDATE entries SET auto_tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?').run(
+              JSON.stringify(auto),
               entryId,
               userId
             );
@@ -485,6 +509,99 @@ No explanation. No other text.`;
   } catch {
     return [];
   }
+}
+
+// ── Echo callout ─────────────────────────────────────────────────────────────
+// After the LLM generates blocks, find one relevant snippet from a past entry
+// and staple it onto the block whose body is closest to that snippet. Mutates
+// `blocks` in place. All embeddings are normalised by Xenova/all-MiniLM-L6-v2,
+// so dot product == cosine similarity.
+
+const ECHO_MIN_SIMILARITY = 0.30; // raise if echoes feel forced
+const ECHO_SNIPPET_MAX_CHARS = 140;
+const ECHO_SNIPPET_MIN_CHARS = 30;
+
+function dot(a, b) {
+  let s = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) s += a[i] * b[i];
+  return s;
+}
+
+function splitSentences(text) {
+  // Crude but adequate. Strips HTML if any leaks through.
+  const plain = String(text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!plain) return [];
+  return plain
+    .split(/(?<=[.!?])\s+(?=[A-Z"'])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function trimSnippet(s) {
+  const clean = String(s || '').trim();
+  if (clean.length <= ECHO_SNIPPET_MAX_CHARS) return clean;
+  const slice = clean.slice(0, ECHO_SNIPPET_MAX_CHARS);
+  const lastSpace = slice.lastIndexOf(' ');
+  return (lastSpace > 60 ? slice.slice(0, lastSpace) : slice).replace(/[,;:\-]+$/, '') + '…';
+}
+
+async function attachEcho(blocks, currentText, currentEntryId, userId) {
+  const hits = await querySimilar(currentText, 5, [Number(currentEntryId)]);
+  console.log(`[reflect] echo candidates: ${hits.length} hits, top scores=${hits.slice(0,3).map(h => `${h.entryId}:${h.score.toFixed(3)}`).join(' ')} (floor=${ECHO_MIN_SIMILARITY})`);
+  if (!hits || !hits.length) return;
+  const top = hits[0];
+  if (!top || top.score < ECHO_MIN_SIMILARITY) {
+    console.log(`[reflect] echo skipped: top score ${top?.score?.toFixed(3) || 'n/a'} below floor ${ECHO_MIN_SIMILARITY}`);
+    return;
+  }
+
+  const source = db.prepare(
+    'SELECT id, title, body_text, created_at FROM entries WHERE id = ? AND user_id = ?'
+  ).get(top.entryId, userId);
+  if (!source || !source.body_text) return;
+
+  // Pick the sentence in the source most similar to the current entry text.
+  const sentences = splitSentences(source.body_text)
+    .filter((s) => s.length >= ECHO_SNIPPET_MIN_CHARS);
+  if (!sentences.length) return;
+
+  const currentVec = await embed(currentText);
+  let bestIdx = -1;
+  let bestScore = -Infinity;
+  const sentVecs = [];
+  for (let i = 0; i < sentences.length; i++) {
+    const v = await embed(sentences[i]);
+    sentVecs.push(v);
+    const score = dot(currentVec, v);
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  }
+  if (bestIdx === -1) return;
+  const snippet = trimSnippet(sentences[bestIdx]);
+  if (snippet.length < ECHO_SNIPPET_MIN_CHARS) return;
+  const snippetVec = sentVecs[bestIdx];
+
+  // Pick which block to attach to: highest cosine between block.body and snippet.
+  let bestBlock = 0;
+  let bestBlockScore = -Infinity;
+  for (let i = 0; i < blocks.length; i++) {
+    const body = blocks[i]?.body || '';
+    if (!body.trim()) continue;
+    const bv = await embed(body);
+    const score = dot(snippetVec, bv);
+    if (score > bestBlockScore) { bestBlockScore = score; bestBlock = i; }
+  }
+
+  blocks[bestBlock] = {
+    ...blocks[bestBlock],
+    echo: {
+      snippet,
+      source_id: source.id,
+      source_title: source.title || 'Untitled',
+      source_date: source.created_at,
+    },
+  };
+  console.log(`[reflect] echo attached to block ${bestBlock} from entry ${source.id} (sim=${top.score.toFixed(3)})`);
 }
 
 module.exports = router;

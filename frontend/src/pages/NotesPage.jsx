@@ -18,6 +18,7 @@ import History from '@tiptap/extension-history';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useNotes } from '../hooks/useNotes';
 import { useDictation } from '../hooks/useDictation';
+import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
 import { apiFetch } from '../utils/api';
@@ -72,6 +73,8 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
     activeNote,
     activeFilters,
     allTags,
+    allManualTags,
+    allAutoTags,
     customTags,
     createNote,
     scheduleUpdate,
@@ -380,15 +383,20 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
         ))}
 
         {(() => {
+          // Render manual tags first, then a divider, then LLM-applied auto
+          // tags. Built-in type pills already cover the canonical labels
+          // (idea/quote/etc.), so we strip them from both lists. Manual wins
+          // already happens upstream in useNotes, so we can render directly.
           const builtInSet = new Set(BUILT_IN_TYPES.map(b => b.type));
-          const extraTags = allTags.filter(t => !builtInSet.has(t));
-          if (extraTags.length === 0) return null;
+          const manualExtras = (allManualTags || allTags).filter(t => !builtInSet.has(t));
+          const autoExtras = (allAutoTags || []).filter(t => !builtInSet.has(t));
+          if (manualExtras.length === 0 && autoExtras.length === 0) return null;
           return (
             <>
               <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
-              {extraTags.map((tag) => (
+              {manualExtras.map((tag) => (
                 <CustomTagPill
-                  key={tag}
+                  key={`m-${tag}`}
                   label={tag}
                   active={activeFilters.includes(tag)}
                   onClick={() => toggleFilter(tag)}
@@ -396,6 +404,29 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
                     t('notes.deleteTagConfirm', { tag }),
                     () => handleDeleteTag(tag)
                   )}
+                />
+              ))}
+              {autoExtras.length > 0 && (
+                <div style={{
+                  width: '50px',
+                  height: '1px',
+                  background: 'var(--border)',
+                  opacity: 0.6,
+                  margin: '4px 0',
+                  flexShrink: 0,
+                }} title="LLM-suggested tags" />
+              )}
+              {autoExtras.map((tag) => (
+                <CustomTagPill
+                  key={`a-${tag}`}
+                  label={tag}
+                  active={activeFilters.includes(tag)}
+                  onClick={() => toggleFilter(tag)}
+                  onDelete={() => openConfirm(
+                    t('notes.deleteTagConfirm', { tag }),
+                    () => handleDeleteTag(tag)
+                  )}
+                  auto
                 />
               ))}
             </>
@@ -608,9 +639,15 @@ function TypePill({ label, active, onClick }) {
 
 // ── CustomTagPill ─────────────────────────────────────────────────────────────
 
-function CustomTagPill({ label, active, onClick, onDelete }) {
+function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
+
+  // Auto (LLM-applied) tags get a dashed border + italic so they read as
+  // distinct from user-typed manual tags at a glance.
+  const borderStyle = auto
+    ? (active ? '1px solid var(--strong)' : '1px dashed var(--border)')
+    : (active ? '1px solid var(--strong)' : '1px solid var(--border)');
 
   return (
     <div
@@ -619,7 +656,7 @@ function CustomTagPill({ label, active, onClick, onDelete }) {
         alignItems: 'center',
         width: '62px',
         borderRadius: '20px',
-        border: active ? '1px solid var(--strong)' : '1px solid var(--border)',
+        border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
         overflow: 'hidden',
         transition: 'all 0.12s',
@@ -635,10 +672,11 @@ function CustomTagPill({ label, active, onClick, onDelete }) {
           padding: '5px 0 5px 6px',
           fontSize: '10px',
           fontWeight: active ? '600' : '400',
+          fontStyle: auto && !active ? 'italic' : 'normal',
           letterSpacing: '0.03em',
           background: 'none',
           border: 'none',
-          color: active ? 'var(--white)' : 'var(--body)',
+          color: active ? 'var(--white)' : (auto ? 'var(--muted)' : 'var(--body)'),
           cursor: 'pointer',
           textAlign: 'left',
           fontFamily: 'var(--font)',
@@ -754,14 +792,38 @@ const TYPE_LABEL_KEYS = {
   none: 'notes.typeNone',
 };
 
-function TypeSelector({ note, customTags, onChange }) {
+function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestion, onChange }) {
   const { t } = useLanguage();
   const tags = note.tags || [];
+  const autoTags = note.auto_tags || [];
 
+  // Toggle: manual pills toggle in `tags`, auto pills in `auto_tags`. A pill
+  // not on the note yet (e.g. an existing filter from another note) gets
+  // added as a manual tag.
   function toggleTag(tag) {
-    const next = tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag];
-    onChange(note.id, { tags: next });
+    if (tags.includes(tag)) {
+      onChange(note.id, { tags: tags.filter(t => t !== tag) });
+    } else if (autoTags.includes(tag)) {
+      onChange(note.id, { auto_tags: autoTags.filter(t => t !== tag) });
+    } else {
+      onChange(note.id, { tags: [...tags, tag] });
+    }
   }
+
+  // Promote a suggestion → write into `auto_tags`. The user can later
+  // promote it to manual by clicking the auto pill (server's normaliseTagPair
+  // ensures it never lives in both arrays at once).
+  function applySuggestion(tag) {
+    if (!tags.includes(tag) && !autoTags.includes(tag)) {
+      onChange(note.id, { auto_tags: [...autoTags, tag] });
+    }
+    onDismissSuggestion?.(tag);
+  }
+
+  // Hide suggestions that overlap built-in types, existing custom tags, or
+  // anything already on the note (manual or auto).
+  const knownSet = new Set([...BUILT_IN_NOTE_TYPES, ...customTags, ...tags, ...autoTags]);
+  const freshSuggestions = suggestedTags.filter((s) => !knownSet.has(s));
 
   const pillBase = {
     fontSize: '10px',
@@ -783,6 +845,28 @@ function TypeSelector({ note, customTags, onChange }) {
     color: 'var(--white)',
     fontWeight: '600',
   };
+
+  // Visually distinct pill style for live LLM-suggested tags — dashed border
+  // and italic so the user can tell at a glance these aren't yet applied.
+  const pillSuggested = {
+    border: '1px dashed var(--border)',
+    background: 'var(--near-white)',
+    color: 'var(--muted)',
+    fontStyle: 'italic',
+  };
+
+  // Auto-applied (LLM) tags already on the note: dashed border, no italic.
+  const pillAuto = {
+    border: '1px dashed var(--border)',
+    background: 'transparent',
+    color: 'var(--muted)',
+  };
+
+  // Auto tags to render inline. Hide ones that are also a built-in type or
+  // a known custom tag — those already render via the customTags pass with
+  // the active state, and showing both would be a duplicate.
+  const customSet = new Set([...BUILT_IN_NOTE_TYPES, ...customTags]);
+  const inlineAutoTags = autoTags.filter((t) => !customSet.has(t));
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', flex: 1, marginRight: '16px' }}>
@@ -815,6 +899,36 @@ function TypeSelector({ note, customTags, onChange }) {
           </button>
         );
       })}
+
+      {inlineAutoTags.length > 0 && (
+        <div style={{ width: '1px', height: '14px', background: 'var(--border)', flexShrink: 0, margin: '0 2px' }} />
+      )}
+
+      {inlineAutoTags.map((tag) => (
+        <button
+          key={'a-' + tag}
+          style={{ ...pillBase, ...pillAuto }}
+          onClick={() => toggleTag(tag)}
+          title="Suggested tag — click to remove"
+        >
+          {tag}
+        </button>
+      ))}
+
+      {freshSuggestions.length > 0 && (
+        <div style={{ width: '1px', height: '14px', background: 'var(--border)', flexShrink: 0, margin: '0 2px' }} />
+      )}
+
+      {freshSuggestions.map((tag) => (
+        <button
+          key={'sug-' + tag}
+          style={{ ...pillBase, ...pillSuggested }}
+          onClick={() => applySuggestion(tag)}
+          title="Suggested — click to add"
+        >
+          + {tag}
+        </button>
+      ))}
     </div>
   );
 }
@@ -826,7 +940,7 @@ function noteWordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle }) {
+function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle, editMode, onToggleEditMode }) {
   const { t } = useLanguage();
   if (!editor) return null;
   const words = noteWordCount(editor.getText());
@@ -891,6 +1005,16 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle 
       {btn(t('doodle.title'), false, () => onDoodle?.(), <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12L1 13L3 12L12 3L11 2L2 11Z" /><path d="M10 3L11 4" /></svg>)}
       <div style={{ flex: 1 }} />
       <button
+        style={{ ...btnStyle, ...(editMode ? btnActive : {}), marginRight: '2px' }}
+        title={editMode ? 'Exit edit mode' : 'Enable edit mode'}
+        onClick={onToggleEditMode}
+        type="button"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button
         style={{ ...btnStyle, fontSize: '14px', marginRight: '2px' }}
         title={t('notes.versionHistory')}
         onClick={onVersionsOpen}
@@ -941,48 +1065,32 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
+  const [editorText, setEditorText] = useState('');
+  const [editMode, setEditMode] = useState(false);
   const ttsAudioRef = useRef(null);
   const ttsCancelRef = useRef(false);
-  const [contextPopup, setContextPopup] = useState(null);
   const editorWrapRef = useRef(null);
-  const contextPopupRef = useRef(null);
 
   useEffect(() => { setSaveStatus('idle'); }, [note.id]);
 
-  // Close context popup on click outside
+  // Reseed the suggestion source when switching notes so the bar doesn't keep
+  // showing tags suggested for the previous note's content.
   useEffect(() => {
-    if (!contextPopup) return;
-    function close(e) {
-      if (contextPopupRef.current && contextPopupRef.current.contains(e.target)) return;
-      setContextPopup(null);
-    }
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [contextPopup]);
+    setEditorText((note?.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+  }, [note.id]);
 
-  const handleEditorContextMenu = useCallback((e) => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      setContextPopup(null);
-      return;
-    }
-    const text = sel.toString().trim();
-    if (editorWrapRef.current && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      if (!editorWrapRef.current.contains(range.commonAncestorContainer)) {
-        setContextPopup(null);
-        return;
-      }
-      setContextPopup({
-        x: e.clientX,
-        y: e.clientY,
-        below: e.clientY > window.innerHeight * 0.6,
-        text,
-      });
-    }
-  }, []);
+  // Live LLM-suggested tags. Existing manual + auto tags and the note's
+  // `type` (also rendered as a pill in the same bar) are excluded so
+  // suggestions only show fresh adds.
+  const existingTagSet = (note.tags || [])
+    .concat(note.auto_tags || [])
+    .concat(note.type ? [note.type] : []);
+  const { suggestions: suggestedTags, dismiss: dismissSuggestion } = useTagSuggestions(
+    editorText,
+    existingTagSet
+  );
 
-  async function handlePolish() {
+async function handlePolish() {
     const ed = editorRef.current;
     if (!ed || !note?.id || polishing) return;
     const html = ed.getHTML();
@@ -1113,6 +1221,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       const noteId = noteRef.current.id; // capture NOW
       const body = editor.getHTML();
       pendingSave.current = { id: noteId, body };
+      setEditorText(editor.getText());
 
       setSaveStatus('saving');
       clearTimeout(saveTimer.current);
@@ -1136,6 +1245,15 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const editorRef = useRef(null);
   useEffect(() => { editorRef.current = editor; }, [editor]);
 
+  // Read-only by default; toggle via the pencil button in the toolbar.
+  useEffect(() => {
+    if (editor) editor.setEditable(editMode);
+  }, [editor, editMode]);
+
+  // When switching notes, drop back to read-only so users don't accidentally
+  // edit a note they just clicked into.
+  useEffect(() => { setEditMode(false); }, [note.id]);
+
   const { isRecording, isProcessing, toggle: toggleDictation } = useDictation((text) => {
     editorRef.current?.chain().focus().insertContent(text + ' ').run();
   });
@@ -1151,6 +1269,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         onVersionsOpen={() => { setVersionsOpen(true); fetchVersions(); }}
         onCardPull={() => setCardModalOpen(true)}
         onDoodle={() => setDoodleModalOpen(true)}
+        editMode={editMode}
+        onToggleEditMode={() => setEditMode(v => !v)}
       />
 
       {/* Type selector row — like the TAGS bar in Journal */}
@@ -1167,6 +1287,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
         <TypeSelector
           note={note}
           customTags={customTags}
+          suggestedTags={suggestedTags}
+          onDismissSuggestion={dismissSuggestion}
           onChange={onChange}
         />
       </div>
@@ -1195,7 +1317,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
       </div>
 
       {/* Scrollable content */}
-      <div ref={editorWrapRef} data-page-context-menu onContextMenu={handleEditorContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
+      <div ref={editorWrapRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
         <DefaultEditor note={note} editor={editor} />
         <div
           style={{ height: '240px', cursor: 'text' }}
@@ -1207,86 +1329,6 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
             editor.chain().focus('end').insertContent('<p></p>'.repeat(lines)).run();
           }}
         />
-
-        {/* Right-click read-aloud popup */}
-        {contextPopup && (
-          <div ref={contextPopupRef} style={{
-            position: 'fixed',
-            left: `${contextPopup.x + 4}px`,
-            top: `${contextPopup.y + 4}px`,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '2px',
-            zIndex: 100,
-            userSelect: 'none',
-            background: 'var(--white)',
-            borderRadius: '20px',
-            padding: '3px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
-          }}>
-            <div
-              style={{
-                color: 'var(--body)',
-                fontSize: '11px',
-                fontWeight: '500',
-                borderRadius: '16px',
-                padding: '5px 12px',
-                whiteSpace: 'nowrap',
-                cursor: 'pointer',
-                fontFamily: 'var(--font)',
-                transition: 'background 0.12s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-              }}
-              onClick={() => {
-                const text = contextPopup.text;
-                setContextPopup(null);
-                ttsCancelRef.current = false;
-                streamSpeak(text, ttsAudioRef, ttsCancelRef);
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              <WaveformIcon playing={false} /> {t('common.readAloud')}
-            </div>
-            <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
-            <div
-              style={{
-                color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
-                padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
-                transition: 'background 0.12s',
-              }}
-              onClick={async () => {
-                const text = contextPopup.text;
-                setContextPopup(null);
-                try { await navigator.clipboard.writeText(text); } catch {}
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              Copy
-            </div>
-            <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
-            <div
-              style={{
-                color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
-                padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
-                transition: 'background 0.12s',
-              }}
-              onClick={async () => {
-                setContextPopup(null);
-                let clip = '';
-                try { clip = await navigator.clipboard.readText(); } catch {}
-                if (clip && editor) editor.chain().focus().insertContent(clip).run();
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              Paste
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Polish + Mic — fixed footer */}
@@ -1520,9 +1562,12 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBloc
   const [selectedArchetype, setSelectedArchetype] = useState('Auto');
   const archetypeRef = useRef(null);
   const [mirrorCustomArchetypes, setMirrorCustomArchetypes] = useState([]);
-  const [contextPopup, setContextPopup] = useState(null);
   const bodyRef = useRef(null);
-  const mirrorContextRef = useRef(null);
+  const [editMode, setEditMode] = useState(false);
+
+  // Drop back to read-only when switching notes so the user doesn't
+  // accidentally edit reflections of a note they just clicked into.
+  useEffect(() => { setEditMode(false); }, [note?.id]);
 
   useEffect(() => () => {
     stopSpeak(ttsAudioRef, readingCancelledRef);
@@ -1552,40 +1597,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBloc
     return () => document.removeEventListener('click', handleClick);
   }, [archetypeOpen]);
 
-  // Close context popup on click outside
-  useEffect(() => {
-    if (!contextPopup) return;
-    function close(e) {
-      if (mirrorContextRef.current && mirrorContextRef.current.contains(e.target)) return;
-      setContextPopup(null);
-    }
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [contextPopup]);
-
-  const handleContextMenu = useCallback((e) => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      setContextPopup(null);
-      return;
-    }
-    const text = sel.toString().trim();
-    if (bodyRef.current && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      if (!bodyRef.current.contains(range.commonAncestorContainer)) {
-        setContextPopup(null);
-        return;
-      }
-      setContextPopup({
-        x: e.clientX,
-        y: e.clientY,
-        below: e.clientY > window.innerHeight * 0.6,
-        text,
-      });
-    }
-  }, []);
-
-  // Voice for read-all / selected-text reads:
+// Voice for read-all / selected-text reads:
   //  1. Dropdown selection (if non-Auto) — voice updates immediately, no re-reflect needed
   //  2. Else, common archetype across all blocks (from a prior single-archetype reflect)
   //  3. Else undefined → system default
@@ -1608,13 +1620,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBloc
     setReadingAll(false);
   }
 
-  function readSelectedText(text) {
-    setContextPopup(null);
-    readingCancelledRef.current = false;
-    streamSpeak(text, ttsAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
-  }
-
-  const panelStyle = {
+const panelStyle = {
     width: '100%',
     height: '100%',
     background: 'var(--near-white)',
@@ -1681,7 +1687,7 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBloc
       </div>
 
       {/* Blocks */}
-      <div ref={bodyRef} data-page-context-menu onContextMenu={handleContextMenu} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
+      <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
         {loading && (
           <div style={{ padding: '40px 24px', textAlign: 'center' }}>
             <div style={{ fontSize: '24px', color: 'var(--muted)', letterSpacing: '4px', animation: 'pulse 1.4s ease-in-out infinite' }}>· · ·</div>
@@ -1712,69 +1718,12 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBloc
             key={i}
             block={block}
             overrideArchetype={selectedArchetype !== 'Auto' ? selectedArchetype : undefined}
-            onChange={onUpdateBlock && note?.id ? (next) => onUpdateBlock(note.id, i, next) : undefined}
-            onPatch={onPatchBlock && note?.id ? (patch) => onPatchBlock(note.id, i, patch) : undefined}
-            onDelete={onDeleteBlock && note?.id ? () => onDeleteBlock(note.id, i) : undefined}
+            onChange={editMode && onUpdateBlock && note?.id ? (next) => onUpdateBlock(note.id, i, next) : undefined}
+            onPatch={editMode && onPatchBlock && note?.id ? (patch) => onPatchBlock(note.id, i, patch) : undefined}
+            onDelete={editMode && onDeleteBlock && note?.id ? () => onDeleteBlock(note.id, i) : undefined}
           />
         ))}
       </div>
-
-      {/* Right-click read-aloud popup */}
-      {contextPopup && (
-        <div ref={mirrorContextRef} style={{
-          position: 'fixed',
-          left: `${contextPopup.x + 4}px`,
-          top: `${contextPopup.y + 4}px`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '2px',
-          zIndex: 100,
-          userSelect: 'none',
-          background: 'var(--white)',
-          borderRadius: '20px',
-          padding: '3px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)',
-        }}>
-          <div
-            style={{
-              color: 'var(--body)',
-              fontSize: '11px',
-              fontWeight: '500',
-              borderRadius: '16px',
-              padding: '5px 12px',
-              whiteSpace: 'nowrap',
-              cursor: 'pointer',
-              fontFamily: 'var(--font)',
-              transition: 'background 0.12s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-            onClick={() => readSelectedText(contextPopup.text)}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            <WaveformIcon playing={false} /> {t('common.readAloud')}
-          </div>
-          <div style={{ width: '1px', height: '16px', background: 'var(--border)', flexShrink: 0 }} />
-          <div
-            style={{
-              color: 'var(--body)', fontSize: '11px', fontWeight: '500', borderRadius: '16px',
-              padding: '5px 12px', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font)',
-              transition: 'background 0.12s',
-            }}
-            onClick={async () => {
-              const text = contextPopup.text;
-              setContextPopup(null);
-              try { await navigator.clipboard.writeText(text); } catch {}
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            Copy
-          </div>
-        </div>
-      )}
 
       {/* Archetype picker popup */}
       {archetypeOpen && (
@@ -1867,8 +1816,30 @@ function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBloc
           {loading ? t('notes.reflecting') : t('notes.reflect')}
         </button>
 
-        {/* Add manual block */}
-        {onAddBlock && (
+        {/* Edit mode toggle */}
+        <button
+          onClick={() => setEditMode(v => !v)}
+          title={editMode ? (t('common.done') || 'Done') : (t('common.edit') || 'Edit')}
+          type="button"
+          disabled={blocks.length === 0}
+          style={{
+            ...pillBtn,
+            background: editMode ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+            color: editMode ? 'var(--strong)' : 'var(--muted)',
+            cursor: blocks.length === 0 ? 'default' : 'pointer',
+            opacity: blocks.length === 0 ? 0.35 : 1,
+            boxShadow: editMode
+              ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+              : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        {/* Add manual block — only in edit mode */}
+        {onAddBlock && editMode && (
           <button
             onClick={() => onAddBlock(note?.id)}
             title={t('mirror.addBlock')}

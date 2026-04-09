@@ -34,6 +34,15 @@ export function useEntries() {
     });
   }, []);
 
+  // Refetch when something outside this hook (e.g. SelectionMenu's
+  // "Save to journal" action) creates an entry, so the new row shows up
+  // in the list immediately.
+  useEffect(() => {
+    function onChanged() { fetchEntries(); }
+    window.addEventListener('liminal:entries-changed', onChanged);
+    return () => window.removeEventListener('liminal:entries-changed', onChanged);
+  }, [fetchEntries]);
+
   const createEntry = useCallback(async () => {
     try {
       const res = await apiFetch(`${API}/entries`, {
@@ -104,8 +113,15 @@ export function useEntries() {
     }
   }, []);
 
-  // Collect all unique tags across entries
-  const allTags = [...new Set(entries.flatMap(e => e.tags || []))].sort();
+  // Collect manual + auto tags as separate sorted pools so the filter column
+  // can render user-typed tags above LLM-applied ones with a visual divider.
+  // Auto tags shadowed by a manual one are filtered out (manual wins).
+  const allManualTags = [...new Set(entries.flatMap(e => e.tags || []))].sort();
+  const manualSet = new Set(allManualTags);
+  const allAutoTags = [...new Set(entries.flatMap(e => e.auto_tags || []))]
+    .filter((t) => !manualSet.has(t))
+    .sort();
+  const allTags = [...allManualTags, ...allAutoTags];
 
   return {
     entries,
@@ -117,5 +133,7 @@ export function useEntries() {
     selectEntry,
     refreshEntries: fetchEntries,
     allTags,
+    allManualTags,
+    allAutoTags,
   };
 }
