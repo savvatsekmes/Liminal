@@ -1323,13 +1323,16 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
       {/* Profile picture */}
       <Field label={t('settings.profilePicture')} hint={t('settings.profilePictureHint')}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          {avatarUrl ? (
-            <img src={avatarUrl} alt="Avatar" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: 'var(--border-style)' }} />
-          ) : (
-            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--panel-bg)', border: 'var(--border-style)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '600', color: 'var(--muted)' }}>
-              {(username || '?')[0].toUpperCase()}
-            </div>
-          )}
+          <img
+            src={avatarUrl || ''}
+            alt="Avatar"
+            style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: 'var(--border-style)', display: avatarUrl ? 'block' : 'none' }}
+            onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'flex'; }}
+            onLoad={e => { e.target.style.display = 'block'; e.target.nextElementSibling.style.display = 'none'; }}
+          />
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--panel-bg)', border: 'var(--border-style)', display: avatarUrl ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '600', color: 'var(--muted)' }}>
+            {(username || '?')[0].toUpperCase()}
+          </div>
           <div>
             <Btn primary onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}>
               {uploadingAvatar ? t('settings.uploading') : t('settings.uploadPhoto')}
@@ -1545,109 +1548,6 @@ function DataSection({ showToast }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
 
-  // JSON import state
-  const [importingJson, setImportingJson] = useState(false);
-  const jsonInputRef = useRef(null);
-
-  // Notion import state
-  const [notionDragging, setNotionDragging] = useState(false);
-  const [notionStatus, setNotionStatus] = useState(null);
-  const notionFileRef = useRef(null);
-  const notionPollRef = useRef(null);
-
-  useEffect(() => {
-    checkNotionStatus();
-    return () => clearInterval(notionPollRef.current);
-  }, []);
-
-  async function checkNotionStatus() {
-    try {
-      const res = await fetch('/api/notion/status');
-      const data = await res.json();
-      setNotionStatus(data);
-      if (data.running) startNotionPolling();
-    } catch {}
-  }
-
-  function startNotionPolling() {
-    clearInterval(notionPollRef.current);
-    notionPollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch('/api/notion/status');
-        const data = await res.json();
-        setNotionStatus(data);
-        if (!data.running) clearInterval(notionPollRef.current);
-      } catch {}
-    }, 1200);
-  }
-
-  async function handleNotionFile(file) {
-    if (!file || !file.name.endsWith('.zip')) {
-      showToast(t('settings.selectNotionZip'));
-      return;
-    }
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      await fetch('/api/notion/import', { method: 'POST', body: formData });
-      startNotionPolling();
-    } catch {}
-  }
-
-  function onNotionDrop(e) {
-    e.preventDefault();
-    setNotionDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleNotionFile(file);
-  }
-
-  async function handleJsonImport(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImportingJson(true);
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      // Send full backup object to backend (it handles both legacy and v2 formats)
-      const payload = Array.isArray(data) ? { entries: data } : data;
-      if (!payload.entries?.length && !payload.notes?.length && !payload.oracle_sessions?.length && !payload.portrait) {
-        showToast(t('settings.importJsonNoData'));
-        return;
-      }
-      const res = await apiFetch('/api/settings/import-json', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-      if (result.success) {
-        const parts = [];
-        if (result.entries) parts.push(`${result.entries} entries`);
-        if (result.notes) parts.push(`${result.notes} notes`);
-        if (result.oracle_sessions) parts.push(`${result.oracle_sessions} conversations`);
-        if (result.reflections) parts.push(`${result.reflections} reflections`);
-        if (result.memories) parts.push(`${result.memories} memories`);
-        showToast(`Imported: ${parts.join(', ') || 'backup restored'}`);
-      } else {
-        showToast(result.error || t('settings.importFailed'));
-      }
-    } catch {
-      showToast(t('settings.importFailed'));
-    } finally {
-      setImportingJson(false);
-      e.target.value = '';
-    }
-  }
-
-  async function exportJournal() {
-    const a = document.createElement('a');
-    a.href = '/api/settings/export';
-    a.download = '';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast(t('settings.exportStarted'));
-  }
 
   async function deleteAllEntries() {
     if (!password) return;
@@ -1674,89 +1574,218 @@ function DataSection({ showToast }) {
 
   function reset() { setStep(null); setPassword(''); setError(''); }
 
-  const notionPct = notionStatus?.total > 0 ? Math.round((notionStatus.done / notionStatus.total) * 100) : 0;
-  const showNotionProgress = notionStatus?.running || notionStatus?.phase === 'complete' || notionStatus?.phase === 'error';
+  // ── Backup config state ──────────────────────────────────────────────────
+  const [backupLocation, setBackupLocation] = useState('');
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+  const [maxBackups, setMaxBackups] = useState('10');
+  const [backingUp, setBackingUp] = useState(false);
+  const [backupStatus, setBackupStatus] = useState(null);
+  const [restorePassword, setRestorePassword] = useState('');
+  const [restoringBackup, setRestoringBackup] = useState(false);
+  const restoreInputRef = useRef(null);
+
+  useEffect(() => {
+    apiFetch('/api/settings').then(r => r.json()).then(data => {
+      setBackupLocation(data.backup_location || '');
+      setAutoBackupEnabled(data.auto_backup_enabled === 'true');
+      setMaxBackups(data.max_backups || '10');
+    }).catch(() => {});
+  }, []);
+
+  async function handleBrowseBackupFolder() {
+    if (!window.liminal?.pickBackupFolder) {
+      showToast(t('settings.backupBrowseUnavailable'));
+      return;
+    }
+    const folder = await window.liminal.pickBackupFolder();
+    if (folder) setBackupLocation(folder);
+  }
+
+  async function saveBackupSettings() {
+    await apiFetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        backup_location: backupLocation,
+        auto_backup_enabled: autoBackupEnabled ? 'true' : 'false',
+        max_backups: maxBackups,
+      }),
+    });
+    showToast(t('settings.backupSettingsSaved'));
+  }
+
+  async function handleManualBackup() {
+    if (!window.liminal?.triggerBackup) {
+      showToast(t('settings.backupUnavailable'));
+      return;
+    }
+    setBackingUp(true);
+    setBackupStatus(null);
+    try {
+      const result = await window.liminal.triggerBackup();
+      setBackupStatus(result);
+      showToast(result.success ? t('settings.backupSuccess') : t('settings.backupFailed'));
+    } finally {
+      setBackingUp(false);
+    }
+  }
+
+  const [restoreFile, setRestoreFile] = useState(null);
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+
+  function handleRestoreFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (file) setRestoreFile(file);
+    e.target.value = '';
+  }
+
+  function handleRestoreClick() {
+    if (!restoreFile) return;
+    // .liminal files need password — show dialog; .json files go straight through
+    if (restoreFile.name.endsWith('.liminal')) {
+      setRestorePassword('');
+      setShowRestoreDialog(true);
+    } else {
+      doRestore('');
+    }
+  }
+
+  async function doRestore(pw) {
+    setShowRestoreDialog(false);
+    setRestoringBackup(true);
+    try {
+      const formData = new FormData();
+      formData.append('backup', restoreFile);
+      if (pw) formData.append('password', pw);
+      const res = await apiFetch('/api/settings/restore-backup', {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await res.json();
+      if (result.success) {
+        const parts = [];
+        if (result.entries) parts.push(`${result.entries} entries`);
+        if (result.notes) parts.push(`${result.notes} notes`);
+        if (result.oracle_sessions) parts.push(`${result.oracle_sessions} conversations`);
+        if (result.settings) parts.push(`${result.settings} settings`);
+        showToast(`Restored: ${parts.join(', ') || 'backup restored'}`);
+        setRestoreFile(null);
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        showToast(result.error || t('settings.restoreFailed'));
+      }
+    } catch {
+      showToast(t('settings.restoreFailed'));
+    } finally {
+      setRestoringBackup(false);
+    }
+  }
 
   return (
     <>
-      {/* Export */}
-      <Section title={t('settings.exportBackup')}>
-        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '14px', lineHeight: '1.6' }}>
-          {t('settings.exportDesc')}
-        </div>
-        <Btn onClick={exportJournal}>{t('settings.exportBackup')}</Btn>
-      </Section>
+      {/* Backup Configuration */}
+      <Section title={t('settings.backupConfig')}>
+        <Field label={t('settings.backupLocation')} hint={t('settings.backupLocationHint')}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              style={{ ...s.input, flex: 1 }}
+              value={backupLocation}
+              onChange={e => setBackupLocation(e.target.value)}
+              placeholder={t('settings.backupLocationPlaceholder')}
+            />
+            <Btn onClick={handleBrowseBackupFolder}>{t('settings.browse')}</Btn>
+          </div>
+        </Field>
 
-      {/* Import */}
-      <Section title={t('settings.importData')}>
-        {/* JSON import */}
-        <div style={{ ...s.label, marginBottom: '8px' }}>{t('settings.importJson')}</div>
-        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px', lineHeight: '1.6' }}>
-          {t('settings.importJsonDesc')}
-        </div>
+        <Field label={t('settings.autoBackup')} hint={t('settings.autoBackupHint')}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: backupLocation ? 'pointer' : 'not-allowed', opacity: backupLocation ? 1 : 0.5 }}>
+            <input
+              type="checkbox"
+              checked={autoBackupEnabled}
+              onChange={e => setAutoBackupEnabled(e.target.checked)}
+              disabled={!backupLocation}
+            />
+            <span style={{ fontSize: '13px', color: 'var(--body)' }}>{t('settings.autoBackupLabel')}</span>
+          </label>
+        </Field>
 
-        <div style={{ marginBottom: '24px' }}>
-          <Btn onClick={() => jsonInputRef.current?.click()} disabled={importingJson}>
-            {importingJson ? t('settings.working') : t('settings.importJsonBtn')}
+        <Field label={t('settings.maxBackups')} hint={t('settings.maxBackupsHint')}>
+          <select style={s.input} value={maxBackups} onChange={e => setMaxBackups(e.target.value)}>
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+          </select>
+        </Field>
+
+        <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+          <Btn primary onClick={saveBackupSettings}>{t('common.save')}</Btn>
+          <Btn onClick={handleManualBackup} disabled={backingUp || !backupLocation}>
+            {backingUp ? t('settings.working') : t('settings.backupNow')}
           </Btn>
-          <input ref={jsonInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleJsonImport} />
         </div>
 
-        {/* Notion import */}
-        <div style={{ ...s.label, marginBottom: '8px' }}>{t('settings.importFromNotion')}</div>
-        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px', lineHeight: '1.6' }}>
-          {t('settings.notionImportDesc')}
-        </div>
-        <div
-          style={{
-            border: `1.5px dashed ${notionDragging ? 'var(--strong)' : 'var(--border)'}`,
-            background: notionDragging ? 'var(--near-white)' : 'transparent',
-            borderRadius: '16px',
-            padding: '28px 24px',
-            textAlign: 'center',
-            cursor: 'pointer',
-            transition: 'border-color 0.15s, background 0.15s',
-            marginBottom: '14px',
-          }}
-          onDragOver={(e) => { e.preventDefault(); setNotionDragging(true); }}
-          onDragLeave={() => setNotionDragging(false)}
-          onDrop={onNotionDrop}
-          onClick={() => notionFileRef.current?.click()}
-          role="button"
-          tabIndex={0}
-        >
-          <div style={{ fontSize: '22px', color: 'var(--border)', marginBottom: '8px' }}>⊕</div>
-          <div style={{ fontSize: '12px', color: 'var(--body)' }}>
-            {t('settings.notionDropZone')}
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
-            {t('settings.notionExportPath')}
-          </div>
-          <input
-            ref={notionFileRef}
-            type="file"
-            accept=".zip"
-            style={{ display: 'none' }}
-            onChange={(e) => e.target.files[0] && handleNotionFile(e.target.files[0])}
-          />
-        </div>
-
-        {showNotionProgress && (
-          <div style={{ border: 'var(--border-style)', borderRadius: '10px', overflow: 'hidden', background: 'var(--panel-bg)' }}>
-            <div style={{ height: '3px', background: 'var(--strong)', width: `${notionPct}%`, transition: 'width 0.4s ease' }} />
-            <div style={{ padding: '8px 12px', fontSize: '12px', color: 'var(--body)' }}>
-              {notionStatus.phase === 'error'
-                ? `Error: ${notionStatus.message}`
-                : notionStatus.message || t('settings.working')}
-              {notionStatus.phase === 'complete' && notionStatus.result && (
-                <span style={{ marginLeft: '8px', color: 'var(--muted)' }}>
-                  ({t('settings.importedCount', { count: notionStatus.result.imported })}, {t('settings.skippedCount', { count: notionStatus.result.skipped })})
-                </span>
-              )}
-            </div>
+        {backupStatus && (
+          <div style={{ marginTop: '10px', fontSize: '12px', color: backupStatus.success ? 'var(--body)' : '#c0392b', lineHeight: '1.5' }}>
+            {backupStatus.success
+              ? `${t('settings.backupSuccess')} — ${backupStatus.path}`
+              : `${t('settings.backupFailed')}: ${backupStatus.error}`}
           </div>
         )}
       </Section>
+
+      {/* Restore from backup */}
+      <Section title={t('settings.restoreBackup')}>
+        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '14px', lineHeight: '1.6' }}>
+          {t('settings.restoreBackupDesc')}
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <Btn onClick={() => restoreInputRef.current?.click()}>
+            {restoreFile ? restoreFile.name : t('settings.chooseBackupFile')}
+          </Btn>
+          <input ref={restoreInputRef} type="file" accept=".liminal,.json" style={{ display: 'none' }} onChange={handleRestoreFileSelect} />
+          <Btn primary onClick={handleRestoreClick} disabled={restoringBackup || !restoreFile}>
+            {restoringBackup ? t('settings.working') : t('settings.restoreBackupBtn')}
+          </Btn>
+        </div>
+      </Section>
+
+      {/* Password dialog for encrypted restore */}
+      {showRestoreDialog && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setShowRestoreDialog(false)}>
+          <div style={{
+            background: 'var(--white)', borderRadius: '14px', padding: '28px 32px',
+            border: 'var(--border-style)', maxWidth: '380px', width: '90vw',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--strong)', marginBottom: '6px' }}>
+              {t('settings.restoreBackup')}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
+              {t('settings.restorePasswordDesc')}
+            </div>
+            <input
+              style={{ ...s.input, marginBottom: '16px' }}
+              type="password"
+              autoFocus
+              value={restorePassword}
+              onChange={e => setRestorePassword(e.target.value)}
+              placeholder={t('settings.restorePasswordPlaceholder')}
+              onKeyDown={e => { if (e.key === 'Enter' && restorePassword) doRestore(restorePassword); }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <Btn onClick={() => setShowRestoreDialog(false)}>{t('common.cancel')}</Btn>
+              <Btn primary onClick={() => doRestore(restorePassword)} disabled={!restorePassword}>
+                {t('settings.restoreBackupBtn')}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Danger zone */}
       <Section title={t('settings.dangerZone')}>

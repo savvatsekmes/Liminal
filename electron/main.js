@@ -14,7 +14,7 @@
 // `backend/data/` for storage. The Windows .vbs scripts continue to work
 // independently — this Electron entry point is purely additive.
 
-const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, dialog } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -305,7 +305,159 @@ function killChild(child) {
   } catch {}
 }
 
-app.on('before-quit', () => {
-  killChild(backendProc);
-  killChild(ttsProc);
+// ── Backup system ────────────────────────────────────────────────────────────
+
+let sessionPassword = null;
+let sessionToken = null;
+
+ipcMain.on('liminal:set-session-password', (_event, pw, token) => {
+  sessionPassword = pw;
+  if (token) sessionToken = token;
+});
+
+ipcMain.handle('liminal:pick-backup-folder', async () => {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Choose backup location',
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
+
+/** Fetch JSON from the running backend. */
+function backendFetch(urlPath, options = {}) {
+  return new Promise((resolve, reject) => {
+    const method = options.method || 'GET';
+    const headers = { ...(options.headers || {}) };
+    // Inject auth token for authenticated endpoints
+    if (sessionToken && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${sessionToken}`;
+    }
+    const reqOpts = {
+      host: '127.0.0.1',
+      port: BACKEND_PORT,
+      path: urlPath,
+      method,
+      timeout: options.timeout || 15000,
+      headers,
+    };
+    const req = http.request(reqOpts, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        resolve({ status: res.statusCode, buf, headers: res.headers });
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Backend request timed out')); });
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
+
+/** Perform an encrypted backup to the given directory. Returns the file path. */
+async function performBackup(backupDir, maxBackups) {
+  // Request encrypted backup from backend
+  const res = await backendFetch('/api/settings/backup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: sessionPassword }),
+    timeout: 30000,
+  });
+
+  if (res.status !== 200) {
+    const errText = res.buf.toString('utf8');
+    throw new Error(`Backup request failed (${res.status}): ${errText}`);
+  }
+
+  // Write to backup dir
+  fs.mkdirSync(backupDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `liminal-backup-${ts}.liminal`;
+  const filepath = path.join(backupDir, filename);
+  fs.writeFileSync(filepath, res.buf);
+
+  // Rotate
+  rotateBackups(backupDir, maxBackups || 10);
+
+  return filepath;
+}
+
+/** Keep only the newest `maxKeep` backup files, delete the rest. */
+function rotateBackups(dir, maxKeep) {
+  try {
+    const files = fs.readdirSync(dir)
+      .filter(f => f.startsWith('liminal-backup-') && f.endsWith('.liminal'))
+      .map(f => ({ name: f, mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    for (let i = maxKeep; i < files.length; i++) {
+      try { fs.unlinkSync(path.join(dir, files[i].name)); } catch {}
+    }
+  } catch {}
+}
+
+ipcMain.handle('liminal:trigger-backup', async () => {
+  if (!sessionPassword) return { success: false, error: 'No session password — please log in first' };
+  try {
+    const settingsRes = await backendFetch('/api/settings');
+    const settings = JSON.parse(settingsRes.buf.toString('utf8'));
+    const backupDir = (settings.backup_location || '').trim() || path.join(USER_DATA, 'backups');
+    const maxBackups = parseInt(settings.max_backups, 10) || 10;
+    const filepath = await performBackup(backupDir, maxBackups);
+    return { success: true, path: filepath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// ── Auto-backup on quit ──────────────────────────────────────────────────────
+
+let isQuitting = false;
+
+app.on('before-quit', async (event) => {
+  if (isQuitting) {
+    // Second pass — actually quit, kill children
+    killChild(backendProc);
+    killChild(ttsProc);
+    return;
+  }
+
+  event.preventDefault();
+  isQuitting = true;
+
+  try {
+    if (sessionPassword) {
+      const settingsRes = await backendFetch('/api/settings', { timeout: 5000 });
+      const settings = JSON.parse(settingsRes.buf.toString('utf8'));
+
+      if (settings.auto_backup_enabled === 'true') {
+        const backupDir = (settings.backup_location || '').trim();
+        if (backupDir) {
+          // Show backup splash
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('liminal:backup-starting');
+          }
+
+          const maxBackups = parseInt(settings.max_backups, 10) || 10;
+          await performBackup(backupDir, maxBackups);
+
+          try {
+            fs.appendFileSync(path.join(USER_DATA, 'backup.log'),
+              `[${new Date().toISOString()}] Auto-backup saved to ${backupDir}\n`);
+          } catch {}
+        }
+      }
+    }
+  } catch (err) {
+    // Never block quit on backup failure
+    try {
+      fs.appendFileSync(path.join(USER_DATA, 'backup.log'),
+        `[${new Date().toISOString()}] Auto-backup failed: ${err.message}\n`);
+    } catch {}
+  }
+
+  app.quit();
 });

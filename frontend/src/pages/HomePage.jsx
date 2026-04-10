@@ -1312,12 +1312,14 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     const body = cardHtml;
 
     try {
-      await apiFetch('/api/entries', {
+      const res = await apiFetch('/api/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, body }),
       });
+      if (!res.ok) throw new Error(await res.text());
       setCardSaved(true);
+      window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
     } catch {}
   }
 
@@ -1334,8 +1336,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     const title = q.author ? `"${q.text.slice(0, 50)}…" — ${q.author}` : `"${q.text.slice(0, 60)}…"`;
     const body = `<p><em>"${q.text}"</em></p>${q.author ? `<p>— ${q.author}</p>` : ''}`;
     try {
-      await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      const res = await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      if (!res.ok) throw new Error(await res.text());
       setQuoteSaved(true);
+      window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
     } catch {}
   }
   async function handleSavePulse() {
@@ -1343,8 +1347,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     const title = `Pulse — ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`;
     const body = `<p><em>"${pulse}"</em></p><p><small>— from your last entry, ${pulseDays}</small></p>`;
     try {
-      await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      const res = await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      if (!res.ok) throw new Error(await res.text());
       setPulseSaved(true);
+      window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
     } catch {}
   }
   async function handlePulseSpeak() {
@@ -1368,8 +1374,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     const title = `Insight — ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`;
     const body = `<p><em>"${insight}"</em></p>`;
     try {
-      await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      const res = await apiFetch('/api/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body }) });
+      if (!res.ok) throw new Error(await res.text());
       setInsightSaved(true);
+      window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
     } catch {}
   }
 
@@ -1401,12 +1409,14 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     const title = 'Portrait Sketch';
     const body = `<p>${portraitSnippet}</p>`;
     try {
-      await apiFetch('/api/entries', {
+      const res = await apiFetch('/api/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, body, tags: ['portrait'] }),
       });
+      if (!res.ok) throw new Error(await res.text());
       setSnippetSaved(true);
+      window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
     } catch {}
   }
 
@@ -1623,7 +1633,16 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         );
       }
       case 'portrait': {
-        if (!portrait?.birth_date) return null;
+        if (!portrait?.birth_date) {
+          return (
+            <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px 0', width: '100%', textAlign: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: '1.5' }}>{t('home.portraitEmpty')}</span>
+                <span style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: '500', cursor: 'pointer' }}>{t('home.portraitSetup')} ›</span>
+              </div>
+            </div>
+          );
+        }
         const isCompact = size === 'compact';
         return (
           <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>

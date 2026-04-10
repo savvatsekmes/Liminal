@@ -33,4 +33,4 @@ function signToken(userId, username) {
   return jwt.sign({ userId, username }, getSecret(), { expiresIn: '30d' });
 }
 
-module.exports = { requireAuth, signToken };
+module.exports = { requireAuth, signToken, getSecret };

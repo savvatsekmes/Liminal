@@ -31,6 +31,9 @@ const DEFAULTS = {
   display_name:              '',
   language:                  'en',
   lock_timeout_minutes:      '30',
+  backup_location:           '',
+  auto_backup_enabled:       'false',
+  max_backups:               '10',
 };
 
 // ── Core get/set ─────────────────────────────────────────────────────────────

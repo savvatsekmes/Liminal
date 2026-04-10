@@ -182,62 +182,9 @@ router.post('/reindex', (req, res) => {
 });
 
 // ── GET /api/settings/export ──────────────────────────────────────────────────
-// Download full Liminal backup as JSON (all user data)
+// Download full Liminal backup as JSON (all user data, v3 format)
 router.get('/export', (req, res) => {
-  const entries = db.prepare(`
-    SELECT id, title, body, body_text, date, tags, created_at, updated_at
-    FROM entries ORDER BY date DESC, created_at DESC
-  `).all().map(e => ({ ...e, tags: parseJSON(e.tags, []) }));
-
-  const notes = db.prepare(`
-    SELECT id, type, body, attribution, target_date, custom_tag, created_at, updated_at
-    FROM notes ORDER BY created_at DESC
-  `).all();
-
-  const oracleSessions = db.prepare(`
-    SELECT id, archetype, title, created_at FROM oracle_sessions ORDER BY created_at DESC
-  `).all().map(session => ({
-    ...session,
-    messages: db.prepare(
-      'SELECT role, content, archetype, created_at FROM oracle_messages WHERE session_id = ? ORDER BY created_at'
-    ).all(session.id),
-  }));
-
-  const reflections = db.prepare(`
-    SELECT entry_id, blocks, created_at, updated_at FROM reflections ORDER BY created_at DESC
-  `).all().map(r => ({ ...r, blocks: parseJSON(r.blocks, []) }));
-
-  const noteReflections = db.prepare(`
-    SELECT note_id, blocks, created_at, updated_at FROM note_reflections ORDER BY created_at DESC
-  `).all().map(r => ({ ...r, blocks: parseJSON(r.blocks, []) }));
-
-  const portrait = db.prepare('SELECT * FROM portrait WHERE id = 1').get();
-  const memory   = db.prepare('SELECT summary, updated_at FROM memory WHERE id = 1').get();
-  const memories = db.prepare('SELECT content, pinned, source_entry_id, created_at FROM memories ORDER BY created_at DESC').all();
-
-  const entryVersions = db.prepare(`
-    SELECT entry_id, title, body, body_text, saved_at FROM entry_versions ORDER BY saved_at DESC
-  `).all();
-
-  const noteVersions = db.prepare(`
-    SELECT note_id, body, saved_at FROM note_versions ORDER BY saved_at DESC
-  `).all();
-
-  const exportData = {
-    exported_at: new Date().toISOString(),
-    version: 2,
-    entries,
-    notes,
-    oracle_sessions: oracleSessions,
-    reflections,
-    note_reflections: noteReflections,
-    portrait: portrait || {},
-    memory_summary: memory?.summary || '',
-    memories,
-    entry_versions: entryVersions,
-    note_versions: noteVersions,
-  };
-
+  const exportData = buildExportData(resolveUserId(req));
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="liminal-backup-${new Date().toISOString().split('T')[0]}.json"`);
   res.json(exportData);
@@ -294,233 +241,519 @@ router.post('/restart', (req, res) => {
 });
 
 // ── POST /api/settings/import-json ───────────────────────────────────────────
-// Import full Liminal backup (entries, notes, oracle, reflections, portrait, memories, versions)
+// Import full Liminal backup (entries, notes, oracle, reflections, portrait, memories, versions, settings, users)
 router.post('/import-json', express.json({ limit: '50mb' }), (req, res) => {
   const data = req.body || {};
-  // Support both raw array (legacy) and full backup object
   const entries = Array.isArray(data) ? data : (data.entries || []);
   const notes = data.notes || [];
   const oracleSessions = data.oracle_sessions || [];
-  const reflections = data.reflections || [];
-  const noteReflections = data.note_reflections || [];
   const portrait = data.portrait || null;
-  const memorySummary = data.memory_summary || null;
-  const memories = data.memories || [];
-  const entryVersions = data.entry_versions || [];
-  const noteVersions = data.note_versions || [];
 
-  if (entries.length === 0 && notes.length === 0 && oracleSessions.length === 0 && !portrait) {
+  if (entries.length === 0 && notes.length === 0 && oracleSessions.length === 0 && !portrait && !data.settings && !data.users) {
     return res.status(400).json({ error: 'No data found in backup file' });
   }
 
-  const counts = { entries: 0, notes: 0, oracle_sessions: 0, reflections: 0, note_reflections: 0, memories: 0, entry_versions: 0, note_versions: 0, skipped: 0 };
-
-  // Maps from old IDs to new IDs for foreign key remapping
-  const entryIdMap = {};
-  const noteIdMap = {};
-  const sessionIdMap = {};
+  const counts = { entries: 0, notes: 0, oracle_sessions: 0, reflections: 0, note_reflections: 0, memories: 0, entry_versions: 0, note_versions: 0, settings: 0, users: 0, skipped: 0 };
+  const entryIdMap = {}, noteIdMap = {}, sessionIdMap = {};
 
   const run = db.transaction(() => {
-    // 1. Entries
-    const insertEntry = db.prepare(`
-      INSERT INTO entries (title, body, body_text, date, tags, created_at, updated_at)
-      VALUES (@title, @body, @body_text, @date, @tags, @created_at, @updated_at)
-    `);
-    for (const e of entries) {
-      try {
-        const title = e.title || 'Untitled';
-        const body = e.body || e.body_text || '';
-        const body_text = e.body_text || body.replace(/<[^>]*>/g, '');
-        const date = e.date || (e.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
-        const tags = JSON.stringify(Array.isArray(e.tags) ? e.tags : []);
-        const created_at = e.created_at || new Date().toISOString();
-        const updated_at = e.updated_at || created_at;
-        const result = insertEntry.run({ title, body, body_text, date, tags, created_at, updated_at });
-        if (e.id) entryIdMap[e.id] = result.lastInsertRowid;
-        counts.entries++;
-      } catch { counts.skipped++; }
-    }
-
-    // 2. Notes
-    const insertNote = db.prepare(`
-      INSERT INTO notes (type, body, attribution, target_date, custom_tag, created_at, updated_at)
-      VALUES (@type, @body, @attribution, @target_date, @custom_tag, @created_at, @updated_at)
-    `);
-    for (const n of notes) {
-      try {
-        const result = insertNote.run({
-          type: n.type || 'general',
-          body: n.body || '',
-          attribution: n.attribution || null,
-          target_date: n.target_date || null,
-          custom_tag: n.custom_tag || null,
-          created_at: n.created_at || new Date().toISOString(),
-          updated_at: n.updated_at || n.created_at || new Date().toISOString(),
-        });
-        if (n.id) noteIdMap[n.id] = result.lastInsertRowid;
-        counts.notes++;
-      } catch { counts.skipped++; }
-    }
-
-    // 3. Oracle sessions + messages
-    const insertSession = db.prepare(`
-      INSERT INTO oracle_sessions (user_id, archetype, title, created_at)
-      VALUES (@user_id, @archetype, @title, @created_at)
-    `);
-    const insertMessage = db.prepare(`
-      INSERT INTO oracle_messages (session_id, role, content, archetype, created_at)
-      VALUES (@session_id, @role, @content, @archetype, @created_at)
-    `);
-    for (const sess of oracleSessions) {
-      try {
-        const result = insertSession.run({
-          user_id: req.userId || 1,
-          archetype: sess.archetype || 'mirror',
-          title: sess.title || null,
-          created_at: sess.created_at || new Date().toISOString(),
-        });
-        const newSessionId = result.lastInsertRowid;
-        if (sess.id) sessionIdMap[sess.id] = newSessionId;
-        for (const msg of (sess.messages || [])) {
-          insertMessage.run({
-            session_id: newSessionId,
-            role: msg.role || 'user',
-            content: msg.content || '',
-            archetype: msg.archetype || sess.archetype || null,
-            created_at: msg.created_at || new Date().toISOString(),
-          });
-        }
-        counts.oracle_sessions++;
-      } catch { counts.skipped++; }
-    }
-
-    // 4. Reflections (remap entry_id)
-    const insertReflection = db.prepare(`
-      INSERT INTO reflections (entry_id, user_id, blocks, created_at, updated_at)
-      VALUES (@entry_id, @user_id, @blocks, @created_at, @updated_at)
-    `);
-    for (const r of reflections) {
-      try {
-        const newEntryId = entryIdMap[r.entry_id] || r.entry_id;
-        insertReflection.run({
-          entry_id: newEntryId,
-          user_id: req.userId || 1,
-          blocks: typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || []),
-          created_at: r.created_at || new Date().toISOString(),
-          updated_at: r.updated_at || r.created_at || new Date().toISOString(),
-        });
-        counts.reflections++;
-      } catch { counts.skipped++; }
-    }
-
-    // 5. Note reflections (remap note_id)
-    const insertNoteReflection = db.prepare(`
-      INSERT INTO note_reflections (note_id, user_id, blocks, created_at, updated_at)
-      VALUES (@note_id, @user_id, @blocks, @created_at, @updated_at)
-    `);
-    for (const r of noteReflections) {
-      try {
-        const newNoteId = noteIdMap[r.note_id] || r.note_id;
-        insertNoteReflection.run({
-          note_id: newNoteId,
-          user_id: req.userId || 1,
-          blocks: typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || []),
-          created_at: r.created_at || new Date().toISOString(),
-          updated_at: r.updated_at || r.created_at || new Date().toISOString(),
-        });
-        counts.note_reflections++;
-      } catch { counts.skipped++; }
-    }
-
-    // 6. Portrait (merge into existing row)
-    if (portrait && Object.keys(portrait).length > 0) {
-      const existing = db.prepare('SELECT id FROM portrait WHERE id = 1').get();
-      if (existing) {
-        const fields = ['preferred_name','age','location','occupation','big_goals','core_values',
-          'communication_style','growth_edges','triggers','comfort_activities','important_people',
-          'daily_routines','health_notes','spiritual_orientation','love_languages','mbti',
-          'enneagram','strengths','shadow_traits','current_season','updated_at'];
-        for (const f of fields) {
-          if (portrait[f] !== undefined && portrait[f] !== null && portrait[f] !== '') {
-            try { db.prepare(`UPDATE portrait SET ${f} = ? WHERE id = 1`).run(portrait[f]); } catch {}
-          }
-        }
-      }
-    }
-
-    // 7. Memories
-    const insertMemory = db.prepare(`
-      INSERT INTO memories (user_id, content, pinned, source_entry_id, created_at)
-      VALUES (@user_id, @content, @pinned, @source_entry_id, @created_at)
-    `);
-    for (const m of memories) {
-      try {
-        insertMemory.run({
-          user_id: req.userId || 1,
-          content: m.content || '',
-          pinned: m.pinned || 0,
-          source_entry_id: m.source_entry_id ? (entryIdMap[m.source_entry_id] || m.source_entry_id) : null,
-          created_at: m.created_at || new Date().toISOString(),
-        });
-        counts.memories++;
-      } catch { counts.skipped++; }
-    }
-
-    // 8. Memory summary
-    if (memorySummary) {
-      const existing = db.prepare('SELECT id FROM memory WHERE id = 1').get();
-      if (existing) {
-        db.prepare('UPDATE memory SET summary = ?, updated_at = ? WHERE id = 1')
-          .run(memorySummary, new Date().toISOString());
-      } else {
-        db.prepare('INSERT INTO memory (id, summary, updated_at) VALUES (1, ?, ?)')
-          .run(memorySummary, new Date().toISOString());
-      }
-    }
-
-    // 9. Entry versions (remap entry_id)
-    const insertEntryVersion = db.prepare(`
-      INSERT INTO entry_versions (entry_id, user_id, title, body, body_text, saved_at)
-      VALUES (@entry_id, @user_id, @title, @body, @body_text, @saved_at)
-    `);
-    for (const v of entryVersions) {
-      try {
-        insertEntryVersion.run({
-          entry_id: entryIdMap[v.entry_id] || v.entry_id,
-          user_id: req.userId || 1,
-          title: v.title || '',
-          body: v.body || '',
-          body_text: v.body_text || '',
-          saved_at: v.saved_at || new Date().toISOString(),
-        });
-        counts.entry_versions++;
-      } catch { counts.skipped++; }
-    }
-
-    // 10. Note versions (remap note_id)
-    const insertNoteVersion = db.prepare(`
-      INSERT INTO note_versions (note_id, user_id, body, saved_at)
-      VALUES (@note_id, @user_id, @body, @saved_at)
-    `);
-    for (const v of noteVersions) {
-      try {
-        insertNoteVersion.run({
-          note_id: noteIdMap[v.note_id] || v.note_id,
-          user_id: req.userId || 1,
-          body: v.body || '',
-          saved_at: v.saved_at || new Date().toISOString(),
-        });
-        counts.note_versions++;
-      } catch { counts.skipped++; }
-    }
+    importDataIntoDb(data, entries, notes, oracleSessions,
+      data.reflections || [], data.note_reflections || [],
+      portrait, data.memory_summary || null, data.memories || [],
+      data.entry_versions || [], data.note_versions || [],
+      counts, entryIdMap, noteIdMap, sessionIdMap, resolveUserId(req));
   });
 
   run();
   res.json({ success: true, ...counts });
 });
 
+// ── POST /api/settings/backup ────────────────────────────────────────────────
+// Generate an encrypted .liminal backup. Accepts { password } to derive the key.
+router.post('/backup', express.json(), async (req, res) => {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'Password required for encrypted backup' });
+
+  // Verify password against any existing user
+  const bcrypt = require('bcryptjs');
+  const user = db.prepare('SELECT password_hash FROM users ORDER BY id LIMIT 1').get();
+  if (!user) return res.status(401).json({ error: 'No user account found' });
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+
+  try {
+    // Build v3 export data (reuse the export logic)
+    const exportData = buildExportData(resolveUserId(req));
+
+    const { encrypt } = require('../services/backupCrypto');
+    const encrypted = encrypt(JSON.stringify(exportData), password);
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="liminal-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.liminal"`);
+    res.send(encrypted);
+  } catch (err) {
+    console.error('[backup] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/settings/restore-backup ────────────────────────────────────────
+// Restore from an encrypted .liminal or legacy JSON backup.
+const multer = require('multer');
+const backupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+
+router.post('/restore-backup', backupUpload.single('backup'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No backup file uploaded' });
+
+  const { password } = req.body || {};
+  const buf = req.file.buffer;
+  let data;
+
+  const { isEncrypted, decrypt } = require('../services/backupCrypto');
+
+  if (isEncrypted(buf)) {
+    if (!password) return res.status(400).json({ error: 'Password required to decrypt this backup' });
+    try {
+      const json = decrypt(buf, password);
+      data = JSON.parse(json);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  } else {
+    // Legacy unencrypted JSON
+    try {
+      data = JSON.parse(buf.toString('utf8'));
+    } catch {
+      return res.status(400).json({ error: 'Invalid backup file — not encrypted and not valid JSON' });
+    }
+  }
+
+  // Run the shared import logic
+  const entries = Array.isArray(data) ? data : (data.entries || []);
+  const portrait = data.portrait || null;
+
+  if (entries.length === 0 && (data.notes || []).length === 0 && (data.oracle_sessions || []).length === 0 && !portrait && !data.settings && !data.users) {
+    return res.status(400).json({ error: 'No data found in backup file' });
+  }
+
+  // Determine the current user from the JWT token
+  let userId = resolveUserId(req);
+  const counts = { entries: 0, notes: 0, oracle_sessions: 0, reflections: 0, note_reflections: 0, memories: 0, entry_versions: 0, note_versions: 0, settings: 0, users: 0, skipped: 0 };
+  const entryIdMap = {}, noteIdMap = {}, sessionIdMap = {};
+
+  try {
+    const run = db.transaction(() => {
+      importDataIntoDb(data, entries, data.notes || [], data.oracle_sessions || [],
+        data.reflections || [], data.note_reflections || [],
+        portrait, data.memory_summary || null, data.memories || [],
+        data.entry_versions || [], data.note_versions || [],
+        counts, entryIdMap, noteIdMap, sessionIdMap, userId);
+    });
+
+    run();
+    res.json({ success: true, ...counts });
+  } catch (err) {
+    console.error('[restore-backup] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ── Shared helpers ──────────────────────────────────────────────────────────
+
+/** Build the v3 export data object. Used by GET /export and POST /backup.
+ *  @param {number} userId — export only this user's data (entries, notes, etc.)
+ */
+function buildExportData(userId) {
+  // ── User-scoped data ────────────────────────────────────────────────────────
+  const entries = db.prepare(`
+    SELECT id, title, body, body_text, date, tags, auto_tags, created_at, updated_at
+    FROM entries WHERE user_id = ? ORDER BY date DESC, created_at DESC
+  `).all(userId).map(e => ({ ...e, tags: parseJSON(e.tags, []), auto_tags: parseJSON(e.auto_tags, []) }));
+
+  const entryIds = new Set(entries.map(e => e.id));
+
+  const notes = db.prepare(`
+    SELECT id, type, body, attribution, target_date, custom_tag, auto_tags, created_at, updated_at
+    FROM notes WHERE user_id = ? ORDER BY created_at DESC
+  `).all(userId);
+
+  const noteIds = new Set(notes.map(n => n.id));
+
+  const oracleSessions = db.prepare(`
+    SELECT id, archetype, title, created_at FROM oracle_sessions WHERE user_id = ? ORDER BY created_at DESC
+  `).all(userId).map(session => ({
+    ...session,
+    messages: db.prepare(
+      'SELECT role, content, archetype, created_at FROM oracle_messages WHERE session_id = ? ORDER BY created_at'
+    ).all(session.id),
+  }));
+
+  const reflections = db.prepare(`
+    SELECT entry_id, blocks, created_at, updated_at FROM reflections WHERE user_id = ? ORDER BY created_at DESC
+  `).all(userId).map(r => ({ ...r, blocks: parseJSON(r.blocks, []) }));
+
+  const noteReflections = db.prepare(`
+    SELECT note_id, blocks, created_at, updated_at FROM note_reflections WHERE user_id = ? ORDER BY created_at DESC
+  `).all(userId).map(r => ({ ...r, blocks: parseJSON(r.blocks, []) }));
+
+  const memories = db.prepare(`
+    SELECT content, pinned, source_entry_id, created_at FROM memories WHERE user_id = ? ORDER BY created_at DESC
+  `).all(userId);
+
+  const entryVersions = db.prepare(`
+    SELECT entry_id, title, body, body_text, saved_at FROM entry_versions WHERE user_id = ? ORDER BY saved_at DESC
+  `).all(userId);
+
+  const noteVersions = db.prepare(`
+    SELECT note_id, body, saved_at FROM note_versions WHERE user_id = ? ORDER BY saved_at DESC
+  `).all(userId);
+
+  // ── Per-user singleton data ──────────────────────────────────────────────────
+  const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
+  const memory   = db.prepare('SELECT summary, updated_at FROM memory WHERE user_id = ?').get(userId);
+
+  // Home layouts
+  const homeLayouts = db.prepare(
+    'SELECT name, widget_order, is_active, created_at FROM home_layouts WHERE user_id = ? ORDER BY created_at ASC'
+  ).all(userId).map(r => ({ ...r, widget_order: parseJSON(r.widget_order, []), is_active: !!r.is_active }));
+
+  const settingsRows = db.prepare('SELECT key, value FROM settings').all();
+  const settingsObj = {};
+  for (const { key, value } of settingsRows) {
+    settingsObj[key] = value;
+  }
+
+  // Export only the current user (not all users)
+  const user = db.prepare(`
+    SELECT username, password_hash, created_at, last_login, onboarding_complete, avatar_path, terms_accepted_at
+    FROM users WHERE id = ?
+  `).get(userId);
+  const users = user ? [user] : [];
+
+  // Include avatar file as base64
+  const avatars = [];
+  if (user?.avatar_path) {
+    const avatarFile = path.join(DATA_DIR, user.avatar_path);
+    if (fs.existsSync(avatarFile)) {
+      avatars.push({
+        username: user.username,
+        path: user.avatar_path,
+        data: fs.readFileSync(avatarFile).toString('base64'),
+      });
+    }
+  }
+
+  return {
+    exported_at: new Date().toISOString(),
+    version: 3,
+    entries,
+    notes,
+    oracle_sessions: oracleSessions,
+    reflections,
+    note_reflections: noteReflections,
+    portrait: portrait || {},
+    memory_summary: memory?.summary || '',
+    memories,
+    entry_versions: entryVersions,
+    note_versions: noteVersions,
+    settings: settingsObj,
+    users,
+    avatars,
+    home_layouts: homeLayouts,
+  };
+}
+
+/** Shared import logic used by both import-json and restore-backup.
+ *  Clears existing user data first, then inserts everything from the backup.
+ */
+function importDataIntoDb(data, entries, notes, oracleSessions, reflections, noteReflections, portrait, memorySummary, memories, entryVersions, noteVersions, counts, entryIdMap, noteIdMap, sessionIdMap, userId) {
+  // ── Clear existing user data to prevent duplicates ──────────────────────────
+  db.prepare('DELETE FROM entry_versions WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM note_versions WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM reflections WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM note_reflections WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM oracle_messages WHERE session_id IN (SELECT id FROM oracle_sessions WHERE user_id = ?)').run(userId);
+  db.prepare('DELETE FROM oracle_sessions WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM memories WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM notes WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(userId);
+
+  // 1. Entries
+  const insertEntry = db.prepare(`
+    INSERT INTO entries (title, body, body_text, date, tags, auto_tags, created_at, updated_at, user_id)
+    VALUES (@title, @body, @body_text, @date, @tags, @auto_tags, @created_at, @updated_at, @user_id)
+  `);
+  for (const e of entries) {
+    try {
+      const result = insertEntry.run({
+        title: e.title || '',
+        body: e.body || '',
+        body_text: e.body_text || '',
+        date: e.date || e.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+        tags: typeof e.tags === 'string' ? e.tags : JSON.stringify(e.tags || []),
+        auto_tags: typeof e.auto_tags === 'string' ? e.auto_tags : JSON.stringify(e.auto_tags || []),
+        created_at: e.created_at || new Date().toISOString(),
+        updated_at: e.updated_at || e.created_at || new Date().toISOString(),
+        user_id: userId,
+      });
+      entryIdMap[e.id] = result.lastInsertRowid;
+      counts.entries++;
+    } catch { counts.skipped++; }
+  }
+
+  // 2. Notes
+  const insertNote = db.prepare(`
+    INSERT INTO notes (type, body, attribution, target_date, custom_tag, auto_tags, created_at, updated_at, user_id)
+    VALUES (@type, @body, @attribution, @target_date, @custom_tag, @auto_tags, @created_at, @updated_at, @user_id)
+  `);
+  for (const n of notes) {
+    try {
+      const result = insertNote.run({
+        type: n.type || 'free',
+        body: n.body || '',
+        attribution: n.attribution || null,
+        target_date: n.target_date || null,
+        custom_tag: n.custom_tag || null,
+        auto_tags: typeof n.auto_tags === 'string' ? n.auto_tags : JSON.stringify(n.auto_tags || []),
+        created_at: n.created_at || new Date().toISOString(),
+        updated_at: n.updated_at || n.created_at || new Date().toISOString(),
+        user_id: userId,
+      });
+      noteIdMap[n.id] = result.lastInsertRowid;
+      counts.notes++;
+    } catch { counts.skipped++; }
+  }
+
+  // 3. Oracle sessions + messages
+  const insertSession = db.prepare(`
+    INSERT INTO oracle_sessions (archetype, title, created_at, user_id)
+    VALUES (@archetype, @title, @created_at, @user_id)
+  `);
+  const insertMessage = db.prepare(`
+    INSERT INTO oracle_messages (session_id, role, content, archetype, created_at)
+    VALUES (@session_id, @role, @content, @archetype, @created_at)
+  `);
+  for (const sess of oracleSessions) {
+    try {
+      const result = insertSession.run({
+        archetype: sess.archetype || 'Auto',
+        title: sess.title || '',
+        created_at: sess.created_at || new Date().toISOString(),
+        user_id: userId,
+      });
+      const newSessionId = result.lastInsertRowid;
+      sessionIdMap[sess.id] = newSessionId;
+      counts.oracle_sessions++;
+      for (const msg of (sess.messages || [])) {
+        try {
+          insertMessage.run({
+            session_id: newSessionId,
+            role: msg.role || 'user',
+            content: msg.content || '',
+            archetype: msg.archetype || sess.archetype || null,
+            created_at: msg.created_at || sess.created_at || new Date().toISOString(),
+          });
+        } catch {}
+      }
+    } catch { counts.skipped++; }
+  }
+
+  // 4. Reflections (remap entry_id)
+  const insertReflection = db.prepare(`
+    INSERT INTO reflections (entry_id, user_id, blocks, created_at, updated_at)
+    VALUES (@entry_id, @user_id, @blocks, @created_at, @updated_at)
+  `);
+  for (const r of reflections) {
+    try {
+      insertReflection.run({
+        entry_id: entryIdMap[r.entry_id] || r.entry_id,
+        user_id: userId,
+        blocks: typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || []),
+        created_at: r.created_at || new Date().toISOString(),
+        updated_at: r.updated_at || r.created_at || new Date().toISOString(),
+      });
+      counts.reflections++;
+    } catch { counts.skipped++; }
+  }
+
+  // 5. Note reflections (remap note_id)
+  const insertNoteReflection = db.prepare(`
+    INSERT INTO note_reflections (note_id, user_id, blocks, created_at, updated_at)
+    VALUES (@note_id, @user_id, @blocks, @created_at, @updated_at)
+  `);
+  for (const r of noteReflections) {
+    try {
+      insertNoteReflection.run({
+        note_id: noteIdMap[r.note_id] || r.note_id,
+        user_id: userId,
+        blocks: typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || []),
+        created_at: r.created_at || new Date().toISOString(),
+        updated_at: r.updated_at || r.created_at || new Date().toISOString(),
+      });
+      counts.note_reflections++;
+    } catch { counts.skipped++; }
+  }
+
+  // 6. Portrait — full replace for the restoring user
+  if (portrait && Object.keys(portrait).length > 0) {
+    db.prepare('DELETE FROM portrait WHERE user_id = ?').run(userId);
+    const columns = db.prepare("PRAGMA table_info(portrait)").all().map(c => c.name);
+    // Skip 'id' (autoincrement) and force user_id to the restoring user
+    const colsToSet = columns.filter(c => c !== 'id' && c !== 'user_id' && portrait[c] !== undefined);
+    const colList = ['user_id', ...colsToSet].join(', ');
+    const placeholders = ['?', ...colsToSet.map(() => '?')].join(', ');
+    const values = [
+      userId,
+      ...colsToSet.map(col => {
+        const v = portrait[col];
+        return (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v;
+      }),
+    ];
+    try {
+      db.prepare(`INSERT INTO portrait (${colList}) VALUES (${placeholders})`).run(...values);
+
+    } catch (err) {
+      console.error('[restore] Portrait insert FAILED:', err.message);
+      console.error('[restore] colList:', colList);
+      db.prepare('INSERT OR IGNORE INTO portrait (user_id) VALUES (?)').run(userId);
+    }
+  }
+
+  // 7. Memories
+  const insertMemory = db.prepare(`
+    INSERT INTO memories (user_id, content, pinned, source_entry_id, created_at)
+    VALUES (@user_id, @content, @pinned, @source_entry_id, @created_at)
+  `);
+  for (const m of memories) {
+    try {
+      insertMemory.run({
+        user_id: userId,
+        content: m.content || '',
+        pinned: m.pinned || 0,
+        source_entry_id: m.source_entry_id ? (entryIdMap[m.source_entry_id] || m.source_entry_id) : null,
+        created_at: m.created_at || new Date().toISOString(),
+      });
+      counts.memories++;
+    } catch { counts.skipped++; }
+  }
+
+  // 8. Memory summary (per-user)
+  if (memorySummary) {
+    const existingMem = db.prepare('SELECT id FROM memory WHERE user_id = ?').get(userId);
+    if (existingMem) {
+      db.prepare('UPDATE memory SET summary = ?, updated_at = ? WHERE user_id = ?')
+        .run(memorySummary, new Date().toISOString(), userId);
+    } else {
+      db.prepare('INSERT INTO memory (user_id, summary, updated_at) VALUES (?, ?, ?)')
+        .run(userId, memorySummary, new Date().toISOString());
+    }
+  }
+
+  // 9. Entry versions (remap entry_id)
+  const insertEntryVersion = db.prepare(`
+    INSERT INTO entry_versions (entry_id, user_id, title, body, body_text, saved_at)
+    VALUES (@entry_id, @user_id, @title, @body, @body_text, @saved_at)
+  `);
+  for (const v of entryVersions) {
+    try {
+      insertEntryVersion.run({
+        entry_id: entryIdMap[v.entry_id] || v.entry_id,
+        user_id: userId,
+        title: v.title || '',
+        body: v.body || '',
+        body_text: v.body_text || '',
+        saved_at: v.saved_at || new Date().toISOString(),
+      });
+      counts.entry_versions++;
+    } catch { counts.skipped++; }
+  }
+
+  // 10. Note versions (remap note_id)
+  const insertNoteVersion = db.prepare(`
+    INSERT INTO note_versions (note_id, user_id, body, saved_at)
+    VALUES (@note_id, @user_id, @body, @saved_at)
+  `);
+  for (const v of noteVersions) {
+    try {
+      insertNoteVersion.run({
+        note_id: noteIdMap[v.note_id] || v.note_id,
+        user_id: userId,
+        body: v.body || '',
+        saved_at: v.saved_at || new Date().toISOString(),
+      });
+      counts.note_versions++;
+    } catch { counts.skipped++; }
+  }
+
+  // 11. Home layouts
+  if (Array.isArray(data.home_layouts) && data.home_layouts.length > 0) {
+    db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(userId);
+    const insertLayout = db.prepare(
+      'INSERT INTO home_layouts (user_id, name, widget_order, is_active, created_at) VALUES (?, ?, ?, ?, ?)'
+    );
+    for (const layout of data.home_layouts) {
+      try {
+        insertLayout.run(
+          userId,
+          layout.name || 'Default',
+          typeof layout.widget_order === 'string' ? layout.widget_order : JSON.stringify(layout.widget_order || []),
+          layout.is_active ? 1 : 0,
+          layout.created_at || new Date().toISOString(),
+        );
+      } catch { counts.skipped++; }
+    }
+  }
+
+  // 12. Settings — clear and replace all
+  if (data.settings && typeof data.settings === 'object') {
+    db.prepare('DELETE FROM settings').run();
+    for (const [key, value] of Object.entries(data.settings)) {
+      try {
+        s.set(key, value);
+        counts.settings = (counts.settings || 0) + 1;
+      } catch { counts.skipped++; }
+    }
+  }
+
+  // 12. Avatar — write file and update the RESTORING user's avatar_path
+  if (Array.isArray(data.avatars) && data.avatars.length > 0) {
+    const av = data.avatars[0]; // use the first avatar from backup
+    try {
+      // Write to a path based on the restoring user's ID, not the original path
+      const ext = path.extname(av.path) || '.png';
+      const newRelPath = `avatars/user_${userId}${ext}`;
+      const dest = path.join(DATA_DIR, newRelPath);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, Buffer.from(av.data, 'base64'));
+      // Update the restoring user's avatar_path in the DB
+      db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run(newRelPath, userId);
+
+    } catch (err) {
+      console.error('[restore] Avatar failed:', err.message);
+    }
+  }
+}
+
 function parseJSON(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
+}
+
+/** Extract userId from JWT in Authorization header (without requiring auth middleware). */
+function resolveUserId(req) {
+  try {
+    const header = req.headers.authorization;
+    if (header?.startsWith('Bearer ')) {
+      const jwt = require('jsonwebtoken');
+      const { getSecret } = require('../middleware/auth');
+      const decoded = jwt.verify(header.slice(7), getSecret());
+      return decoded.userId;
+    }
+  } catch {}
+  // Fallback: first user in DB
+  const first = db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get();
+  return first?.id || 1;
 }
 
 module.exports = router;

@@ -125,9 +125,9 @@ const s = {
 export default function PasswordGate({ onSuccess }) {
   const [view, setView] = useState('login'); // 'login' | 'register'
 
-  function handleAuthSuccess(token, username, onboardingComplete) {
+  function handleAuthSuccess(token, username, onboardingComplete, password) {
     setStoredToken(token);
-    onSuccess(username, onboardingComplete);
+    onSuccess(username, onboardingComplete, password);
   }
 
   if (view === 'register') {
@@ -164,7 +164,7 @@ function LoginForm({ onSuccess, onRegister }) {
         setError(data.error || t('auth.errorLoginFailed'));
         setPassword('');
       } else {
-        onSuccess(data.token, data.username, data.onboarding_complete);
+        onSuccess(data.token, data.username, data.onboarding_complete, password);
       }
     } catch {
       setError(t('auth.errorBackend'));
@@ -250,7 +250,7 @@ function RegisterForm({ onSuccess, onBack }) {
       if (!res.ok) {
         setError(data.error || t('auth.errorRegisterFailed'));
       } else {
-        onSuccess(data.token, data.username, data.onboarding_complete);
+        onSuccess(data.token, data.username, data.onboarding_complete, password);
       }
     } catch {
       setError(t('auth.errorBackend'));

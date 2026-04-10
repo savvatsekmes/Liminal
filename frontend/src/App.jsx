@@ -15,7 +15,7 @@ import MemoryPage from './pages/MemoryPage';
 import SettingsPage from './pages/SettingsPage';
 import { useEntries } from './hooks/useEntries';
 import { useReflect } from './hooks/useReflect';
-import { isAuthenticated, getStoredUsername, clearStoredToken, apiFetch } from './utils/api';
+import { isAuthenticated, getStoredUsername, getStoredToken, clearStoredToken, apiFetch } from './utils/api';
 import { LanguageProvider } from './i18n/LanguageContext';
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
@@ -291,8 +291,10 @@ export default function App() {
     return () => window.removeEventListener('liminal:settings-changed', onChange);
   }, []);
 
-  function handleAuthSuccess(u, onboardingComplete) {
+  function handleAuthSuccess(u, onboardingComplete, password) {
     setUsername(u);
+    // Forward password to Electron main process for encrypted backups
+    if (password) window.liminal?.setSessionPassword(password, getStoredToken());
     // After fresh login, fetch /me to pick up avatar_url and user_id —
     // otherwise the avatar stays null until the user re-uploads or restarts.
     apiFetch('/api/auth/me')
@@ -331,6 +333,13 @@ export default function App() {
     setIsFirstSession(false);
   }
 
+  // Backup splash overlay — shown by Electron main process before quit
+  const [backupSplash, setBackupSplash] = useState(false);
+  useEffect(() => {
+    if (!window.liminal?.onBackupStarting) return;
+    return window.liminal.onBackupStarting(() => setBackupSplash(true));
+  }, []);
+
   if (authStatus === null) {
     return (
       <div style={{
@@ -352,6 +361,36 @@ export default function App() {
       {authStatus === 'gate' && <PasswordGate onSuccess={handleAuthSuccess} />}
       {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
       {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} />}
+      {backupSplash && <BackupSplash />}
     </LanguageProvider>
+  );
+}
+
+function BackupSplash() {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 99999,
+      background: 'rgba(15, 15, 16, 0.92)',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      gap: '18px',
+    }}>
+      <div style={{
+        width: '40px', height: '40px',
+        border: '3px solid rgba(255,255,255,0.15)',
+        borderTopColor: 'var(--accent, #a78bfa)',
+        borderRadius: '50%',
+        animation: 'liminal-spin 0.8s linear infinite',
+      }} />
+      <div style={{
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: '14px',
+        fontFamily: 'var(--font)',
+        letterSpacing: '0.5px',
+      }}>
+        Saving backup…
+      </div>
+      <style>{`@keyframes liminal-spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
   );
 }
