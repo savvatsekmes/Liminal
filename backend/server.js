@@ -74,7 +74,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     provider: s.get('llm_provider'),
-    version: '1.0.0',
+    version: '1.1.0',
   });
 });
 
