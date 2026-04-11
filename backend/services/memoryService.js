@@ -79,12 +79,21 @@ Extract any genuinely new facts about this person. Return only the JSON.`;
 
     if (newItems.length) {
       const ins = db.prepare('INSERT INTO memories (user_id, content, pinned, source_entry_id) VALUES (?, ?, 0, ?)');
+      const exists = db.prepare(
+        "SELECT 1 FROM memories WHERE user_id = ? AND LOWER(TRIM(REPLACE(REPLACE(content, CHAR(10), ' '), '  ', ' '))) = ?"
+      );
+      const normalize = (s) => s.toLowerCase().trim().replace(/\n/g, ' ').replace(/  /g, ' ');
+      let inserted = 0;
       for (const item of newItems) {
         if (typeof item === 'string' && item.trim()) {
-          ins.run(userId, item.trim(), entryId || null);
+          const content = item.trim();
+          if (!exists.get(userId, normalize(content))) {
+            ins.run(userId, content, entryId || null);
+            inserted++;
+          }
         }
       }
-      console.log(`[memory] Extracted ${newItems.length} new memories from entry ${entryId}`);
+      console.log(`[memory] Extracted ${newItems.length} new memories from entry ${entryId}, inserted ${inserted} (deduped ${newItems.length - inserted})`);
 
       // Invalidate synthesis cache
       invalidateSynthesisCache(userId);

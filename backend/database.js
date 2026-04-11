@@ -257,6 +257,23 @@ if (!portraitForUser1) {
   db.prepare('INSERT INTO portrait (user_id) VALUES (1)').run();
 }
 
+// One-time cleanup: remove duplicate memories per user (keep oldest by id).
+// Match on normalized content (lowercased + trimmed + whitespace collapsed).
+try {
+  const dupRes = db.prepare(`
+    DELETE FROM memories
+    WHERE id NOT IN (
+      SELECT MIN(id) FROM memories
+      GROUP BY user_id, LOWER(TRIM(REPLACE(REPLACE(content, CHAR(10), ' '), '  ', ' ')))
+    )
+  `).run();
+  if (dupRes.changes > 0) {
+    console.log(`[db] Removed ${dupRes.changes} duplicate memories`);
+  }
+} catch (err) {
+  console.error('[db] Memory dedupe failed:', err.message);
+}
+
 // Migrate single-user auth → users table
 const userCount = db.prepare('SELECT COUNT(*) as n FROM users').get().n;
 if (userCount === 0) {

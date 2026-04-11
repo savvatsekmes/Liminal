@@ -190,23 +190,71 @@ router.get('/export', (req, res) => {
   res.json(exportData);
 });
 
+// ── DELETE helpers ────────────────────────────────────────────────────────────
+
+async function verifyPassword(req, res, userId) {
+  const { password } = req.body || {};
+  if (!password) { res.status(400).json({ error: 'Password required to confirm deletion' }); return false; }
+  if (!userId) { res.status(400).json({ error: 'Not authenticated' }); return false; }
+  const bcrypt = require('bcryptjs');
+  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId);
+  if (!user) { res.status(400).json({ error: 'User not found' }); return false; }
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) { res.status(400).json({ error: 'Incorrect password' }); return false; }
+  return true;
+}
+
+// ── DELETE /api/settings/data/entries ─────────────────────────────────────────
+router.delete('/data/entries', async (req, res) => {
+  const uid = resolveUserId(req);
+  if (!await verifyPassword(req, res, uid)) return;
+  db.prepare('DELETE FROM reflections WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM entry_versions WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM entry_embeddings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM entries WHERE user_id = ?').run(uid);
+  res.json({ success: true, message: 'Journal entries deleted.' });
+});
+
+// ── DELETE /api/settings/data/notes ──────────────────────────────────────────
+router.delete('/data/notes', async (req, res) => {
+  const uid = resolveUserId(req);
+  if (!await verifyPassword(req, res, uid)) return;
+  db.prepare('DELETE FROM note_reflections WHERE note_id IN (SELECT id FROM notes WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM note_versions WHERE note_id IN (SELECT id FROM notes WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM notes WHERE user_id = ?').run(uid);
+  res.json({ success: true, message: 'Notes deleted.' });
+});
+
+// ── DELETE /api/settings/data/conversations ──────────────────────────────────
+router.delete('/data/conversations', async (req, res) => {
+  const uid = resolveUserId(req);
+  if (!await verifyPassword(req, res, uid)) return;
+  db.prepare('DELETE FROM oracle_messages WHERE session_id IN (SELECT id FROM oracle_sessions WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM oracle_sessions WHERE user_id = ?').run(uid);
+  res.json({ success: true, message: 'Conversations deleted.' });
+});
+
 // ── DELETE /api/settings/data ─────────────────────────────────────────────────
-// Wipe all journal entries. Requires { password } in body for verification.
+// Wipe all user content. Requires { password } in body for verification.
 // Does NOT delete auth, portrait, or memories.
 router.delete('/data', async (req, res) => {
-  const { password } = req.body || {};
-  if (!password) return res.status(400).json({ error: 'Password required to confirm deletion' });
+  const uid = resolveUserId(req);
+  if (!await verifyPassword(req, res, uid)) return;
 
-  const bcrypt = require('bcryptjs');
-  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.userId);
-  if (!user) return res.status(401).json({ error: 'User not found' });
+  // Entries + related
+  db.prepare('DELETE FROM reflections WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM entry_versions WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM entry_embeddings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM entries WHERE user_id = ?').run(uid);
 
-  const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+  // Notes + related
+  db.prepare('DELETE FROM note_reflections WHERE note_id IN (SELECT id FROM notes WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM note_versions WHERE note_id IN (SELECT id FROM notes WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM notes WHERE user_id = ?').run(uid);
 
-  db.prepare('DELETE FROM entries').run();
-  db.prepare('DELETE FROM reflections').run();
-  db.prepare('DELETE FROM entry_embeddings').run();
+  // Conversations
+  db.prepare('DELETE FROM oracle_messages WHERE session_id IN (SELECT id FROM oracle_sessions WHERE user_id = ?)').run(uid);
+  db.prepare('DELETE FROM oracle_sessions WHERE user_id = ?').run(uid);
 
   // Wipe vectra index
   const vectraDir = path.join(DATA_DIR, 'vectra');
@@ -214,7 +262,7 @@ router.delete('/data', async (req, res) => {
     fs.rmSync(vectraDir, { recursive: true, force: true });
   }
 
-  res.json({ success: true, message: 'All journal entries deleted.' });
+  res.json({ success: true, message: 'All data deleted.' });
 });
 
 // ── PUT /api/settings/username ────────────────────────────────────────────────
@@ -374,9 +422,9 @@ function buildExportData(userId) {
   const entryIds = new Set(entries.map(e => e.id));
 
   const notes = db.prepare(`
-    SELECT id, type, body, attribution, target_date, custom_tag, auto_tags, created_at, updated_at
+    SELECT id, type, title, body, attribution, target_date, custom_tag, tags, auto_tags, created_at, updated_at
     FROM notes WHERE user_id = ? ORDER BY created_at DESC
-  `).all(userId);
+  `).all(userId).map(n => ({ ...n, tags: parseJSON(n.tags, []), auto_tags: parseJSON(n.auto_tags, []) }));
 
   const noteIds = new Set(notes.map(n => n.id));
 
@@ -505,17 +553,19 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
 
   // 2. Notes
   const insertNote = db.prepare(`
-    INSERT INTO notes (type, body, attribution, target_date, custom_tag, auto_tags, created_at, updated_at, user_id)
-    VALUES (@type, @body, @attribution, @target_date, @custom_tag, @auto_tags, @created_at, @updated_at, @user_id)
+    INSERT INTO notes (type, title, body, attribution, target_date, custom_tag, tags, auto_tags, created_at, updated_at, user_id)
+    VALUES (@type, @title, @body, @attribution, @target_date, @custom_tag, @tags, @auto_tags, @created_at, @updated_at, @user_id)
   `);
   for (const n of notes) {
     try {
       const result = insertNote.run({
         type: n.type || 'free',
+        title: n.title || '',
         body: n.body || '',
         attribution: n.attribution || null,
         target_date: n.target_date || null,
         custom_tag: n.custom_tag || null,
+        tags: typeof n.tags === 'string' ? n.tags : JSON.stringify(n.tags || []),
         auto_tags: typeof n.auto_tags === 'string' ? n.auto_tags : JSON.stringify(n.auto_tags || []),
         created_at: n.created_at || new Date().toISOString(),
         updated_at: n.updated_at || n.created_at || new Date().toISOString(),

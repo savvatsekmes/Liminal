@@ -1543,27 +1543,34 @@ function RestartButton() {
 
 function DataSection({ showToast }) {
   const { t } = useLanguage();
-  const [step, setStep] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null); // 'entries' | 'notes' | 'conversations' | 'all'
+  const [deleteStep, setDeleteStep] = useState(null); // null | 'confirm' | 'password'
   const [password, setPassword] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
 
+  const deleteEndpoints = {
+    entries: { url: '/api/settings/data/entries', toast: 'settings.journalEntriesDeleted' },
+    notes: { url: '/api/settings/data/notes', toast: 'settings.notesDeleted' },
+    conversations: { url: '/api/settings/data/conversations', toast: 'settings.conversationsDeleted' },
+    all: { url: '/api/settings/data', toast: 'settings.allDataDeleted' },
+  };
 
-  async function deleteAllEntries() {
-    if (!password) return;
+  async function performDelete() {
+    if (!password || !deleteTarget) return;
     setDeleting(true);
     setError('');
     try {
-      const res = await apiFetch('/api/settings/data', {
+      const { url, toast } = deleteEndpoints[deleteTarget];
+      const res = await apiFetch(url, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
       const data = await res.json();
       if (data.success) {
-        showToast(t('settings.allEntriesDeleted'));
-        setStep(null);
-        setPassword('');
+        showToast(t(toast));
+        resetDelete();
         setTimeout(() => window.location.reload(), 1500);
       } else {
         setError(data.error || 'Deletion failed');
@@ -1572,7 +1579,8 @@ function DataSection({ showToast }) {
     finally { setDeleting(false); }
   }
 
-  function reset() { setStep(null); setPassword(''); setError(''); }
+  function startDelete(target) { setDeleteTarget(target); setDeleteStep('confirm'); }
+  function resetDelete() { setDeleteTarget(null); setDeleteStep(null); setPassword(''); setError(''); }
 
   // ── Backup config state ──────────────────────────────────────────────────
   const [backupLocation, setBackupLocation] = useState('');
@@ -1789,28 +1797,32 @@ function DataSection({ showToast }) {
 
       {/* Danger zone */}
       <Section title={t('settings.dangerZone')}>
-        <div style={{ ...s.label, marginBottom: '6px' }}>{t('settings.deleteAllEntries')}</div>
-        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px', lineHeight: '1.6' }}>
+        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px', lineHeight: '1.6' }}>
           {t('settings.deleteEntriesFullDesc')}
         </div>
 
-        {!step && (
-          <Btn danger onClick={() => setStep('confirm')}>{t('settings.deleteAllEntries')}</Btn>
+        {!deleteStep && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Btn danger onClick={() => startDelete('entries')}>{t('settings.deleteJournalEntries')}</Btn>
+            <Btn danger onClick={() => startDelete('notes')}>{t('settings.deleteNotes')}</Btn>
+            <Btn danger onClick={() => startDelete('conversations')}>{t('settings.deleteConversations')}</Btn>
+            <Btn danger onClick={() => startDelete('all')}>{t('settings.deleteAllData')}</Btn>
+          </div>
         )}
 
-        {step === 'confirm' && (
+        {deleteStep === 'confirm' && (
           <div style={s.confirmBox}>
             <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
               {t('settings.deleteEntriesConfirm')}
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <Btn danger onClick={() => setStep('password')}>{t('settings.yesContinue')}</Btn>
-              <Btn onClick={reset}>{t('common.cancel')}</Btn>
+              <Btn danger onClick={() => setDeleteStep('password')}>{t('settings.yesContinue')}</Btn>
+              <Btn onClick={resetDelete}>{t('common.cancel')}</Btn>
             </div>
           </div>
         )}
 
-        {step === 'password' && (
+        {deleteStep === 'password' && (
           <div style={s.confirmBox}>
             <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
               {t('settings.enterPasswordToConfirm')}
@@ -1823,13 +1835,13 @@ function DataSection({ showToast }) {
                 placeholder={t('settings.password')}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && deleteAllEntries()}
+                onKeyDown={e => e.key === 'Enter' && performDelete()}
                 autoFocus
               />
-              <Btn danger onClick={deleteAllEntries} disabled={deleting || !password}>
+              <Btn danger onClick={performDelete} disabled={deleting || !password}>
                 {deleting ? '…' : t('common.delete')}
               </Btn>
-              <Btn onClick={reset}>{t('common.cancel')}</Btn>
+              <Btn onClick={resetDelete}>{t('common.cancel')}</Btn>
             </div>
           </div>
         )}

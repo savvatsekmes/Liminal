@@ -19,9 +19,18 @@ router.post('/', (req, res) => {
   const { content } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'content is required' });
 
+  const trimmed = content.trim();
+  const normalized = trimmed.toLowerCase().replace(/\n/g, ' ').replace(/  /g, ' ');
+
+  // Dedupe: if a memory with this content already exists for the user, return it
+  const existing = db.prepare(
+    "SELECT * FROM memories WHERE user_id = ? AND LOWER(TRIM(REPLACE(REPLACE(content, CHAR(10), ' '), '  ', ' '))) = ?"
+  ).get(req.userId, normalized);
+  if (existing) return res.status(200).json(existing);
+
   const result = db.prepare(
     'INSERT INTO memories (user_id, content, pinned) VALUES (?, ?, 1)'
-  ).run(req.userId, content.trim());
+  ).run(req.userId, trimmed);
 
   invalidateSynthesisCache(req.userId);
   res.status(201).json(db.prepare('SELECT * FROM memories WHERE id = ?').get(result.lastInsertRowid));
