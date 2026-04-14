@@ -1,6 +1,6 @@
 {
   "name": "liminal",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Liminal — personal AI journaling desktop app",
   "author": "Savva Tsekmes",
   "license": "UNLICENSED",
@@ -60,7 +60,9 @@
       }
     ],
     "win": {
-      "target": ["zip"],
+      "target": [
+        "zip"
+      ],
       "icon": "electron/icons/icon.ico",
       "artifactName": "Liminal-${version}-win-x64.${ext}"
     },
@@ -83,10 +85,16 @@
       "title": "Liminal ${version}"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "electron/icons/icon.png",
       "category": "Utility",
       "artifactName": "Liminal-${version}.${ext}"
     }
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }

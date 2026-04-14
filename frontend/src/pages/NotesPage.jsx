@@ -37,6 +37,7 @@ import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import ResizeDivider from '../components/ResizeDivider';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const BUILT_IN_TYPES = [
   { type: 'all',        labelKey: 'notes.typeAll' },
@@ -68,6 +69,8 @@ function formatDate(iso) {
 
 export default function NotesPage({ initialNoteId, onNoteSelected }) {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState('editor'); // 'list' | 'editor' | 'reflect'
   const {
     notes,
     activeNote,
@@ -259,13 +262,20 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
       )
     : notes;
 
+  const mobileSelectNote = (note) => {
+    selectNote(note);
+    setMobileView('editor');
+  };
+
   return (
     <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', minWidth: 0 }}>
-      {/* Note list */}
+      {/* Note list — fills available space on mobile (minus tag strip) */}
       <div style={{
-        width: noteListWidth + 'px',
+        width: isMobile ? 'auto' : noteListWidth + 'px',
+        flex: isMobile ? 1 : undefined,
+        minWidth: 0,
         flexShrink: 0,
-        display: 'flex',
+        display: isMobile && mobileView !== 'list' ? 'none' : 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         background: 'var(--near-white)',
@@ -353,15 +363,15 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
               key={note.id}
               note={note}
               active={activeNote?.id === note.id}
-              onClick={() => selectNote(note)}
+              onClick={() => isMobile ? mobileSelectNote(note) : selectNote(note)}
               onDelete={() => openConfirm(t('notes.deleteConfirm'), () => deleteNote(note.id))}
             />
           ))}
         </div>
       </div>
 
-      {/* Tag strip */}
-      <div style={{
+      {/* Tag strip — hidden on mobile except in list view */}
+      {(!isMobile || mobileView === 'list') && <div style={{
         width: '76px',
         flexShrink: 0,
         borderLeft: 'var(--border-style)',
@@ -474,14 +484,43 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
         )}
 
         <div style={{ flex: 1 }} />
-      </div>
+      </div>}
 
-      <ResizeDivider onMouseDown={startNoteListDrag} />
+      {!isMobile && <ResizeDivider onMouseDown={startNoteListDrag} />}
 
-      {/* Editor + mirror area */}
-      <div ref={editorMirrorRef} style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-        {/* Note editor */}
-        <div style={{ width: `${100 - mirrorPct}%`, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--white)' }}>
+      {/* Editor + mirror area — hidden on mobile when viewing list */}
+      <div ref={editorMirrorRef} style={{ flex: 1, display: isMobile && mobileView === 'list' ? 'none' : 'flex', minWidth: 0, overflow: 'hidden', flexDirection: isMobile ? 'column' : 'row' }}>
+        {/* Mobile top bar: Notes (list) ← → Reflect */}
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--white)', borderBottom: 'var(--border-style)', flexShrink: 0 }}>
+            {mobileView === 'reflect' ? (
+              <button
+                onClick={() => setMobileView('editor')}
+                style={{ background: 'none', border: 'none', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'var(--font)', padding: '4px 0' }}
+              >
+                ‹ Notes Editor
+              </button>
+            ) : (
+              <button
+                onClick={() => setMobileView('list')}
+                style={{ background: 'none', border: 'none', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'var(--font)', padding: '4px 0' }}
+              >
+                ‹ {t('notes.title')}
+              </button>
+            )}
+            {mobileView === 'editor' && (
+              <button
+                onClick={() => setMobileView('reflect')}
+                disabled={!activeNote}
+                style={{ background: 'none', border: 'none', fontSize: '13px', color: activeNote ? 'var(--strong)' : 'var(--muted)', cursor: activeNote ? 'pointer' : 'default', fontFamily: 'var(--font)', padding: '4px 0', opacity: activeNote ? 1 : 0.5 }}
+              >
+                {t('notes.mirror')} ›
+              </button>
+            )}
+          </div>
+        )}
+        {/* Note editor — shown on desktop always, on mobile only when view === 'editor' */}
+        <div style={{ width: isMobile ? '100%' : `${100 - mirrorPct}%`, minWidth: 0, display: isMobile && mobileView !== 'editor' ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--white)' }}>
           {activeNote ? (
             <NoteEditor
               key={activeNote.id}
@@ -510,23 +549,29 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
           )}
         </div>
 
-        <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted />
-        {/* Note mirror panel */}
-        <div style={{ width: `${mirrorPct}%`, minWidth: 0, overflow: 'hidden' }}>
-        <NoteMirrorPanel
-          note={activeNote}
-          blocks={reflectBlocks}
-          loading={reflecting}
-          error={reflectError}
-          onReflect={handleReflect}
-          onUpdateBlock={handleUpdateNoteBlock}
-          onPatchBlock={handlePatchNoteBlock}
-          onDeleteBlock={handleDeleteNoteBlock}
-          onAddBlock={handleAddNoteBlock}
-          previewVersion={previewVersion}
-          onClearPreview={() => setPreviewVersion(null)}
-        />
-      </div>
+        {!isMobile && <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted />}
+        {/* Note mirror panel — full width on mobile when view === 'reflect' */}
+        <div style={{
+          width: isMobile ? '100%' : `${mirrorPct}%`,
+          minWidth: 0,
+          overflow: 'hidden',
+          display: isMobile && mobileView !== 'reflect' ? 'none' : 'block',
+          flex: isMobile ? 1 : 'none',
+        }}>
+          <NoteMirrorPanel
+            note={activeNote}
+            blocks={reflectBlocks}
+            loading={reflecting}
+            error={reflectError}
+            onReflect={handleReflect}
+            onUpdateBlock={handleUpdateNoteBlock}
+            onPatchBlock={handlePatchNoteBlock}
+            onDeleteBlock={handleDeleteNoteBlock}
+            onAddBlock={handleAddNoteBlock}
+            previewVersion={previewVersion}
+            onClearPreview={() => setPreviewVersion(null)}
+          />
+        </div>
       </div>{/* end editor+mirror area */}
 
       {/* Confirm modal */}
@@ -1066,7 +1111,8 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const [editorText, setEditorText] = useState('');
-  const [editMode, setEditMode] = useState(false);
+  const isMobileEditor = useIsMobile();
+  const [editMode, setEditMode] = useState(isMobileEditor);
   const ttsAudioRef = useRef(null);
   const ttsCancelRef = useRef(false);
   const editorWrapRef = useRef(null);
@@ -1250,9 +1296,10 @@ async function handlePolish() {
     if (editor) editor.setEditable(editMode);
   }, [editor, editMode]);
 
-  // When switching notes, drop back to read-only so users don't accidentally
-  // edit a note they just clicked into.
-  useEffect(() => { setEditMode(false); }, [note.id]);
+  // When switching notes, drop back to read-only on desktop so users don't
+  // accidentally edit. On mobile, keep edit mode on — otherwise tapping a
+  // freshly-opened note does nothing because the editor is non-editable.
+  useEffect(() => { setEditMode(isMobileEditor); }, [note.id, isMobileEditor]);
 
   const { isRecording, isProcessing, toggle: toggleDictation } = useDictation((text) => {
     editorRef.current?.chain().focus().insertContent(text + ' ').run();

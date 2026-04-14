@@ -84,36 +84,76 @@ export const LIMINAL_LAYOUT = [
   { id: 'rhythm', width: 60 },
 ];
 
-export function useLayout() {
+// Mobile uses a single layout persisted locally — separate from the
+// backend-synced desktop layouts so the two can be tuned independently.
+const MOBILE_STORAGE_KEY = 'liminal_mobile_layout';
+const MOBILE_DEFAULT = [
+  { id: 'quote', width: 100 },
+  { id: 'moon', width: 100 },
+  { id: 'tarot', width: 100 },
+  { id: 'pulse', width: 100 },
+  { id: 'stats', width: 100 },
+  { id: 'portrait', width: 100 },
+  { id: 'insight', width: 100 },
+];
+
+function loadMobileLayout() {
+  try {
+    const raw = localStorage.getItem(MOBILE_STORAGE_KEY);
+    if (!raw) return MOBILE_DEFAULT;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return MOBILE_DEFAULT;
+    return parsed.map(item => {
+      if (typeof item === 'string') return { id: item, width: 100 };
+      return { id: item.id, width: 100 };
+    });
+  } catch {
+    return MOBILE_DEFAULT;
+  }
+}
+
+export function useLayout(isMobile = false) {
   const [savedLayouts, setSavedLayouts] = useState([]);
   const [activeLayoutId, setActiveLayoutId] = useState(null); // null = Liminal default
-  const [currentLayout, setCurrentLayout] = useState(LIMINAL_LAYOUT);
+  const [desktopLayout, setDesktopLayout] = useState(LIMINAL_LAYOUT);
+  const [mobileLayout, setMobileLayout] = useState(() => loadMobileLayout());
   const [editMode, setEditModeRaw] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  // When on mobile, current layout is the locally-stored mobile layout.
+  const currentLayout = isMobile ? mobileLayout : desktopLayout;
+  const setCurrentLayout = isMobile
+    ? (updater) => setMobileLayout(prev => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        try { localStorage.setItem(MOBILE_STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      })
+    : setDesktopLayout;
+
   // Entering edit mode on Liminal default clones into custom (unsaved)
   const setEditMode = useCallback((on) => {
-    if (on && activeLayoutId === null && !dirty) {
-      // Clone Liminal default into custom unsaved
+    if (on && !isMobile && activeLayoutId === null && !dirty) {
+      // Clone Liminal default into custom unsaved (desktop only)
       setDirty(true);
       apiFetch('/api/layouts/deactivate', { method: 'PUT' }).catch(() => {});
     }
     setEditModeRaw(on);
-  }, [activeLayoutId, dirty]);
+  }, [activeLayoutId, dirty, isMobile]);
 
-  // Load saved layouts from API
+  // Load saved layouts from API — desktop only. Mobile uses localStorage.
   useEffect(() => {
+    if (isMobile) { setLoaded(true); return; }
     apiFetch('/api/layouts').then(r => r.json()).then(layouts => {
       setSavedLayouts(layouts);
       const active = layouts.find(l => l.is_active);
       if (active) {
         setActiveLayoutId(active.id);
-        setCurrentLayout(normalizeWidgetOrder(active.widget_order));
+        setDesktopLayout(normalizeWidgetOrder(active.widget_order));
       }
       setLoaded(true);
     }).catch(() => setLoaded(true));
-  }, []);
+  }, [isMobile]);
 
   // Normalize widget_order: ensure each item is { id, width }
   function normalizeWidgetOrder(order) {

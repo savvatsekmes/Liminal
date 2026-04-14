@@ -17,6 +17,7 @@ import { useEntries } from './hooks/useEntries';
 import { useReflect } from './hooks/useReflect';
 import { isAuthenticated, getStoredUsername, getStoredToken, clearStoredToken, apiFetch } from './utils/api';
 import { LanguageProvider } from './i18n/LanguageContext';
+import { useTtsLoading } from './utils/ttsStatus';
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
 // Mounted only after auth is confirmed — ensures hooks fetch with valid token.
@@ -179,6 +180,9 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNewEntry={() => { createEntry(); handleViewChange('journal'); }}
               onNewNote={() => handleViewChange('notes')}
               onNewConversation={() => handleViewChange('oracle')}
+              onLogout={onLogout}
+              onLock={() => setLocked(true)}
+              onNavigateToSettings={() => handleViewChange('settings')}
             />
           );
           if (activeView === 'oracle') return <OraclePage initialSessionId={pendingSessionId} onSessionSelected={() => setPendingSessionId(null)} />;
@@ -362,7 +366,44 @@ export default function App() {
       {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
       {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} />}
       {backupSplash && <BackupSplash />}
+      <TtsLoadingToast />
     </LanguageProvider>
+  );
+}
+
+function TtsLoadingToast() {
+  const loading = useTtsLoading();
+  if (!loading) return null;
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: '24px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 99998,
+      background: 'rgba(15, 15, 16, 0.92)',
+      color: 'rgba(255,255,255,0.85)',
+      padding: '10px 16px',
+      borderRadius: '999px',
+      fontSize: '12px',
+      fontFamily: 'var(--font)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+      maxWidth: '92vw',
+    }}>
+      <div style={{
+        width: '12px', height: '12px',
+        border: '2px solid rgba(255,255,255,0.2)',
+        borderTopColor: 'var(--accent, #a78bfa)',
+        borderRadius: '50%',
+        animation: 'liminal-spin 0.8s linear infinite',
+        flexShrink: 0,
+      }} />
+      <span>Loading Chatterbox into VRAM… (takes ~15s first time)</span>
+      <style>{`@keyframes liminal-spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
   );
 }
 

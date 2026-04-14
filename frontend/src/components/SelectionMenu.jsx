@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { apiFetch } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -29,6 +29,7 @@ export default function SelectionMenu() {
   const spellRangeRef = useRef(null);
   const [savedToMemory, setSavedToMemory] = useState(false);
   const [savedToJournal, setSavedToJournal] = useState(false);
+  const [adjustedPos, setAdjustedPos] = useState(null);
 
   const dismiss = useCallback(() => {
     setPopup(null);
@@ -143,6 +144,18 @@ export default function SelectionMenu() {
       document.removeEventListener('keydown', onKey);
     };
   }, [popup, dismiss]);
+
+  useLayoutEffect(() => {
+    if (!menuRef.current || !popup) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const ax = Math.min(popup.x + 2, vw - rect.width - 8);
+    const ay = popup.y + rect.height + 8 > vh
+      ? Math.max(8, popup.y - rect.height)
+      : popup.y + 2;
+    setAdjustedPos({ x: ax, y: ay });
+  }, [popup]);
 
   if (!popup) return null;
 
@@ -270,14 +283,11 @@ export default function SelectionMenu() {
     }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────
-  // Position: open at click point, but flip up/left if we'd run off-screen.
+  // ── Position: measure after render, adjust if off-screen ───────────────
   const MENU_W = 220;
-  const ESTIMATED_H = 320;
-  const x = Math.min(popup.x + 2, window.innerWidth - MENU_W - 8);
-  const y = popup.y + ESTIMATED_H > window.innerHeight
-    ? Math.max(8, popup.y - ESTIMATED_H)
-    : popup.y + 2;
+
+  const x = adjustedPos?.x ?? (popup?.x ?? 0) + 2;
+  const y = adjustedPos?.y ?? (popup?.y ?? 0) + 2;
 
   const items = [];
 

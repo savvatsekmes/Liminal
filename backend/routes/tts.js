@@ -10,6 +10,38 @@ function getChatterboxUrl() {
   return require('../services/settingsService').get('chatterbox_url') || 'http://localhost:8100';
 }
 
+// If Electron is hosting this backend, it exposes a localhost control endpoint
+// that can spawn the on-demand TTS server. This lets remote clients (mobile,
+// other computers on the LAN) trigger TTS even when no Electron window has
+// logged in yet — without it, /api/tts/speak would 503 until someone on the
+// host machine used TTS first.
+async function ensureTtsViaControl() {
+  const controlUrl = process.env.LIMINAL_CONTROL_URL;
+  if (!controlUrl) return false;
+  try {
+    const r = await fetch(`${controlUrl}/tts/ensure`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(45000),
+    });
+    if (!r.ok) return false;
+    const data = await r.json();
+    return !!data.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function isChatterboxOnline() {
+  try {
+    const r = await fetch(`${getChatterboxUrl()}/v1/models`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 function getTtsDefaults() {
   const s = require('../services/settingsService');
   return {
@@ -114,7 +146,23 @@ router.post('/speak', async (req, res) => {
     return speakOpenAI(req, res, s);
   }
 
+  // Chatterbox: ensure the TTS server is running before forwarding. Without
+  // this, remote clients (mobile/other computers) would fail because the
+  // on-demand spawn was only triggered by the Electron renderer's IPC.
+  if (!(await isChatterboxOnline())) {
+    await ensureTtsViaControl();
+  }
+
   return speakChatterbox(req, res, s);
+});
+
+// ── POST /api/tts/ensure ─────────────────────────────────────────────────────
+// Remote-triggerable spawn endpoint so non-Electron clients (mobile browsers)
+// can warm up TTS before calling /speak.
+router.post('/ensure', async (_req, res) => {
+  if (await isChatterboxOnline()) return res.json({ ok: true });
+  const ok = await ensureTtsViaControl();
+  res.json({ ok });
 });
 
 async function speakChatterbox(req, res, s) {

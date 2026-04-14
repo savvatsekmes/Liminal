@@ -15,6 +15,7 @@ router.get('/', (req, res) => {
   all.has_anthropic_key = s.hasSecret('anthropic_api_key');
   all.has_openai_key    = s.hasSecret('openai_api_key');
   all.has_tavily_key    = s.hasSecret('tavily_api_key');
+  all.has_github_token  = s.hasSecret('github_token');
   res.json(all);
 });
 

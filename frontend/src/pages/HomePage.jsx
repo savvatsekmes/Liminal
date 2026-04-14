@@ -9,7 +9,11 @@ import { getHomeStrings } from '../data/homeStrings';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import { useLayout, WIDGET_LABELS } from '../hooks/useLayout';
+import { useIsMobile } from '../hooks/useIsMobile';
 import LayoutEditor from '../components/LayoutEditor';
+import ThemeToggle from '../components/ThemeToggle';
+import SearchPopup from '../components/SearchPopup';
+import { useTheme } from '../hooks/useTheme';
 import WidgetWrapper from '../components/WidgetWrapper';
 import { DndContext, pointerWithin, rectIntersection, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove } from '@dnd-kit/sortable';
@@ -884,7 +888,8 @@ function getGreeting(name, greetings, lang) {
   const h = new Date().getHours();
   let pool;
   if (h >= 5 && h < 12) pool = greetings.morning;
-  else if (h >= 12 && h < 17) pool = greetings.afternoon;
+  else if (h >= 12 && h < 14) pool = greetings.midday || greetings.afternoon;
+  else if (h >= 14 && h < 17) pool = greetings.afternoon;
   else if (h >= 17 && h < 21) pool = greetings.evening;
   else pool = greetings.night;
 
@@ -923,9 +928,12 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNewEntry, onNewNote, onNewConversation }) {
+export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNewEntry, onNewNote, onNewConversation, onLogout, onLock, onNavigateToSettings }) {
   const { t, lang } = useLanguage();
-  const layout = useLayout();
+  const isMobile = useIsMobile();
+  const layout = useLayout(isMobile);
+  const { theme } = useTheme();
+  const [searchOpen, setSearchOpen] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   // Weather
@@ -1008,6 +1016,50 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const [goals, setGoals] = useState([]);
   const [avatarFailed, setAvatarFailed] = useState(false);
   useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
+  const [avatarPopoutOpen, setAvatarPopoutOpen] = useState(false);
+  const avatarPopoutRef = useRef(null);
+  useEffect(() => {
+    if (!avatarPopoutOpen) return;
+    function handle(e) {
+      if (avatarPopoutRef.current && !avatarPopoutRef.current.contains(e.target)) {
+        setAvatarPopoutOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handle);
+    document.addEventListener('touchstart', handle);
+    return () => {
+      document.removeEventListener('mousedown', handle);
+      document.removeEventListener('touchstart', handle);
+    };
+  }, [avatarPopoutOpen]);
+  const avatarPopout = avatarPopoutOpen ? (
+    <div style={{
+      position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50,
+      minWidth: '180px', background: 'var(--white)', border: 'var(--border-style)',
+      borderRadius: '10px', boxShadow: '0 6px 20px rgba(0,0,0,0.10)', padding: '6px 0',
+      fontFamily: 'var(--font)',
+    }}>
+      <button
+        style={{ width: '100%', textAlign: 'left', padding: '8px 16px', background: 'none', border: 'none', fontSize: '13px', color: 'var(--body)', cursor: 'pointer', fontFamily: 'var(--font)' }}
+        onClick={() => { setAvatarPopoutOpen(false); onNavigateToSettings?.(); }}
+      >
+        {t('nav.settings')}
+      </button>
+      <button
+        style={{ width: '100%', textAlign: 'left', padding: '8px 16px', background: 'none', border: 'none', fontSize: '13px', color: 'var(--body)', cursor: 'pointer', fontFamily: 'var(--font)' }}
+        onClick={() => { setAvatarPopoutOpen(false); onLock?.(); }}
+      >
+        Lock
+      </button>
+      <div style={{ borderTop: 'var(--border-style)', margin: '4px 0' }} />
+      <button
+        style={{ width: '100%', textAlign: 'left', padding: '8px 16px', background: 'none', border: 'none', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'var(--font)' }}
+        onClick={() => { setAvatarPopoutOpen(false); onLogout?.(); }}
+      >
+        {t('nav.logout')}
+      </button>
+    </div>
+  ) : null;
   const [sky, setSky] = useState(null);
   const [tagged, setTagged] = useState({});
   const [insightPlaying, setInsightPlaying] = useState(false);
@@ -1463,7 +1515,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       case 'quote': {
         const q = getDailyQuote(lang, userQuotes);
         return (
-          <div style={s.quoteBlock}>
+          <div style={{ ...s.quoteBlock, ...(isMobile ? { marginBottom: '16px', paddingLeft: '10px' } : {}) }}>
             <span style={s.quoteText}>"{q.text}"</span>
             <span style={s.pulseAttribution}>
               {q.author && <span>— {q.author}</span>}
@@ -1478,7 +1530,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       case 'moon': {
         if (!moon) return null;
         return (
-          <div style={s.moonCard}>
+          <div style={{ ...s.moonCard, ...(isMobile ? { padding: '12px 14px', borderRadius: '12px', gap: '12px' } : {}) }}>
             <MoonPhaseSVGSmall illumination={moon.illumination ?? 50} phase={moon.phase ?? ''} />
             <div style={s.moonInfo}>
               <div style={s.moonPhase}>{t(`moon.phase.${(moon.phase || '').replace(/ /g, '')}`)}</div>
@@ -1495,32 +1547,35 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       case 'tarot': {
         if (!dailyCard) return null;
         return (
-          <div style={s.dailyCardPanel}>
-            <div style={s.dailyFlipContainer}>
-              <div style={{ ...s.dailyFlipInner, transform: cardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
-                <div style={s.dailyFlipFace}>
-                  <img src="/cards/card-back.png" alt="Card back" style={s.dailyCardImg} />
-                </div>
-                <div style={{ ...s.dailyFlipFace, transform: 'rotateY(180deg)' }}>
-                  {dailyCard.image ? (
-                    <img src={dailyCard.image} alt={dailyCard.name} style={{ ...s.dailyCardImg, transform: dailyCard.reversed ? 'rotate(180deg)' : 'none' }} />
-                  ) : (
-                    <div style={s.dailyOracleCard}>
-                      <div style={s.dailyOracleDiamond} />
-                      <div style={s.dailyOracleName}>{dailyCard.name}</div>
-                    </div>
-                  )}
+          <div style={{ ...s.dailyCardPanel, ...(isMobile ? { padding: '12px 14px', borderRadius: '12px', gap: '12px', flexDirection: 'column', alignItems: 'center' } : {}) }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px', ...(isMobile ? { width: '100%' } : {}) }}>
+              <div style={s.dailyFlipContainer}>
+                <div style={{ ...s.dailyFlipInner, transform: cardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
+                  <div style={s.dailyFlipFace}>
+                    <img src="/cards/card-back.png" alt="Card back" style={s.dailyCardImg} />
+                  </div>
+                  <div style={{ ...s.dailyFlipFace, transform: 'rotateY(180deg)' }}>
+                    {dailyCard.image ? (
+                      <img src={dailyCard.image} alt={dailyCard.name} style={{ ...s.dailyCardImg, transform: dailyCard.reversed ? 'rotate(180deg)' : 'none' }} />
+                    ) : (
+                      <div style={s.dailyOracleCard}>
+                        <div style={s.dailyOracleDiamond} />
+                        <div style={s.dailyOracleName}>{dailyCard.name}</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div style={s.dailyCardInfo}>
-              <div style={s.dailyCardLabel}>{t('home.dailyCard')}</div>
-              <div style={s.dailyCardName}>{dailyCard.name}{dailyCard.reversed ? ` (${t('home.reversed')})` : ''}</div>
+              <div style={s.dailyCardInfo}>
+                <div style={s.dailyCardLabel}>{t('home.dailyCard')}</div>
+                <div style={s.dailyCardName}>{dailyCard.name}{dailyCard.reversed ? ` (${t('home.reversed')})` : ''}</div>
+              </div>
+              <span style={s.moonArrowLink} onClick={() => onNavigateToCards?.()} title="View Cards">&rsaquo;</span>
             </div>
             {(dailyCard.reading || dailyCard.insight) && (
               <>
-                <div style={s.dailyCardDivider} />
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 4, minWidth: 0 }}>
+                <div style={{ ...s.dailyCardDivider, ...(isMobile ? { width: '100%', height: '1px', marginLeft: 0 } : {}) }} />
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 4, minWidth: 0, ...(isMobile ? { width: '100%' } : {}) }}>
                   <div style={s.dailyCardReading}>{dailyCard.reading || dailyCard.insight}</div>
                   <div style={s.cardActions}>
                     <button style={{ ...s.cardActionBtn, color: cardPlaying ? 'var(--strong)' : 'var(--muted)' }} onClick={handleCardSpeak} title="Read aloud">
@@ -1531,7 +1586,6 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 </div>
               </>
             )}
-            <span style={s.moonArrowLink} onClick={() => onNavigateToCards?.()} title="View Cards">&rsaquo;</span>
           </div>
         );
       }
@@ -1551,6 +1605,41 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         );
       }
       case 'stats': {
+        if (isMobile) {
+          const mStatRow = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' };
+          const mStatLeft = { display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0, flex: 1 };
+          return (
+            <div style={{ ...s.beveledSquare, padding: '10px 14px', borderRadius: '12px' }}>
+              {/* Journal */}
+              <div style={mStatRow}>
+                <div style={mStatLeft}>
+                  <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>{t('nav.journal')}</span>
+                  <span style={{ fontSize: '13px', color: 'var(--strong)', fontWeight: '600' }}>{entryCount ?? '—'} {t('home.entriesWritten')}</span>
+                  {lastEntryDate && <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{formatRelativeDate(lastEntryDate, t)}</span>}
+                </div>
+                <button style={{ ...s.statsArrow, border: 'none', padding: '0 4px' }} onClick={() => onNavigateToEntry?.()}>&rsaquo;</button>
+              </div>
+              {/* Notes */}
+              <div style={mStatRow}>
+                <div style={mStatLeft}>
+                  <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>{t('nav.notes')}</span>
+                  <span style={{ fontSize: '13px', color: 'var(--strong)', fontWeight: '600' }}>{noteCount ?? '—'} {t('home.notesWritten')}</span>
+                  {lastNoteDate && <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{formatRelativeDate(lastNoteDate, t)}</span>}
+                </div>
+                <button style={{ ...s.statsArrow, border: 'none', padding: '0 4px' }} onClick={() => onNavigateToNote?.()}>&rsaquo;</button>
+              </div>
+              {/* Oracle */}
+              <div style={{ ...mStatRow, borderBottom: 'none' }}>
+                <div style={mStatLeft}>
+                  <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>{t('nav.oracle')}</span>
+                  <span style={{ fontSize: '13px', color: 'var(--strong)', fontWeight: '600' }}>{oracleCount ?? '—'} {t('home.conversations')}</span>
+                  {lastOracleDate && <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{formatRelativeDate(lastOracleDate, t)}</span>}
+                </div>
+                <button style={{ ...s.statsArrow, border: 'none', padding: '0 4px' }} onClick={() => onNavigateToOracle?.()}>&rsaquo;</button>
+              </div>
+            </div>
+          );
+        }
         return (
           <div style={s.beveledSquare}>
             <div style={s.statsTable}>
@@ -1643,29 +1732,38 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             </div>
           );
         }
-        const isCompact = size === 'compact';
+        const isCompact = isMobile || size === 'compact';
         return (
-          <div style={s.portraitPill} onClick={() => onNavigateToPortrait?.()}>
+          <div style={{ ...s.portraitPill, ...(isMobile ? { padding: '12px 14px', borderRadius: '12px' } : {}) }} onClick={() => onNavigateToPortrait?.()}>
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
               <div style={s.portraitHeader}>
                 <span style={s.portraitLabel}>{t('portrait.title')}</span>
                 <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
               </div>
-              <div style={{ display: 'flex', gap: '20px', flex: 1 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
-                  {portrait.sun_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span><span style={s.portraitItemLabel}>{t('portrait.sunSign')}</span></div>}
-                  {portrait.moon_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span><span style={s.portraitItemLabel}>{t('portrait.moonSign')}</span></div>}
-                  {portrait.rising_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span><span style={s.portraitItemLabel}>{t('portrait.risingSign')}</span></div>}
-                  {portrait.chinese_zodiac && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span><span style={s.portraitItemLabel}>{t('portrait.chineseZodiac')}</span></div>}
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '14px' : '20px', flex: 1 }}>
+                <div style={{ display: 'flex', gap: isMobile ? '14px' : '20px', flex: isMobile ? 'none' : 1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0, flex: isMobile ? 1 : 'none' }}>
+                    {portrait.sun_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span><span style={s.portraitItemLabel}>{t('portrait.sunSign')}</span></div>}
+                    {portrait.moon_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span><span style={s.portraitItemLabel}>{t('portrait.moonSign')}</span></div>}
+                    {portrait.rising_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>↑ {portrait.rising_sign}</span><span style={s.portraitItemLabel}>{t('portrait.risingSign')}</span></div>}
+                    {portrait.chinese_zodiac && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.chinese_element ? `${portrait.chinese_element} ` : ''}{portrait.chinese_zodiac}</span><span style={s.portraitItemLabel}>{t('portrait.chineseZodiac')}</span></div>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0, flex: isMobile ? 1 : 'none' }}>
+                    {portrait.mbti && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.mbti}</span><span style={s.portraitItemLabel}>{t('portrait.mbti')}</span></div>}
+                    {portrait.life_path_number != null && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_number}</span><span style={s.portraitItemLabel}>{t('portrait.lifePathNumber')}</span></div>}
+                    {portrait.soul_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.soul_card}</span><span style={s.portraitItemLabel}>{t('portrait.soulCard')}</span></div>}
+                    {portrait.life_path_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_card}</span><span style={s.portraitItemLabel}>{t('portrait.lifePathCard')}</span></div>}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
-                  {portrait.mbti && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.mbti}</span><span style={s.portraitItemLabel}>{t('portrait.mbti')}</span></div>}
-                  {portrait.life_path_number != null && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_number}</span><span style={s.portraitItemLabel}>{t('portrait.lifePathNumber')}</span></div>}
-                  {portrait.soul_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.soul_card}</span><span style={s.portraitItemLabel}>{t('portrait.soulCard')}</span></div>}
-                  {portrait.life_path_card && <div style={s.portraitItem}><span style={s.portraitItemValue}>{portrait.life_path_card}</span><span style={s.portraitItemLabel}>{t('portrait.lifePathCard')}</span></div>}
-                </div>
-                {!isCompact && portraitSnippet && (
-                  <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid var(--border)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                {(isMobile || !isCompact) && portraitSnippet && (
+                  <div style={{
+                    flex: 1,
+                    minWidth: 0,
+                    ...(isMobile
+                      ? { borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '4px' }
+                      : { borderLeft: '1px solid var(--border)', paddingLeft: '20px' }),
+                    display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                  }}>
                     <p style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--body)', margin: 0, fontStyle: 'italic', opacity: 0.85 }}>{portraitSnippet}</p>
                     <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                       <button style={{ ...s.cardActionBtn, color: snippetPlaying ? 'var(--strong)' : 'var(--muted)' }} onClick={handleSnippetSpeak} title="Read aloud">
@@ -1697,7 +1795,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       }
       case 'themes': {
         return (
-          <div style={s.themesRhythmPill}>
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>Recurring Themes</span>
               <span style={s.themesPeriod}> ·  this month</span>
@@ -1720,7 +1818,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       }
       case 'goals': {
         return (
-          <div style={s.themesRhythmPill}>
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>Top Goals</span>
               <span style={s.themesPeriod}> ·  from your notes</span>
@@ -1769,7 +1867,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       case 'rhythm': {
         if (rhythm.length === 0) return null;
         return (
-          <div style={s.themesRhythmPill}>
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.rhythmHeader}>
               <span style={s.rhythmLabel}>Your Rhythm</span>
             </div>
@@ -1779,7 +1877,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       }
       case 'weather': {
         return (
-          <div style={s.themesRhythmPill}>
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>Weather</span>
               {weather?.city && <span style={s.themesPeriod}> ·  {weather.city}</span>}
@@ -1801,7 +1899,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       case 'sky': {
         const hasData = (moon && moon.moonSign) || (conditions && conditions.length > 0);
         return (
-          <div style={s.themesRhythmPill}>
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>Today's Sky</span>
             </div>
@@ -1851,7 +1949,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         const onClick = cfg.source === 'entries' ? onNavigateToEntry : onNavigateToNote;
         const sourceLabel = cfg.source === 'entries' ? 'journal' : 'notes';
         return (
-          <div style={s.themesRhythmPill}>
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>{label}</span>
               <span style={s.themesPeriod}> ·  from your {sourceLabel}</span>
@@ -1906,21 +2004,280 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     weekday: 'long', month: 'long', day: 'numeric',
   });
 
+  // ── MOBILE LAYOUT ──────────────────────────────────────────────────────────
+  const searchPopup = (
+    <SearchPopup
+      open={searchOpen}
+      onClose={() => setSearchOpen(false)}
+      onNavigateEntry={onNavigateToEntry}
+      onNavigateNote={onNavigateToNote}
+      onNavigateOracle={onNavigateToOracle}
+    />
+  );
+
+  if (isMobile) {
+    return (
+      <>
+      <div style={{ ...s.root, padding: '16px 14px 90px' }}>
+        <div style={s.inner}>
+          {/* ── Greeting (compact) ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+            <div ref={avatarPopoutRef} style={{ position: 'relative', flexShrink: 0 }}>
+              {avatarUrl && !avatarFailed ? (
+                <img src={avatarUrl} alt="" onError={() => setAvatarFailed(true)} onClick={() => setAvatarPopoutOpen(v => !v)} style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', cursor: 'pointer' }} />
+              ) : (
+                <div onClick={() => setAvatarPopoutOpen(v => !v)} style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px', fontWeight: '600', color: 'var(--muted)', cursor: 'pointer' }}>
+                  {(displayName || '?')[0].toUpperCase()}
+                </div>
+              )}
+              {avatarPopout}
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--strong)' }}>
+                {getGreeting(displayName || '', homeStrings.greetings, lang)}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                {today}{weather && <span>{'  '}{weather.icon} {weather.temp}° · {weather.city}</span>}
+              </div>
+            </div>
+            {!layout.editMode && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  title="Search"
+                  style={{ width: 28, height: 28, borderRadius: '50%', border: 'var(--border-style)', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--body)', padding: 0 }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+                </button>
+                <ThemeToggle size="sm" />
+                <button
+                  onClick={() => layout.setEditMode(true)}
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
+                  title="Edit layout"
+                >
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
+                  Edit
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── Quick Ask (compact) ── */}
+          <div style={{ ...s.askCard, marginBottom: '16px' }}>
+            <textarea
+              ref={textareaRef}
+              style={{ ...s.textarea, padding: '14px 14px 8px', minHeight: '48px', fontSize: '14px' }}
+              placeholder={dailyPrompt}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); }
+              }}
+              rows={2}
+            />
+            <div style={{ ...s.askCardFooter, padding: '6px 10px 10px' }}>
+              {!loading && !answer && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', flex: 1, alignItems: 'center', overflow: 'hidden' }}>
+                  {suggested.slice(0, 2).map((q) => (
+                    <button
+                      key={q}
+                      style={{ ...s.suggestedPill, margin: 0, fontSize: '10px', padding: '2px 8px' }}
+                      onClick={() => setQuestion(q)}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {(loading || answer) && <div style={{ flex: 1 }} />}
+              <div style={{ position: 'relative' }} ref={archetypeRef}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
+                  title={archetype}
+                  type="button"
+                  style={{
+                    ...s.charBtn,
+                    width: '30px', height: '30px',
+                    background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                    color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
+                    boxShadow: archetypeOpen
+                      ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                      : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+                  }}
+                >
+                  {(() => {
+                    const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
+                    const custom = customArchetypesList.find(a => a.name === archetype);
+                    if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={18} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
+                    if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={18} color={custom.color || 'var(--strong)'} />;
+                    return <ArchetypeIcon />;
+                  })()}
+                </button>
+                {archetypeOpen && (
+                  <div style={{ ...s.archetypePopup, bottom: '38px' }}>
+                    {BUILT_IN_ARCHETYPES.map((a) => (
+                      <button
+                        key={a.value}
+                        style={{
+                          ...s.archetypeOption,
+                          fontWeight: archetype === a.value ? '600' : '400',
+                          color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
+                        }}
+                        onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
+                      >
+                        <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
+                        <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
+                      </button>
+                    ))}
+                    {customArchetypesList.length > 0 && (
+                      <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
+                    )}
+                    {customArchetypesList.map((c) => (
+                      <button
+                        key={c.name}
+                        style={{
+                          ...s.archetypeOption,
+                          fontWeight: archetype === c.name ? '600' : '400',
+                          color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
+                        }}
+                        onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
+                      >
+                        <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+                        <span style={{ marginLeft: '8px' }}>{c.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <MicButton
+                isRecording={isDictating}
+                isProcessing={isDictatingProcessing}
+                onClick={toggleDictation}
+                style={{ width: '30px', height: '30px', flexShrink: 0 }}
+              />
+              <button
+                style={{ ...s.askBtn, opacity: loading || !question.trim() ? 0.4 : 1, padding: '6px 14px', fontSize: '12px' }}
+                onClick={handleAsk}
+                disabled={loading || !question.trim()}
+              >
+                {t('home.ask')}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Answer panel (full-width below ask) ── */}
+          {(loading || answer) && (
+            <div style={{ border: 'var(--border-style)', borderRadius: '14px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '14px 14px', marginBottom: '16px', overflow: 'hidden' }}>
+              {loading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px 0' }}>
+                  <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0s infinite' }} />
+                  <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0.2s infinite' }} />
+                  <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0.4s infinite' }} />
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--muted)', fontStyle: 'italic', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>"{answeredQuestion}"</span>
+                    <span style={{ ...s.responseArchPill, fontSize: '9px', padding: '1px 6px' }}>{answeredArchetype}</span>
+                  </div>
+                  <div style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--body)', maxHeight: '200px', overflowY: 'auto' }}>{answer}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+                    <button
+                      style={{ ...s.actionBtn, ...(playing ? s.actionBtnActive : {}) }}
+                      onClick={handleSpeak}
+                      title={playing ? t('mirror.stop') : t('mirror.listen')}
+                    >
+                      <WaveformIcon playing={playing} />
+                    </button>
+                    <button style={s.actionLink} onClick={handleReset}>{t('home.askAnother')}</button>
+                    {saved ? (
+                      <span style={s.savedMsg}>{t('home.savedToJournal')}</span>
+                    ) : (
+                      <button style={s.actionLink} onClick={handleSaveToJournal}>{t('home.saveToJournal')}</button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Mobile edit controls ── */}
+          {layout.editMode && (
+            <div style={{ border: 'var(--border-style)', borderRadius: '12px', padding: '10px 12px', marginBottom: '14px', background: 'var(--near-white)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <select
+                value=""
+                onChange={(e) => { if (e.target.value) { layout.addWidget(e.target.value); e.target.value = ''; } }}
+                style={{ flex: 1, fontSize: '12px', padding: '6px 8px', border: 'var(--border-style)', borderRadius: '8px', background: 'var(--white)', fontFamily: 'var(--font)' }}
+              >
+                <option value="">+ Add widget…</option>
+                {layout.availableWidgets.map(id => (
+                  <option key={id} value={id}>{layout.WIDGET_LABELS[id] || id}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => layout.setEditMode(false)}
+                style={{ fontSize: '12px', padding: '6px 14px', border: 'var(--border-style)', borderRadius: '8px', background: 'var(--strong)', color: 'var(--white)', cursor: 'pointer', fontFamily: 'var(--font)' }}
+              >
+                Done
+              </button>
+            </div>
+          )}
+
+          {/* ── Widgets (single-column, compact) ── */}
+          <DndContext sensors={sensors} collisionDetection={customCollision} onDragEnd={handleDragEnd}>
+            <SortableContext items={layout.currentLayout.map(w => w.id)} strategy={() => []}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {layout.currentLayout.map((widget) => {
+                  const content = renderWidget(widget.id, widget.width);
+                  if (!content && !layout.editMode) return null;
+                  if (layout.editMode) {
+                    return (
+                      <WidgetWrapper
+                        key={widget.id}
+                        id={widget.id}
+                        editMode={true}
+                        isLiminalDefault={false}
+                        width={100}
+                        onRemove={layout.removeWidget}
+                        onShrink={layout.shrinkWidget}
+                        onGrow={layout.growWidget}
+                      >
+                        {content || <div style={{ padding: '12px', fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>No data yet</div>}
+                      </WidgetWrapper>
+                    );
+                  }
+                  return <div key={widget.id}>{content}</div>;
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
+      </div>
+      {searchPopup}
+      </>
+    );
+  }
+
+  // ── DESKTOP LAYOUT ────────────────────────────────────────────────────────
   return (
+    <>
     <div style={s.root}>
       <div style={s.inner}>
         {/* Greeting + Quick Ask row */}
         <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', minHeight: '160px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
-          <img src="/logo.png" alt="Liminal" style={{ width: '120px', objectFit: 'contain', alignSelf: 'center', opacity: 0.85, flexShrink: 0, marginRight: '8px' }} />
+          <img src={theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png'} alt="Liminal" onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} style={{ width: '120px', objectFit: 'contain', alignSelf: 'center', opacity: 0.85, flexShrink: 0, marginRight: '8px' }} />
           <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '32px 28px 16px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              {avatarUrl && !avatarFailed ? (
-                <img src={avatarUrl} alt="" onError={() => setAvatarFailed(true)} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-              ) : (
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', fontWeight: '600', color: 'var(--muted)', flexShrink: 0 }}>
-                  {(displayName || '?')[0].toUpperCase()}
-                </div>
-              )}
+              <div ref={avatarPopoutRef} style={{ position: 'relative', flexShrink: 0 }}>
+                {avatarUrl && !avatarFailed ? (
+                  <img src={avatarUrl} alt="" onError={() => setAvatarFailed(true)} onClick={() => setAvatarPopoutOpen(v => !v)} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', cursor: 'pointer' }} />
+                ) : (
+                  <div onClick={() => setAvatarPopoutOpen(v => !v)} style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', fontWeight: '600', color: 'var(--muted)', cursor: 'pointer' }}>
+                    {(displayName || '?')[0].toUpperCase()}
+                  </div>
+                )}
+                {avatarPopout}
+              </div>
               <div>
                 <div style={s.greeting}>
                   {getGreeting(displayName || '', homeStrings.greetings, lang)}
@@ -1931,15 +2288,27 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               </div>
             </div>
             {!layout.editMode && (
-              <button
-                onClick={() => layout.setEditMode(true)}
-                style={{ alignSelf: 'flex-end', marginTop: 'auto', marginRight: '-14px', marginBottom: '-4px', background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
-              >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
-                Edit layout
-              </button>
+              <div style={{ alignSelf: 'flex-end', marginTop: 'auto', marginRight: '-14px', marginBottom: '-4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  title="Search"
+                  style={{ width: 32, height: 32, borderRadius: '50%', border: 'var(--border-style)', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--body)', padding: 0, transition: 'background 0.12s, color 0.12s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--panel-bg)'; e.currentTarget.style.color = 'var(--body)'; }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+                </button>
+                <ThemeToggle size="sm" />
+                <button
+                  onClick={() => layout.setEditMode(true)}
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
+                  Edit layout
+                </button>
+              </div>
             )}
           </div>
           {/* Quick Ask inline */}
@@ -2136,6 +2505,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
       </div>
     </div>
+    {searchPopup}
+    </>
   );
 }
 

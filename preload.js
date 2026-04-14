@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('liminal', {
     ipcRenderer.send('liminal:add-to-dictionary', word);
   },
 
+  // ── TTS on-demand ──────────────────────────────────────────────────────────
+  ensureTts() {
+    return ipcRenderer.invoke('liminal:ensure-tts');
+  },
+
   // ── Backup system ──────────────────────────────────────────────────────────
   pickBackupFolder() {
     return ipcRenderer.invoke('liminal:pick-backup-folder');
@@ -39,5 +44,13 @@ contextBridge.exposeInMainWorld('liminal', {
     const handler = (_event) => callback();
     ipcRenderer.on('liminal:backup-starting', handler);
     return () => ipcRenderer.removeListener('liminal:backup-starting', handler);
+  },
+
+  // ── Open on startup ────────────────────────────────────────────────────────
+  getLoginItem() {
+    return ipcRenderer.invoke('liminal:get-login-item');
+  },
+  setLoginItem(enabled) {
+    return ipcRenderer.invoke('liminal:set-login-item', enabled);
   },
 });

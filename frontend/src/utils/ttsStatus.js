@@ -1,20 +1,32 @@
 /**
- * Polls Chatterbox TTS status on startup and caches the result.
- * Components can use useTtsOnline() hook or call waitForChatterbox()
- * before speaking to give Chatterbox time to come online instead of
- * instantly falling back to browser speech synthesis.
+ * TTS status — on-demand startup via Electron IPC, with polling fallback.
+ * Components use useTtsOnline() hook or call waitForChatterbox() before speaking.
+ * TTS server is NOT started on boot — it's spawned on first use and killed after idle.
  */
 import { useState, useEffect } from 'react';
 
 let online = false;
-let resolved = false;
-let resolveReady;
+let loading = false;
 const listeners = new Set();
-
-const readyPromise = new Promise((resolve) => { resolveReady = resolve; });
+const loadingListeners = new Set();
 
 function notify() {
   listeners.forEach((fn) => fn(online));
+}
+
+function notifyLoading() {
+  loadingListeners.forEach((fn) => fn(loading));
+}
+
+/** React hook — true while a Chatterbox spawn/warmup is in progress. */
+export function useTtsLoading() {
+  const [value, setValue] = useState(loading);
+  useEffect(() => {
+    setValue(loading);
+    loadingListeners.add(setValue);
+    return () => loadingListeners.delete(setValue);
+  }, []);
+  return value;
 }
 
 async function check() {
@@ -23,8 +35,6 @@ async function check() {
     const data = await res.json();
     if (data.online) {
       online = true;
-      resolved = true;
-      resolveReady(true);
       notify();
       return true;
     }
@@ -32,15 +42,8 @@ async function check() {
   return false;
 }
 
-// Poll every 3s for up to 60s on startup
-(async () => {
-  for (let i = 0; i < 20; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  resolved = true;
-  resolveReady(false);
-})();
+// Light initial check (single attempt, no long poll)
+check();
 
 /** Returns true if Chatterbox is currently known to be online */
 export function isChatterboxOnline() {
@@ -49,12 +52,11 @@ export function isChatterboxOnline() {
 
 /**
  * React hook — returns true once Chatterbox comes online.
- * Replaces per-page one-shot ttsOnline state + useEffect fetch.
  */
 export function useTtsOnline() {
   const [value, setValue] = useState(online);
   useEffect(() => {
-    setValue(online); // sync in case it came online before mount
+    setValue(online);
     listeners.add(setValue);
     return () => listeners.delete(setValue);
   }, []);
@@ -62,15 +64,47 @@ export function useTtsOnline() {
 }
 
 /**
- * Wait for Chatterbox to come online, up to timeoutMs (default 8s).
+ * Ensure TTS is running and wait for it to come online, up to timeoutMs.
+ * Uses Electron IPC to spawn the TTS server on-demand if available.
  * Returns true if online, false if timed out.
  */
-export async function waitForChatterbox(timeoutMs = 8000) {
+export async function waitForChatterbox(timeoutMs = 45000) {
   if (online) return true;
-  if (resolved) return false;
 
-  return Promise.race([
-    readyPromise,
-    new Promise((r) => setTimeout(() => r(false), timeoutMs)),
-  ]);
+  loading = true;
+  notifyLoading();
+  try {
+    if (window.liminal?.ensureTts) {
+      try {
+        const result = await window.liminal.ensureTts();
+        if (result?.ok) {
+          online = true;
+          notify();
+          return true;
+        }
+      } catch {}
+    } else {
+      try {
+        const r = await fetch('/api/tts/ensure', { method: 'POST' });
+        if (r.ok) {
+          const data = await r.json();
+          if (data.ok) {
+            online = true;
+            notify();
+            return true;
+          }
+        }
+      } catch {}
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await check()) return true;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return false;
+  } finally {
+    loading = false;
+    notifyLoading();
+  }
 }

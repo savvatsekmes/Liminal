@@ -2,6 +2,27 @@ import { useState } from 'react';
 import { setStoredToken } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import TermsOfService from './TermsOfService';
+import { useTheme } from '../hooks/useTheme';
+
+/* CSS-based mobile override — guaranteed to work via media queries */
+const mobileCSS = `
+@media (max-width: 768px) {
+  .auth-card {
+    flex-direction: column !important;
+    gap: 20px !important;
+    padding: 28px 22px !important;
+    width: 94vw !important;
+    max-width: 400px !important;
+  }
+  .auth-brand-logo {
+    width: 52px !important;
+    margin-bottom: 8px !important;
+  }
+  .auth-brand-col {
+    flex-direction: column !important;
+  }
+}
+`;
 
 const s = {
   overlay: {
@@ -141,6 +162,8 @@ export default function PasswordGate({ onSuccess }) {
 
 function LoginForm({ onSuccess, onRegister }) {
   const { t } = useLanguage();
+  const { theme } = useTheme();
+  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -175,9 +198,10 @@ function LoginForm({ onSuccess, onRegister }) {
 
   return (
     <div style={s.overlay}>
-      <form style={s.card} onSubmit={handleSubmit}>
-        <div style={s.brandCol}>
-          <img src="/logo.png" alt="Liminal" style={s.brandLogo} />
+      <style>{mobileCSS}</style>
+      <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
+        <div className="auth-brand-col" style={s.brandCol}>
+          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
           <div style={s.tagline}>{t('auth.tagline')}</div>
         </div>
         <div style={s.formCol}>
@@ -223,6 +247,8 @@ function LoginForm({ onSuccess, onRegister }) {
 
 function RegisterForm({ onSuccess, onBack }) {
   const { t } = useLanguage();
+  const { theme } = useTheme();
+  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -265,9 +291,10 @@ function RegisterForm({ onSuccess, onBack }) {
 
   return (
     <div style={s.overlay}>
-      <form style={s.card} onSubmit={handleSubmit}>
-        <div style={s.brandCol}>
-          <img src="/logo.png" alt="Liminal" style={s.brandLogo} />
+      <style>{mobileCSS}</style>
+      <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
+        <div className="auth-brand-col" style={s.brandCol}>
+          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
           <div style={s.tagline}>{t('auth.tagline')}</div>
         </div>
         <div style={s.formCol}>

@@ -3,6 +3,7 @@ import { apiFetch } from '../utils/api';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
 import ResizeDivider from '../components/ResizeDivider';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
@@ -429,6 +430,7 @@ const TABS = ['sky', 'cards'];
 
 export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState(initialTab || 'sky');
 
   // Sync tab when parent changes initialTab
@@ -765,11 +767,11 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
   // ────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div style={s.root} ref={contentRef}>
+    <div style={{ ...s.root, ...(isMobile ? { flexDirection: 'column', overflowY: 'auto' } : {}) }} ref={contentRef}>
 
       {/* ── LEFT COLUMN ──────────────────────────────────────────────────── */}
-      <div style={{ ...s.leftCol, width: `${splitPct}%` }}>
-        <div style={s.leftInner}>
+      <div style={{ ...s.leftCol, width: isMobile ? '100%' : `${splitPct}%`, ...(isMobile ? { overflowY: 'visible', flexShrink: 0 } : {}) }}>
+        <div style={{ ...s.leftInner, ...(isMobile ? { padding: '20px 16px 80px' } : {}) }}>
 
           {/* Tabs */}
           {!hideTabBar && (
@@ -953,10 +955,10 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
       </div>
 
       {/* ── DIVIDER ──────────────────────────────────────────────────────── */}
-      <ResizeDivider onMouseDown={startDrag} inverted />
+      {!isMobile && <ResizeDivider onMouseDown={startDrag} inverted />}
 
-      {/* ── RIGHT COLUMN ─────────────────────────────────────────────────── */}
-      <div style={{ ...s.rightCol, width: `${100 - splitPct}%` }}>
+      {/* ── RIGHT COLUMN — stacked below on mobile ──────────────────────── */}
+      <div style={{ ...s.rightCol, width: isMobile ? '100%' : `${100 - splitPct}%`, ...(isMobile ? { borderTop: 'var(--border-style)', overflow: 'visible' } : {}) }}>
 
         {/* ── SKY TAB RIGHT: astrology summary panel ───────────────────── */}
         {tab === 'sky' && (

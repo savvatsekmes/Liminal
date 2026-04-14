@@ -26,6 +26,20 @@
   --border-style:     0.5px solid var(--border);
 }
 
+/* Dark theme — inverts the monochrome palette.
+   --white becomes the darkest surface; --strong becomes the lightest text.
+   This lets existing `background: var(--white)` / `color: var(--strong)` code
+   flip correctly without per-component changes. */
+[data-theme="dark"] {
+  --white:      #141416;
+  --near-white: #1C1C1F;
+  --panel-bg:   #26262B;
+  --border:     #35353B;
+  --muted:      #7A7A82;
+  --body:       #B8B8BE;
+  --strong:     #F2F2F4;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -257,6 +271,29 @@ hr {
 
 .note-editor-default .ProseMirror {
   /* inherits global ProseMirror styles */
+}
+
+/* ── Mobile responsive ──────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 0px;
+    --entrylist-width: 0px;
+  }
+
+  .ProseMirror {
+    min-height: 200px;
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  .ProseMirror h1 { font-size: 19px; }
+  .ProseMirror h2 { font-size: 16px; }
+  .ProseMirror h3 { font-size: 14px; }
+
+  input, textarea, select {
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
 }
 
 @keyframes micPulse {

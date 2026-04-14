@@ -58,6 +58,7 @@ export function useEntries() {
       const entry = await res.json();
       setEntries((prev) => [entry, ...prev]);
       setActiveEntry(entry);
+      window.dispatchEvent(new CustomEvent('liminal:entry-created', { detail: entry }));
       return entry;
     } catch (err) {
       console.error('[useEntries] Create failed:', err);

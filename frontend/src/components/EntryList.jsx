@@ -66,6 +66,7 @@ const s = {
     display: 'flex',
     flexDirection: 'row',
     height: '100%',
+    width: '100%',
     overflow: 'hidden',
   },
   listCol: {
@@ -529,6 +530,7 @@ function EntryItem({ entry, active, onClick, onDelete }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       role="button"
+      data-entry-item="true"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
     >

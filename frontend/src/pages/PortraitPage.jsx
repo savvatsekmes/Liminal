@@ -4,6 +4,7 @@ import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from '../components/ResizeDivider';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 import SkyPage from './SkyPage';
 
 const s = {
@@ -229,6 +230,7 @@ const tabActiveStyle = {
 
 export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded }) {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
   const [pageTab, setPageTab] = useState(initialTab || 'portrait');
 
   useEffect(() => {
@@ -364,7 +366,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
   if (!portrait && pageTab === 'portrait') return <div style={{ padding: '40px', color: 'var(--muted)', fontSize: '13px' }}>{t('common.loading')}</div>;
 
   const oracleHeader = (
-    <div style={{ padding: '40px 48px 0' }}>
+    <div style={{ padding: isMobile ? '20px 16px 0' : '40px 48px 0' }}>
       <div style={s.pageTitle}>The Oracle</div>
       <div style={s.pageSubtitle}>Do not try and bend the spoon — that's impossible. Instead, only try to realise the truth: there is no spoon.</div>
       <div style={tabBarStyle}>
@@ -390,15 +392,15 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       {oracleHeader}
-    <div style={s.root}>
+    <div style={{ ...s.root, ...(isMobile ? { flexDirection: 'column', overflowY: 'auto' } : {}) }}>
       {/* ── Left: form column ── */}
-      <div style={{ ...s.formCol, paddingTop: '0' }}>
+      <div style={{ ...s.formCol, paddingTop: '0', ...(isMobile ? { padding: '0 16px 24px', overflowY: 'visible', flex: 'none' } : {}) }}>
 
       <>
       {/* Personality */}
       <div style={s.section}>
         <div style={s.sectionTitle}>{t('portrait.personality')}</div>
-        <div style={s.grid}>
+        <div style={{ ...s.grid, ...(isMobile ? { gridTemplateColumns: '1fr' } : {}) }}>
           <div style={s.field}>
             <label style={s.label}>{t('portrait.sex')}</label>
             <select style={s.input} value={portrait.sex || ''} onChange={(e) => set('sex', e.target.value)}>
@@ -441,7 +443,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
         </div>
 
         {/* Birth data inputs */}
-        <div style={s.grid}>
+        <div style={{ ...s.grid, ...(isMobile ? { gridTemplateColumns: '1fr' } : {}) }}>
           <div style={s.field}>
             <label style={s.label}>{t('portrait.birthDate')}</label>
             <input style={s.input} type="date" value={portrait.birth_date || ''} onChange={(e) => set('birth_date', e.target.value)} />
@@ -464,7 +466,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
             <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '12px' }}>
               {t('portrait.calculated')}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px 24px' }}>
               <AstroField label={t('portrait.sunSign')} value={portrait.sun_sign} />
               <AstroField label={t('portrait.moonSign')} value={portrait.moon_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : null} />
               <AstroField label={t('portrait.risingSign')} value={portrait.rising_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : !portrait.birth_location ? t('portrait.enterBirthLocation') : null} />
@@ -481,7 +483,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
           <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '10px' }}>
             {t('portrait.override')}
           </div>
-          <div style={s.grid}>
+          <div style={{ ...s.grid, ...(isMobile ? { gridTemplateColumns: '1fr' } : {}) }}>
             <div style={s.field}>
               <label style={s.label}>{t('portrait.sunSignOverride')}</label>
               <input style={s.input} value={portrait.sun_sign || ''} onChange={(e) => set('sun_sign', e.target.value)} placeholder="e.g. Scorpio" />
@@ -516,10 +518,11 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
       </div>{/* end formCol */}
 
-      <ResizeDivider onMouseDown={startPortraitPanelDrag} inverted />
-      {/* ── Right: character portrait panel ── */}
+      {!isMobile && <ResizeDivider onMouseDown={startPortraitPanelDrag} inverted />}
+      {/* ── Right: character portrait panel — stacks below on mobile ── */}
       <CharacterPortraitPanel
-        width={portraitPanelWidth}
+        width={isMobile ? '100%' : portraitPanelWidth}
+        isMobile={isMobile}
         description={portrait.character_description || ''}
         generating={generating}
         editing={editingPortrait}
@@ -538,7 +541,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
 // ── Character Portrait Panel ──────────────────────────────────────────────────
 
-function CharacterPortraitPanel({ description, generating, editing, onGenerate, onEdit, onEditDone, onEditCancel, width = 320 }) {
+function CharacterPortraitPanel({ description, generating, editing, onGenerate, onEdit, onEditDone, onEditCancel, width = 320, isMobile = false }) {
   const { t } = useLanguage();
   const [editText, setEditText] = useState(description);
   const [playing, setPlaying] = useState(false);
@@ -562,12 +565,13 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
 
   return (
     <div style={{
-      width: width + 'px',
+      width: isMobile ? '100%' : width + 'px',
       flexShrink: 0,
       background: 'var(--near-white)',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden',
+      overflow: isMobile ? 'visible' : 'hidden',
+      borderTop: isMobile ? 'var(--border-style)' : undefined,
     }}>
       {/* Header */}
       <div style={{

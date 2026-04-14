@@ -8,8 +8,9 @@ import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import Calendar from '../components/Calendar';
+import { useIsMobile } from '../hooks/useIsMobile';
 
-const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.filter(a => a.value !== 'Auto').map(a => a.value);
+const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.map(a => a.value);
 const ALL_TAG = '__all__';
 
 // ── Styles ─────────────────────────────────────────────────────────────────
@@ -17,7 +18,9 @@ const s = {
   root: {
     display: 'flex',
     flexDirection: 'row',
+    flex: 1,
     height: '100%',
+    minWidth: 0,
     overflow: 'hidden',
   },
   // History sidebar
@@ -519,12 +522,14 @@ function formatSessionDate(dateStr) {
 
 export default function OraclePage({ initialSessionId, onSessionSelected }) {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState('chat'); // 'list' | 'chat'
   const [sessions, setSessions] = useState([]);
   const [showCal, setShowCal] = useState(true);
   const [search, setSearch] = useState('');
   const [currentSession, setCurrentSession] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [archetype, setArchetype] = useState('Zen');
+  const [archetype, setArchetype] = useState('Auto');
   const [archetypeOptions, setArchetypeOptions] = useState([...BUILT_IN_ARCHETYPES]);
   const [customArchetypesList, setCustomArchetypesList] = useState([]);
   const [archetypeOpen, setArchetypeOpen] = useState(false);
@@ -930,10 +935,16 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
     ? filteredSessions.filter(s => (s.first_message || s.title || '').toLowerCase().includes(search.toLowerCase()))
     : filteredSessions;
 
+  // On mobile: load a session and switch to chat view
+  const mobileLoadSession = (id) => {
+    loadSession(id);
+    setMobileView('chat');
+  };
+
   return (
     <div style={s.root}>
-      {/* History sidebar */}
-      <div style={s.sidebar}>
+      {/* History sidebar — hidden on mobile when viewing chat */}
+      <div style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
         <div style={s.sidebarHeader}>
           <span style={s.sidebarTitle}>{t('oracle.conversations')}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -985,7 +996,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
             width: 'calc(100% - 20px)', cursor: 'pointer', letterSpacing: '0.03em',
             transition: 'background 0.15s, color 0.15s', flexShrink: 0,
           }}
-          onClick={handleNewConversation}
+          onClick={() => { handleNewConversation(); if (isMobile) setMobileView('chat'); }}
           onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--strong)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
         >
@@ -1001,7 +1012,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
                 key={sess.id}
                 sess={sess}
                 active={active}
-                onClick={() => loadSession(sess.id)}
+                onClick={() => isMobile ? mobileLoadSession(sess.id) : loadSession(sess.id)}
                 onDelete={() => handleDeleteSession(sess)}
               />
             );
@@ -1009,29 +1020,40 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
         </div>
       </div>
 
-      {/* Tag strip */}
-      <TagStrip
-        tags={allSessionTags}
-        manualTags={allManualSessionTags}
-        autoTags={allAutoSessionTags}
-        activeFilters={activeFilters}
-        onToggle={toggleFilter}
-        onClear={clearFilters}
-        addingTag={addingTag}
-        newTagInput={newTagInput}
-        onAddingTag={setAddingTag}
-        onNewTagInput={setNewTagInput}
-        onAddTag={handleAddTag}
-        onDeleteTag={handleDeleteTag}
-      />
+      {/* Tag strip — hidden on mobile except in list view */}
+      {(!isMobile || mobileView === 'list') && <>
+        <TagStrip
+          tags={allSessionTags}
+          manualTags={allManualSessionTags}
+          autoTags={allAutoSessionTags}
+          activeFilters={activeFilters}
+          onToggle={toggleFilter}
+          onClear={clearFilters}
+          addingTag={addingTag}
+          newTagInput={newTagInput}
+          onAddingTag={setAddingTag}
+          onNewTagInput={setNewTagInput}
+          onAddTag={handleAddTag}
+          onDeleteTag={handleDeleteTag}
+        />
+        <div style={s.tagStripDivider}>
+          <div style={s.tagStripDividerLine} />
+        </div>
+      </>}
 
-      {/* Divider between tags and chat */}
-      <div style={s.tagStripDivider}>
-        <div style={s.tagStripDividerLine} />
-      </div>
-
-      {/* Main chat area */}
-      <div style={s.mainArea}>
+      {/* Main chat area — hidden on mobile when viewing list */}
+      <div style={{ ...s.mainArea, ...(isMobile && mobileView === 'list' ? { display: 'none' } : {}) }}>
+      {/* Mobile back button */}
+      {isMobile && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: 'var(--border-style)', flexShrink: 0 }}>
+          <button
+            onClick={() => setMobileView('list')}
+            style={{ background: 'none', border: 'none', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'var(--font)', padding: '4px 0' }}
+          >
+            ‹ {t('oracle.conversations')}
+          </button>
+        </div>
+      )}
       {/* Session tag selector */}
       {currentSession && (
         <SessionTagSelector

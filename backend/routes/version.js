@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const db = require('../database');
+const s = require('../services/settingsService');
 
 // Version source of truth:
 //  - In production: Electron passes app.getVersion() via LIMINAL_APP_VERSION env var (root package.json)
@@ -15,7 +16,7 @@ const pkg = { version: pkgVersion };
 router.use(requireAuth);
 
 // Change this when the GitHub repo name is finalised.
-const REPO = 'savvatsekmes/liminal';
+const REPO = 'savvatsekmes/Liminal';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 // Tiny semver compare — returns 1 if a > b, -1 if a < b, 0 if equal.
@@ -58,8 +59,11 @@ router.get('/check', async (req, res) => {
   }
 
   try {
+    const ghHeaders = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Liminal-App' };
+    const ghToken = s.get('github_token');
+    if (ghToken) ghHeaders['Authorization'] = `Bearer ${ghToken}`;
     const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Liminal-App' },
+      headers: ghHeaders,
     });
     if (!r.ok) throw new Error(`GitHub API ${r.status}`);
     const data = await r.json();

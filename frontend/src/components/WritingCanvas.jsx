@@ -29,6 +29,7 @@ import { atomDragGuard } from '../extensions/atomDragGuard';
 import { apiFetch } from '../utils/api';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const s = {
   root: {
@@ -160,6 +161,7 @@ export default function WritingCanvas({
   allTags = [],
 }) {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
   const saveTimer = useRef(null);
   const savedTimer = useRef(null);
   const lastSnapshotAt = useRef(null);
@@ -319,6 +321,7 @@ const editor = useEditor({
       }),
     ],
     content: entry?.body || '',
+    editable: true,
     editorProps: {
       attributes: { spellcheck: 'true' },
       handleDOMEvents: { dragstart: atomDragGuard },
@@ -525,20 +528,22 @@ const editor = useEditor({
       )}
 
       {/* Editor */}
-      <div style={{ ...s.editorWrap, position: 'relative' }} ref={editorWrapRef}>
+      <div style={{ ...s.editorWrap, position: 'relative', ...(isMobile ? { padding: '12px 16px 80px' } : {}) }} ref={editorWrapRef}>
         {entry ? (
           <>
             <EditorContent editor={editor} />
-            <div
-              style={{ height: '240px', cursor: 'text' }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                if (!editor) return;
-                const lineHeight = 27;
-                const lines = Math.max(1, Math.round((e.clientY - e.currentTarget.getBoundingClientRect().top) / lineHeight));
-                editor.chain().focus('end').insertContent('<p></p>'.repeat(lines)).run();
-              }}
-            />
+            {!isMobile && (
+              <div
+                style={{ height: '240px', cursor: 'text' }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (!editor) return;
+                  const lineHeight = 27;
+                  const lines = Math.max(1, Math.round((e.clientY - e.currentTarget.getBoundingClientRect().top) / lineHeight));
+                  editor.chain().focus('end').insertContent('<p></p>'.repeat(lines)).run();
+                }}
+              />
+            )}
           </>
         ) : (
           <div style={{ color: 'var(--muted)', fontSize: '14px', paddingTop: '16px' }}>

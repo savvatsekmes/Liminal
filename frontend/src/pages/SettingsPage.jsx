@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
+import ThemeToggle from '../components/ThemeToggle';
+import { useTheme } from '../hooks/useTheme';
 import TermsOfService from '../components/TermsOfService';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABS = [
+  { id: 'general', labelKey: 'settings.tabGeneral' },
   { id: 'account', labelKey: 'settings.tabAccount' },
   { id: 'llm',     labelKey: 'settings.tabLLM' },
   { id: 'tts',     labelKey: 'settings.tabVoice' },
   { id: 'data',    labelKey: 'settings.tabData' },
-  { id: 'about',   labelKey: 'settings.tabAbout' },
 ];
 
 const s = {
@@ -275,8 +278,9 @@ function StatusIndicator({ ok, message }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarChange, onNavigate }) {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
   const [cfg, setCfg] = useState(null);
-  const [activeTab, setActiveTab] = useState('account');
+  const [activeTab, setActiveTab] = useState('general');
   const { toast, show: showToast } = useToast();
   const [saving, setSaving] = useState(false);
 
@@ -309,14 +313,22 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
   }
 
   return (
-    <div style={s.root}>
-      {/* Left tab strip */}
-      <div style={s.tabStrip}>
-        <div style={s.tabStripTitle}>{t('settings.title')}</div>
+    <div style={{ ...s.root, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
+      {/* Tab strip — vertical sidebar on desktop, horizontal scroll on mobile */}
+      <div style={isMobile ? {
+        display: 'flex', flexDirection: 'row', overflowX: 'auto', flexShrink: 0,
+        borderBottom: 'var(--border-style)', background: 'var(--near-white)',
+        padding: '0 8px', gap: '0', WebkitOverflowScrolling: 'touch',
+      } : s.tabStrip}>
+        {!isMobile && <div style={s.tabStripTitle}>{t('settings.title')}</div>}
         {TABS.map(tab => (
           <button
             key={tab.id}
-            style={{ ...s.tabItem, ...(activeTab === tab.id ? s.tabItemActive : {}) }}
+            style={isMobile ? {
+              ...s.tabItem, width: 'auto', whiteSpace: 'nowrap', padding: '12px 14px',
+              fontSize: '12px', flexShrink: 0,
+              ...(activeTab === tab.id ? { color: 'var(--strong)', fontWeight: '600', borderBottom: '2px solid var(--strong)' } : {}),
+            } : { ...s.tabItem, ...(activeTab === tab.id ? s.tabItemActive : {}) }}
             onClick={() => setActiveTab(tab.id)}
           >
             {t(tab.labelKey)}
@@ -325,12 +337,12 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
       </div>
 
       {/* Tab content */}
-      <div style={s.tabContent}>
+      <div style={{ ...s.tabContent, ...(isMobile ? { padding: '24px 16px 80px', maxWidth: '100%' } : {}) }}>
         {activeTab === 'llm'     && <LLMSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
         {activeTab === 'tts'     && <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} onNavigate={onNavigate} />}
         {activeTab === 'account' && <AccountSection cfg={cfg} set={set} save={save} showToast={showToast} username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />}
         {activeTab === 'data'    && <DataSection showToast={showToast} />}
-        {activeTab === 'about'   && <AboutSection showToast={showToast} />}
+        {activeTab === 'general' && <GeneralSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
       </div>
 
       {toast && <div style={s.toast}>{toast}</div>}
@@ -514,7 +526,6 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
   const [testing, setTesting] = useState(false);
   const [anthropicKey, setAnthropicKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
-  const [tavilyKey, setTavilyKey] = useState('');
   const [ollamaData, setOllamaData] = useState(null); // { online, models }
   const [gpus, setGpus] = useState(null);
 
@@ -569,7 +580,6 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
     const patch = { llm_provider: provider };
     if (anthropicKey && !anthropicKey.includes('••••')) patch.anthropic_api_key = anthropicKey;
     if (openaiKey && !openaiKey.includes('••••')) patch.openai_api_key = openaiKey;
-    if (tavilyKey && !tavilyKey.includes('••••')) patch.tavily_api_key = tavilyKey;
     if (provider === 'openai') patch.openai_model = cfg.openai_model;
     if (provider === 'ollama') { patch.ollama_url = cfg.ollama_url; patch.ollama_model = cfg.ollama_model; }
     await save(patch);
@@ -825,45 +835,6 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
         )}
       </div>
 
-      <div style={{ borderTop: 'var(--border-style)', marginTop: '16px', paddingTop: '16px' }}>
-        <Field label="Web Search" hint="Let the Oracle search the web via DuckDuckGo — no account needed">
-          <div style={s.segmented}>
-            {['off', 'on'].map((v, i, arr) => (
-              <button
-                key={v}
-                style={{
-                  ...s.segBtn,
-                  ...(i === arr.length - 1 ? s.segBtnLast : {}),
-                  ...(cfg.web_search_enabled === 'true' ? (v === 'on' ? s.segBtnActive : {}) : (v === 'off' ? s.segBtnActive : {})),
-                }}
-                onClick={() => { set('web_search_enabled', v === 'on' ? 'true' : 'false'); save({ web_search_enabled: v === 'on' ? 'true' : 'false' }); }}
-              >
-                {v === 'on' ? 'Enabled' : 'Disabled'}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        {cfg.web_search_enabled === 'true' && (
-          <Field
-            label="Tavily API Key (optional upgrade)"
-            hint={cfg.has_tavily_key ? 'Key is set — using Tavily for higher quality results' : 'Uses DuckDuckGo by default. Add a Tavily key for richer results (free at tavily.com)'}
-          >
-            <div style={s.row}>
-              <input
-                style={s.input}
-                type="password"
-                placeholder={cfg.has_tavily_key ? '••••••••••••••••' : 'tvly-...'}
-                value={tavilyKey}
-                onChange={e => setTavilyKey(e.target.value)}
-                autoComplete="off"
-              />
-              <Btn primary onClick={saveKeys} disabled={saving}>{t('common.save')}</Btn>
-            </div>
-          </Field>
-        )}
-
-      </div>
     </Section>
   );
 }
@@ -902,8 +873,8 @@ function WeatherLocationField() {
   if (!loaded) return null;
 
   return (
-    <div style={{ borderTop: 'var(--border-style)', marginTop: '16px', paddingTop: '16px' }}>
-      <Field label="Weather Location" hint="City for weather on the home screen and AI context. Uses Open-Meteo — no API key needed.">
+    <Section title="Weather Location">
+      <Field hint="City for weather on the home screen and AI context. Uses Open-Meteo — no API key needed.">
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <input
             style={{ ...s.input, flex: 1, marginBottom: 0 }}
@@ -916,7 +887,7 @@ function WeatherLocationField() {
         </div>
         {status && <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '6px' }}>{status}</div>}
       </Field>
-    </div>
+    </Section>
   );
 }
 
@@ -1368,24 +1339,6 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
         </select>
       </Field>
 
-      <WeatherLocationField />
-
-      <Field label={t('settings.lockTimeout')} hint={t('settings.lockTimeoutHint')}>
-        <select
-          style={s.input}
-          value={cfg.lock_timeout_minutes || '30'}
-          onChange={(e) => { set('lock_timeout_minutes', e.target.value); save({ lock_timeout_minutes: e.target.value }); }}
-        >
-          <option value="1">{t('settings.lockTimeout1')}</option>
-          <option value="5">{t('settings.lockTimeout5')}</option>
-          <option value="15">{t('settings.lockTimeout15')}</option>
-          <option value="30">{t('settings.lockTimeout30')}</option>
-          <option value="60">{t('settings.lockTimeout60')}</option>
-          <option value="120">{t('settings.lockTimeout120')}</option>
-          <option value="0">{t('settings.lockTimeoutNever')}</option>
-        </select>
-      </Field>
-
       <div style={s.divider} />
 
       <div style={{ ...s.label, marginBottom: '14px' }}>{t('settings.changePassword')}</div>
@@ -1588,6 +1541,7 @@ function DataSection({ showToast }) {
   const [maxBackups, setMaxBackups] = useState('10');
   const [backingUp, setBackingUp] = useState(false);
   const [backupStatus, setBackupStatus] = useState(null);
+  const [lastBackupTime, setLastBackupTime] = useState('');
   const [restorePassword, setRestorePassword] = useState('');
   const [restoringBackup, setRestoringBackup] = useState(false);
   const restoreInputRef = useRef(null);
@@ -1597,6 +1551,7 @@ function DataSection({ showToast }) {
       setBackupLocation(data.backup_location || '');
       setAutoBackupEnabled(data.auto_backup_enabled === 'true');
       setMaxBackups(data.max_backups || '10');
+      setLastBackupTime(data.last_backup_time || '');
     }).catch(() => {});
   }, []);
 
@@ -1606,7 +1561,19 @@ function DataSection({ showToast }) {
       return;
     }
     const folder = await window.liminal.pickBackupFolder();
-    if (folder) setBackupLocation(folder);
+    if (folder) {
+      setBackupLocation(folder);
+      await apiFetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          backup_location: folder,
+          auto_backup_enabled: autoBackupEnabled ? 'true' : 'false',
+          max_backups: maxBackups,
+        }),
+      });
+      showToast(t('settings.backupSettingsSaved'));
+    }
   }
 
   async function saveBackupSettings() {
@@ -1632,6 +1599,7 @@ function DataSection({ showToast }) {
     try {
       const result = await window.liminal.triggerBackup();
       setBackupStatus(result);
+      if (result.success) setLastBackupTime(new Date().toISOString());
       showToast(result.success ? t('settings.backupSuccess') : t('settings.backupFailed'));
     } finally {
       setBackingUp(false);
@@ -1740,6 +1708,14 @@ function DataSection({ showToast }) {
               : `${t('settings.backupFailed')}: ${backupStatus.error}`}
           </div>
         )}
+
+        <div style={{ marginTop: '14px', fontSize: '12px', color: 'var(--muted)' }}>
+          {t('settings.lastBackupTime')}:{' '}
+          {lastBackupTime
+            ? new Date(lastBackupTime).toLocaleString()
+            : t('settings.lastBackupNever')}
+        </div>
+
       </Section>
 
       {/* Restore from backup */}
@@ -1850,20 +1826,38 @@ function DataSection({ showToast }) {
   );
 }
 
-// ── About Section ─────────────────────────────────────────────────────────────
+// ── Appearance ───────────────────────────────────────────────────────────────
 
-function AboutSection({ showToast }) {
+function AppearanceSection() {
+  const { theme } = useTheme();
+  return (
+    <Section title="Appearance">
+      <Field>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <ThemeToggle />
+          <span style={{ fontSize: '13px', color: 'var(--body)' }}>
+            {theme === 'dark' ? 'Dark mode' : 'Light mode'}
+          </span>
+        </div>
+      </Field>
+    </Section>
+  );
+}
+
+// ── General Section ──────────────────────────────────────────────────────────
+
+function GeneralSection({ cfg, set, save, saving, showToast }) {
   const { t } = useLanguage();
-  const [info, setInfo] = useState(null);   // { current, latest, hasUpdate, releaseUrl, releaseName, checkedAt, error }
+
+  // ── Version / updates ───────────────────────────────────────────────────
+  const [info, setInfo] = useState(null);
   const [checking, setChecking] = useState(false);
 
-  // On mount: cached check (no network unless cache is stale)
   useEffect(() => {
     apiFetch('/api/version/check')
       .then(r => r.json())
       .then(setInfo)
       .catch(() => {
-        // Fall back to just the current version
         apiFetch('/api/version').then(r => r.json()).then(d => setInfo({ current: d.current })).catch(() => {});
       });
   }, []);
@@ -1893,9 +1887,116 @@ function AboutSection({ showToast }) {
     ? new Date(info.checkedAt).toLocaleString()
     : null;
 
+  // ── Open on startup ─────────────────────────────────────────────────────
+  const [openOnStartup, setOpenOnStartup] = useState(false);
+  useEffect(() => {
+    if (window.liminal?.getLoginItem) {
+      window.liminal.getLoginItem().then(s => setOpenOnStartup(!!s?.openAtLogin)).catch(() => {});
+    }
+  }, []);
+
+  // ── GitHub token (for update checks on private repos) ────────────────────
+  const [githubToken, setGithubToken] = useState('');
+
+  // ── Web search / Tavily ─────────────────────────────────────────────────
+  const [tavilyKey, setTavilyKey] = useState('');
+
+  async function saveTavily() {
+    const patch = {};
+    if (tavilyKey && !tavilyKey.includes('••••')) patch.tavily_api_key = tavilyKey;
+    if (Object.keys(patch).length) await save(patch);
+  }
+
   return (
     <>
-      <Section title={t('settings.tabAbout') || 'About'}>
+      {/* Appearance */}
+      <AppearanceSection />
+
+      {/* Open on startup */}
+      <Section title={t('settings.openOnStartup')}>
+        <Field hint={t('settings.openOnStartupHint')}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: window.liminal?.setLoginItem ? 'pointer' : 'not-allowed', opacity: window.liminal?.setLoginItem ? 1 : 0.5 }}>
+            <input
+              type="checkbox"
+              checked={openOnStartup}
+              onChange={async e => {
+                const enabled = e.target.checked;
+                setOpenOnStartup(enabled);
+                if (window.liminal?.setLoginItem) {
+                  await window.liminal.setLoginItem(enabled);
+                }
+              }}
+              disabled={!window.liminal?.setLoginItem}
+            />
+            <span style={{ fontSize: '13px', color: 'var(--body)' }}>{t('settings.openOnStartupLabel')}</span>
+          </label>
+        </Field>
+      </Section>
+
+      {/* Weather location */}
+      <WeatherLocationField />
+
+      {/* Auto-lock */}
+      <Section title={t('settings.lockTimeout')}>
+        <Field hint={t('settings.lockTimeoutHint')}>
+          <select
+            style={s.input}
+            value={cfg.lock_timeout_minutes || '30'}
+            onChange={(e) => { set('lock_timeout_minutes', e.target.value); save({ lock_timeout_minutes: e.target.value }); }}
+          >
+            <option value="1">{t('settings.lockTimeout1')}</option>
+            <option value="5">{t('settings.lockTimeout5')}</option>
+            <option value="15">{t('settings.lockTimeout15')}</option>
+            <option value="30">{t('settings.lockTimeout30')}</option>
+            <option value="60">{t('settings.lockTimeout60')}</option>
+            <option value="120">{t('settings.lockTimeout120')}</option>
+            <option value="0">{t('settings.lockTimeoutNever')}</option>
+          </select>
+        </Field>
+      </Section>
+
+      {/* Web search */}
+      <Section title={t('settings.webSearch')}>
+        <Field hint={t('settings.webSearchHint')}>
+          <div style={s.segmented}>
+            {['off', 'on'].map((v, i, arr) => (
+              <button
+                key={v}
+                style={{
+                  ...s.segBtn,
+                  ...(i === arr.length - 1 ? s.segBtnLast : {}),
+                  ...(cfg.web_search_enabled === 'true' ? (v === 'on' ? s.segBtnActive : {}) : (v === 'off' ? s.segBtnActive : {})),
+                }}
+                onClick={() => { set('web_search_enabled', v === 'on' ? 'true' : 'false'); save({ web_search_enabled: v === 'on' ? 'true' : 'false' }); }}
+              >
+                {v === 'on' ? 'Enabled' : 'Disabled'}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        {cfg.web_search_enabled === 'true' && (
+          <Field
+            label={t('settings.tavilyKey')}
+            hint={cfg.has_tavily_key ? t('settings.tavilyKeySet') : t('settings.tavilyKeyHint')}
+          >
+            <div style={s.row}>
+              <input
+                style={s.input}
+                type="password"
+                placeholder={cfg.has_tavily_key ? '••••••••••••••••' : 'tvly-...'}
+                value={tavilyKey}
+                onChange={e => setTavilyKey(e.target.value)}
+                autoComplete="off"
+              />
+              <Btn primary onClick={saveTavily} disabled={saving}>{t('common.save')}</Btn>
+            </div>
+          </Field>
+        )}
+      </Section>
+
+      {/* Version & updates */}
+      <Section title={t('settings.aboutVersion')}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '20px' }}>
           <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--strong)' }}>Liminal</div>
           <div style={{
@@ -1967,6 +2068,29 @@ function AboutSection({ showToast }) {
             {(t('settings.aboutCheckedAt') || 'Last checked')}: {checkedLabel}
           </div>
         )}
+
+        <div style={{ borderTop: 'var(--border-style)', marginTop: '20px', paddingTop: '16px' }}>
+          <Field
+            label={t('settings.githubToken')}
+            hint={cfg.has_github_token ? t('settings.githubTokenSet') : t('settings.githubTokenHint')}
+          >
+            <div style={s.row}>
+              <input
+                style={s.input}
+                type="password"
+                placeholder={cfg.has_github_token ? '••••••••••••••••' : 'ghp_...'}
+                value={githubToken}
+                onChange={e => setGithubToken(e.target.value)}
+                autoComplete="off"
+              />
+              <Btn primary onClick={async () => {
+                if (githubToken && !githubToken.includes('••••')) {
+                  await save({ github_token: githubToken });
+                }
+              }} disabled={saving}>{t('common.save')}</Btn>
+            </div>
+          </Field>
+        </div>
 
         <div style={{ marginTop: '32px', fontSize: '11px', color: 'var(--muted)', lineHeight: 1.6 }}>
           Liminal — a personal AI journaling space.<br />

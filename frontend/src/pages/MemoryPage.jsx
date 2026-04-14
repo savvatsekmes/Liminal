@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../utils/api';
 import { clearArchetypeVoiceCache } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { BUILT_IN_ARCHETYPES, isBuiltIn } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 
@@ -207,6 +208,7 @@ const TAB_LABELS = { style: 'context.responseStyle', archetypes: 'Archetypes', m
 
 export default function MemoryPage() {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState('style');
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -403,7 +405,7 @@ export default function MemoryPage() {
   if (loading) return <div style={{ ...s.root, fontSize: '13px', color: 'var(--muted)' }}>{t('common.loading')}</div>;
 
   return (
-    <div style={s.root}>
+    <div style={{ ...s.root, ...(isMobile ? { padding: '24px 16px 80px' } : {}) }}>
       <div style={s.pageTitle}>{t('context.title')}</div>
       <div style={s.pageSubtitle}>{t('context.subtitle')}</div>
 

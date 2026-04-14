@@ -14,6 +14,7 @@ const s = {
   },
   card: {
     width: '340px',
+    maxWidth: '92vw',
     padding: '48px 40px',
     background: 'var(--white)',
     borderRadius: '16px',

@@ -69,7 +69,7 @@ export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
   }
   if (!sentences.length) return;
 
-  const cbReady = await waitForChatterbox(8000);
+  const cbReady = await waitForChatterbox(45000);
 
   if (!cbReady) {
     if (window.speechSynthesis) {

@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from './ResizeDivider';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { useTheme } from '../hooks/useTheme';
 
 const styles = {
   root: {
@@ -136,8 +138,84 @@ const styles = {
   },
 };
 
+const mobileStyles = {
+  root: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100dvh',
+    width: '100vw',
+    overflow: 'hidden',
+    background: 'var(--white)',
+  },
+  content: {
+    flex: 1,
+    display: 'flex',
+    overflow: 'hidden',
+    minHeight: 0,
+  },
+  bottomBar: {
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    height: '50px',
+    borderTop: 'var(--border-style)',
+    background: 'var(--near-white)',
+    paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+    paddingLeft: '4px',
+    paddingRight: '4px',
+  },
+  bottomBtn: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '1px',
+    padding: '4px 0',
+    border: 'none',
+    background: 'none',
+    color: 'var(--muted)',
+    cursor: 'pointer',
+    fontSize: '9px',
+    fontFamily: 'var(--font)',
+    minWidth: '0',
+    flex: 1,
+  },
+  bottomBtnActive: {
+    color: 'var(--strong)',
+  },
+  moreMenu: {
+    position: 'fixed',
+    bottom: '62px',
+    right: '8px',
+    minWidth: '160px',
+    background: 'var(--white)',
+    border: 'var(--border-style)',
+    borderRadius: '10px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+    padding: '6px 0',
+    zIndex: 200,
+  },
+  moreMenuItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    width: '100%',
+    padding: '10px 16px',
+    fontSize: '13px',
+    color: 'var(--body)',
+    background: 'none',
+    border: 'none',
+    textAlign: 'left',
+    cursor: 'pointer',
+    fontFamily: 'var(--font)',
+  },
+};
+
 export default function Layout({ children, activeView, onViewChange, onLogout, onLock, avatarUrl, username }) {
   const { t, lang, setLanguage } = useLanguage();
+  const isMobile = useIsMobile();
+  const { theme } = useTheme();
   const [entryListOpen, setEntryListOpen] = useState(true);
   const [avatarFailed, setAvatarFailed] = useState(false);
   useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
@@ -186,12 +264,150 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
 
   const initial = (username || '?')[0].toUpperCase();
 
+  // ── Mobile layout: bottom nav bar ───────────────────────────────────────
+  if (isMobile) {
+    const moreRef = useRef(null);
+    const [moreOpen, setMoreOpen] = useState(false);
+
+    // Close more menu on outside tap
+    useEffect(() => {
+      if (!moreOpen) return;
+      function h(e) { if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false); }
+      document.addEventListener('mousedown', h);
+      return () => document.removeEventListener('mousedown', h);
+    }, [moreOpen]);
+
+    const navItems = [
+      { id: 'home',    label: t('nav.home'),    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><polyline points="9 21 9 14 15 14 15 21"/></svg> },
+      { id: 'journal', label: t('nav.journal'),  icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4c2-1 4-1.5 6-1.5S12 3.5 12 4.5c0-1 3.5-2 6-1.5s4 .5 4 1.5v14c0-.5-2-1-4-1s-4.5.5-6 1.5c-1.5-1-3.5-1.5-6-1.5s-3.5.5-4 1V4z"/><line x1="12" y1="4.5" x2="12" y2="19.5"/></svg> },
+      { id: 'notes',   label: t('nav.notes'),   icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M16 2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="16 2 16 8 22 8"/><line x1="10" y1="13" x2="18" y2="13"/><line x1="10" y1="17" x2="15" y2="17"/></svg> },
+      { id: 'oracle',  label: t('nav.oracle'),  icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="13" height="7" rx="3"/><rect x="8" y="13.5" width="13" height="7" rx="3" fill="currentColor"/></svg> },
+      { id: 'portrait', label: t('nav.portrait'), icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg> },
+    ];
+
+    const moreItems = [
+      { id: 'memory',   label: t('nav.context') },
+      { id: 'settings', label: t('nav.settings') },
+    ];
+
+    const [journalView, setJournalView] = useState('editor'); // 'list' | 'editor' | 'mirror'
+    useEffect(() => {
+      if (activeView !== 'journal') setJournalView('editor');
+    }, [activeView]);
+
+    // Open the editor whenever a brand-new entry is created — otherwise the
+    // "new entry" button on mobile would leave you stuck on the list view.
+    useEffect(() => {
+      function onCreated() { setJournalView('editor'); }
+      window.addEventListener('liminal:entry-created', onCreated);
+      return () => window.removeEventListener('liminal:entry-created', onCreated);
+    }, []);
+
+    const isJournal = activeView === 'journal';
+    const headerBtn = {
+      background: 'none', border: 'none', fontSize: '13px',
+      color: 'var(--muted)', cursor: 'pointer',
+      fontFamily: 'var(--font)', padding: '4px 0',
+    };
+
+    return (
+      <div style={mobileStyles.root}>
+        <div style={mobileStyles.content}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+            {isJournal && journalView !== 'list' && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--white)', borderBottom: 'var(--border-style)', flexShrink: 0 }}>
+                {journalView === 'mirror' ? (
+                  <button onClick={() => setJournalView('editor')} style={headerBtn}>
+                    ‹ Journal Editor
+                  </button>
+                ) : (
+                  <button onClick={() => setJournalView('list')} style={headerBtn}>
+                    ‹ {t('nav.journal')}
+                  </button>
+                )}
+                {journalView === 'editor' && (
+                  <button onClick={() => setJournalView('mirror')} style={{ ...headerBtn, color: 'var(--strong)' }}>
+                    {t('notes.mirror') || 'Mirror'} ›
+                  </button>
+                )}
+              </div>
+            )}
+            {isJournal && journalView === 'list' && (
+              <div
+                style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0 }}
+                onClick={(e) => {
+                  // Only switch to editor when tapping an actual entry item, not
+                  // the new-entry button, search, tag pills, or delete "×".
+                  if (e.target.closest('[data-entry-item="true"]')) {
+                    setJournalView('editor');
+                  }
+                }}
+              >
+                {entryList}
+              </div>
+            )}
+            {isJournal && journalView === 'mirror' && (
+              <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0 }}>
+                {mirror}
+              </div>
+            )}
+            <div style={{ flex: 1, display: isJournal && journalView !== 'editor' ? 'none' : 'flex', overflow: 'hidden', minWidth: 0 }}>
+              {canvas({ toggleEntryList: () => setJournalView('list'), entryListOpen: false })}
+            </div>
+          </div>
+        </div>
+        <nav style={mobileStyles.bottomBar}>
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              style={{ ...mobileStyles.bottomBtn, ...(activeView === item.id ? mobileStyles.bottomBtnActive : {}) }}
+              onClick={() => { onViewChange(item.id); setMoreOpen(false); }}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <div ref={moreRef} style={{ position: 'relative', flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <button
+              style={{ ...mobileStyles.bottomBtn, ...(moreItems.some(m => m.id === activeView) || moreOpen ? mobileStyles.bottomBtnActive : {}) }}
+              onClick={() => setMoreOpen(v => !v)}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+              <span>More</span>
+            </button>
+            {moreOpen && (
+              <div style={mobileStyles.moreMenu}>
+                {moreItems.map((item) => (
+                  <button
+                    key={item.id}
+                    style={{ ...mobileStyles.moreMenuItem, ...(activeView === item.id ? { color: 'var(--strong)', fontWeight: 600 } : {}) }}
+                    onClick={() => { onViewChange(item.id); setMoreOpen(false); }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <div style={{ borderTop: 'var(--border-style)', margin: '4px 0' }} />
+                <button style={{ ...mobileStyles.moreMenuItem, color: 'var(--muted)' }} onClick={() => { setMoreOpen(false); onLock(); }}>
+                  Lock
+                </button>
+                <button style={{ ...mobileStyles.moreMenuItem, color: 'var(--muted)' }} onClick={() => { setMoreOpen(false); onLogout(); }}>
+                  {t('nav.logout')}
+                </button>
+              </div>
+            )}
+          </div>
+        </nav>
+      </div>
+    );
+  }
+
+  // ── Desktop layout ──────────────────────────────────────────────────────
   return (
     <div style={styles.root}>
       {/* Left icon sidebar */}
       <nav style={styles.sidebar}>
         <div style={styles.sidebarSpacer} />
-        <div style={{ ...styles.sidebarLogo, cursor: 'pointer' }} onClick={() => onViewChange('home')}><img src="/logo.png" alt="Liminal" style={styles.sidebarLogoImg} /></div>
+        <div style={{ ...styles.sidebarLogo, cursor: 'pointer' }} onClick={() => onViewChange('home')}><img src={theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png'} alt="Liminal" style={styles.sidebarLogoImg} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} /></div>
 
         <SidebarButton
           label={t('nav.home')}
