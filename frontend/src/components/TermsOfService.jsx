@@ -125,6 +125,14 @@ export default function TermsOfService({ onBack }) {
             <p style={s.paragraph}>{t('terms.privacyBody3')}</p>
           </div>
 
+          {/* Backups & Encryption */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.backupsTitle')}</div>
+            <p style={s.paragraph}>{t('terms.backupsBody1')}</p>
+            <p style={s.paragraph}>{t('terms.backupsBody2')}</p>
+            <p style={s.paragraph}>{t('terms.backupsBody3')}</p>
+          </div>
+
           {/* User Responsibility */}
           <div style={s.section}>
             <div style={s.sectionTitle}>{t('terms.responsibilityTitle')}</div>

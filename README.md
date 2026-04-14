@@ -1,12 +1,27 @@
 # Liminal
 
-A journal for the in-between.
+A mirror for life.
 
 ---
 
 > **Just want to use Liminal?** Grab a prebuilt installer for Windows, macOS
 > (Apple Silicon), or Linux — see [INSTALL.md](INSTALL.md). The rest of this
 > README covers the **developer setup** for working on Liminal from source.
+
+---
+
+## Features
+
+- **Journal, Notes, Oracle** — three surfaces for writing, capturing, and conversing
+- **Mirror reflections** — AI-generated responses in archetypal voices (editable, regenerable)
+- **Portrait & Sky** — character portrait, astrological sky, and daily tarot/oracle pulls
+- **Global search** — full-text search across entries, notes, and conversations
+- **Memory** — rolling summary + local vector index so reflections know your whole story
+- **Encrypted backups** — AES-256-GCM `.liminal` files; optional auto-backup on exit
+- **Light & dark mode** — toggle from Settings or the home screen
+- **Voice readback** — Chatterbox TTS with browser fallback
+- **Fully local** — your data lives on your machine; API keys only sent to providers you configure
+- **Mobile-responsive** — separate customisable widget layouts for desktop and mobile
 
 ---
 
