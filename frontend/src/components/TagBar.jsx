@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { tagLabel } from '../utils/tagEmoji';
+import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
+
+function TagLabel({ tag }) {
+  const src = IMG_EMOJI[tag.toLowerCase()];
+  if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
+  return tagLabel(tag);
+}
 
 const s = {
   root: {
@@ -64,7 +70,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
 
       {tags.map((tag) => (
         <span key={tag} className="tag">
-          {tagLabel(tag)}
+          <TagLabel tag={tag} />
           <button
             className="tag-remove"
             onClick={() => removeTag(tag)}

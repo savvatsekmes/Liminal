@@ -5,6 +5,13 @@ const TAG_EMOJI = {
   breakthrough:   '\u{1FAE0}',  // 🫠 melty face
   fights:         '\u{1F525}',  // 🔥 fire
 
+  // Core notes tags
+  idea:           '\u{1F4A1}',  // 💡
+  quote:          '\u{1F4AC}',  // 💬
+  goal:           '\u{1F3AF}',  // 🎯
+  reflection:     '\u{1F52E}',  // 🔮
+  none:           '\u{2796}',   // ➖
+
   // Predefined LLM suggestion categories
   identity:       '\u{1F9E9}',  // 🧩
   career:         '\u{1F4BC}',  // 💼

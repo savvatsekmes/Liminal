@@ -23,7 +23,13 @@ import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
 import { apiFetch } from '../utils/api';
 import { parseSqliteUtc } from '../utils/dates';
-import { tagLabel } from '../utils/tagEmoji';
+import { tagLabel, tagEmoji, IMG_EMOJI } from '../utils/tagEmoji';
+
+function TagLabel({ tag }) {
+  const src = IMG_EMOJI[tag.toLowerCase()];
+  if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
+  return tagLabel(tag);
+}
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
 import MicButton from '../components/MicButton';
@@ -388,6 +394,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
         {BUILT_IN_TYPES.map(({ type, labelKey }) => (
           <TypePill
             key={type}
+            type={type}
             label={t(labelKey)}
             active={type === 'all' ? isAllActive : activeFilters.includes(type)}
             onClick={() => type === 'all' ? clearFilters() : toggleFilter(type)}
@@ -660,13 +667,14 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
 
 // ── TypePill ──────────────────────────────────────────────────────────────────
 
-function TypePill({ label, active, onClick }) {
+function TypePill({ label, type, active, onClick }) {
+  const emoji = type && type !== 'all' ? tagEmoji(type) : '';
   return (
     <button
       onClick={onClick}
       style={{
-        width: '62px',
-        padding: '5px 4px',
+        minWidth: '62px',
+        padding: '5px 8px',
         fontSize: '10px',
         fontWeight: active ? '600' : '400',
         letterSpacing: '0.03em',
@@ -678,9 +686,10 @@ function TypePill({ label, active, onClick }) {
         textAlign: 'center',
         transition: 'all 0.12s',
         flexShrink: 0,
+        whiteSpace: 'nowrap',
       }}
     >
-      {label}
+      {emoji ? `${emoji} ${label}` : label}
     </button>
   );
 }
@@ -702,7 +711,8 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        width: '72px',
+        minWidth: '72px',
+        maxWidth: '110px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
@@ -735,7 +745,7 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={label}
       >
-        {tagLabel(label)}
+        <TagLabel tag={label} />
       </button>
       {hover && (
         <button
@@ -962,7 +972,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
             style={{ ...pillBase, ...(active ? pillActive : {}) }}
             onClick={() => toggleTag(typ)}
           >
-            {t(TYPE_LABEL_KEYS[typ])}
+            {tagEmoji(typ) ? `${tagEmoji(typ)} ${t(TYPE_LABEL_KEYS[typ])}` : t(TYPE_LABEL_KEYS[typ])}
           </button>
         );
       })}
@@ -979,7 +989,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
             style={{ ...pillBase, ...(active ? pillActive : {}) }}
             onClick={() => toggleTag(tag)}
           >
-            {tagLabel(tag)}
+            <TagLabel tag={tag} />
           </button>
         );
       })}
@@ -995,7 +1005,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
           onClick={() => toggleTag(tag)}
           title="Suggested tag — click to remove"
         >
-          {tagLabel(tag)}
+          <TagLabel tag={tag} />
         </button>
       ))}
 
@@ -1010,7 +1020,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
           onClick={() => applySuggestion(tag)}
           title="Suggested — click to add"
         >
-          + {tagLabel(tag)}
+          + <TagLabel tag={tag} />
         </button>
       ))}
     </div>

@@ -4,7 +4,13 @@ import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
-import { tagLabel } from '../utils/tagEmoji';
+import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
+
+function TagLabel({ tag }) {
+  const src = IMG_EMOJI[tag.toLowerCase()];
+  if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
+  return tagLabel(tag);
+}
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
@@ -1511,7 +1517,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={label}
       >
-        {tagLabel(label)}
+        <TagLabel tag={label} />
       </button>
       {hover && (
         <button
@@ -1733,7 +1739,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => toggleTag(tag)}
           title="Manual tag — click to remove"
         >
-          {tagLabel(tag)}
+          <TagLabel tag={tag} />
         </button>
       ))}
       {sortedAuto.map((tag) => (
@@ -1743,7 +1749,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => toggleTag(tag)}
           title="Suggested tag — click to remove"
         >
-          {tagLabel(tag)}
+          <TagLabel tag={tag} />
         </button>
       ))}
       {sortedOther.map((tag) => (
@@ -1753,7 +1759,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => toggleTag(tag)}
           title="Filter tag — click to add to this conversation"
         >
-          {tagLabel(tag)}
+          <TagLabel tag={tag} />
         </button>
       ))}
       {freshSuggestions.map((tag) => (
@@ -1763,7 +1769,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => applySuggestion(tag)}
           title="Suggested — click to add"
         >
-          + {tagLabel(tag)}
+          + <TagLabel tag={tag} />
         </button>
       ))}
       {adding ? (
