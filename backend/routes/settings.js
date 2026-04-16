@@ -757,14 +757,26 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     }
   }
 
-  // 12. Settings — clear and replace all
+  // 12. Settings — clear and replace, but preserve identity-sensitive keys
+  //     that belong to the *current* logged-in user (settings table is global,
+  //     not scoped per user, so a restore must not overwrite another user's name).
   if (data.settings && typeof data.settings === 'object') {
+    const currentDisplayName = s.get('display_name');
     db.prepare('DELETE FROM settings').run();
     for (const [key, value] of Object.entries(data.settings)) {
       try {
-        s.set(key, value);
+        // Keep the current user's display name — don't let a backup rename them
+        if (key === 'display_name' && currentDisplayName) {
+          s.set(key, currentDisplayName);
+        } else {
+          s.set(key, value);
+        }
         counts.settings = (counts.settings || 0) + 1;
       } catch { counts.skipped++; }
+    }
+    // Ensure display_name is restored if the backup didn't include it
+    if (!data.settings.display_name && currentDisplayName) {
+      s.set('display_name', currentDisplayName);
     }
   }
 

@@ -4,6 +4,7 @@ import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
+import { tagLabel } from '../utils/tagEmoji';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
@@ -520,7 +521,7 @@ function formatSessionDate(dateStr) {
   } catch { return ''; }
 }
 
-export default function OraclePage({ initialSessionId, onSessionSelected }) {
+export default function OraclePage({ initialSessionId, onSessionSelected, onNavigateToEntry, onNavigateToNote }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('chat'); // 'list' | 'chat'
@@ -1014,6 +1015,11 @@ export default function OraclePage({ initialSessionId, onSessionSelected }) {
                 active={active}
                 onClick={() => isMobile ? mobileLoadSession(sess.id) : loadSession(sess.id)}
                 onDelete={() => handleDeleteSession(sess)}
+                onNavigateToSource={
+                  sess.source_entry_id ? () => onNavigateToEntry?.(sess.source_entry_id) :
+                  sess.source_note_id ? () => onNavigateToNote?.(sess.source_note_id) :
+                  null
+                }
               />
             );
           })}
@@ -1472,7 +1478,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        width: '62px',
+        width: '72px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
@@ -1505,7 +1511,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={label}
       >
-        {label}
+        {tagLabel(label)}
       </button>
       {hover && (
         <button
@@ -1531,7 +1537,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
 
 // ── Sidebar item ────────────────────────────────────────────────────────────
 
-function SidebarItem({ sess, active, onClick, onDelete }) {
+function SidebarItem({ sess, active, onClick, onDelete, onNavigateToSource }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   return (
@@ -1540,16 +1546,46 @@ function SidebarItem({ sess, active, onClick, onDelete }) {
         ...s.sidebarItem,
         ...(active ? s.sidebarItemActive : hover ? { background: 'var(--panel-bg)' } : {}),
         position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
       }}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <div style={{ ...s.sidebarItemMeta, ...(active ? s.sidebarItemMetaActive : {}), paddingRight: '18px' }}>
-        {sess.archetype}{(sess.tags || []).length > 0 ? ' · ' + (sess.tags || []).join(' · ') : ''} · {formatSessionDate(sess.created_at)}
-      </div>
-      <div style={{ ...s.sidebarItemTitle, ...(active ? s.sidebarItemTitleActive : {}) }}>
-        {(sess.first_message || sess.title || t('oracle.newConversation')).slice(0, 60)}
+      {onNavigateToSource && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onNavigateToSource(); }}
+          title={sess.source_entry_id ? 'Go to journal entry' : 'Go to note'}
+          style={{
+            width: '28px',
+            height: '28px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '14px',
+            border: 'none',
+            background: 'rgba(99,102,241,0.1)',
+            color: 'rgb(99,102,241)',
+            cursor: 'pointer',
+            flexShrink: 0,
+            transition: 'background 0.15s',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6l-3 3V11H4a2 2 0 0 1-2-2V3z" />
+            <circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+      )}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ ...s.sidebarItemMeta, ...(active ? s.sidebarItemMetaActive : {}), paddingRight: '18px' }}>
+          {sess.archetype}{(sess.tags || []).length > 0 ? ' · ' + (sess.tags || []).join(' · ') : ''} · {formatSessionDate(sess.created_at)}
+        </div>
+        <div style={{ ...s.sidebarItemTitle, ...(active ? s.sidebarItemTitleActive : {}) }}>
+          {(sess.first_message || sess.title || t('oracle.newConversation')).slice(0, 60)}
+        </div>
       </div>
       {hover && (
         <button
@@ -1697,7 +1733,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => toggleTag(tag)}
           title="Manual tag — click to remove"
         >
-          {tag}
+          {tagLabel(tag)}
         </button>
       ))}
       {sortedAuto.map((tag) => (
@@ -1707,7 +1743,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => toggleTag(tag)}
           title="Suggested tag — click to remove"
         >
-          {tag}
+          {tagLabel(tag)}
         </button>
       ))}
       {sortedOther.map((tag) => (
@@ -1717,7 +1753,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => toggleTag(tag)}
           title="Filter tag — click to add to this conversation"
         >
-          {tag}
+          {tagLabel(tag)}
         </button>
       ))}
       {freshSuggestions.map((tag) => (
@@ -1727,7 +1763,7 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
           onClick={() => applySuggestion(tag)}
           title="Suggested — click to add"
         >
-          + {tag}
+          + {tagLabel(tag)}
         </button>
       ))}
       {adding ? (

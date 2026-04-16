@@ -220,6 +220,7 @@ export default function MemoryPage() {
   const [reindexing, setReindexing] = useState(false);
   const [sliders, setSliders] = useState({});
   const [slidersSaved, setSlidersSaved] = useState(false);
+  const [portrait, setPortrait] = useState(null);
   const [savingSliders, setSavingSliders] = useState(false);
 
   // Archetypes
@@ -251,7 +252,12 @@ export default function MemoryPage() {
         for (const { key } of SLIDER_AXES) vals[key] = p[key] ?? 50;
         vals.slider_sky_weight = p.slider_sky_weight ?? 50;
         vals.slider_portrait_weight = p.slider_portrait_weight ?? 50;
+        vals.slider_friend_stranger = p.slider_friend_stranger ?? 30;
+        vals.swearing_enabled = p.swearing_enabled ?? 0;
+        vals.slider_swearing = p.slider_swearing ?? 0;
+        vals.sexual_content_enabled = p.sexual_content_enabled ?? 0;
         setSliders(vals);
+        setPortrait(p);
         setCustomArchetypes(p.custom_archetypes || []);
         setArchetypeVoices(p.archetype_voices || {});
       })
@@ -446,6 +452,29 @@ export default function MemoryPage() {
               )}
             </div>
           ))}
+          {/* Friend / Stranger slider */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={s.sliderRow}>
+              <span style={s.sliderLabel}>Friend</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                style={s.slider}
+                value={sliders.slider_friend_stranger ?? 30}
+                onChange={(e) => setSlider('slider_friend_stranger', Number(e.target.value))}
+              />
+              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Stranger</span>
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
+              {(sliders.slider_friend_stranger ?? 30) < 25
+                ? 'Close friend — casual, blunt, calls you out, knows you'
+                : (sliders.slider_friend_stranger ?? 30) > 75
+                  ? 'Professional guide — measured, considered, wise distance'
+                  : 'Trusted friend — warm and direct, not clinical'}
+            </div>
+          </div>
+
           {/* Woo Woo section */}
           <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: '28px', marginBottom: '16px' }}>
             Woo Woo
@@ -486,6 +515,78 @@ export default function MemoryPage() {
               Sky weight — how much moon phase, planetary positions, and retrogrades colour reflections
             </div>
           </div>
+
+          {/* Over 18 section */}
+          <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: '28px', marginBottom: '16px' }}>
+            Over 18
+          </div>
+
+          {(() => {
+            const bd = portrait?.birth_date;
+            let isOver18 = false;
+            if (bd) {
+              const parts = bd.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+              const iso = bd.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+              let birthDate = null;
+              if (parts) birthDate = new Date(parts[3], parts[2] - 1, parts[1]);
+              else if (iso) birthDate = new Date(iso[1], iso[2] - 1, iso[3]);
+              if (birthDate) isOver18 = (Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000) >= 18;
+            }
+
+            if (!bd) return (
+              <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
+                Set your date of birth in Portrait to unlock these settings.
+              </div>
+            );
+            if (!isOver18) return (
+              <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
+                You must be 18 or older to access these settings.
+              </div>
+            );
+
+            return (
+              <>
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={s.sliderRow}>
+                    <span style={s.sliderLabel}>None</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      style={s.slider}
+                      value={sliders.slider_swearing ?? 0}
+                      onChange={(e) => setSlider('slider_swearing', Number(e.target.value))}
+                    />
+                    <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Heavy</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
+                    {(sliders.slider_swearing ?? 0) === 0
+                      ? 'Swearing — off'
+                      : (sliders.slider_swearing ?? 0) < 30
+                        ? 'Swearing — mild ("damn", "hell", "crap")'
+                        : (sliders.slider_swearing ?? 0) < 60
+                          ? 'Swearing — moderate ("shit", "fuck" where natural)'
+                          : 'Swearing — heavy (unrestricted, matches your energy)'}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--body)' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!sliders.sexual_content_enabled}
+                      onChange={(e) => setSlider('sexual_content_enabled', e.target.checked ? 1 : 0)}
+                      style={{ width: 16, height: 16, accentColor: 'var(--body)' }}
+                    />
+                    Sexual content
+                  </label>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                    Allows frank discussion of sexuality, intimacy, and desire
+                  </span>
+                </div>
+              </>
+            );
+          })()}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
             <button

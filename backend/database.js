@@ -165,6 +165,10 @@ addColumnSafe('portrait', 'custom_archetypes', "TEXT NOT NULL DEFAULT '[]'");
 addColumnSafe('portrait', 'archetype_voices', "TEXT NOT NULL DEFAULT '{}'");
 addColumnSafe('portrait', 'slider_sky_weight', 'INTEGER DEFAULT 50');
 addColumnSafe('portrait', 'slider_portrait_weight', 'INTEGER DEFAULT 50');
+addColumnSafe('portrait', 'slider_friend_stranger', 'INTEGER DEFAULT 30');
+addColumnSafe('portrait', 'swearing_enabled', 'INTEGER DEFAULT 0');
+addColumnSafe('portrait', 'slider_swearing', 'INTEGER DEFAULT 0');
+addColumnSafe('portrait', 'sexual_content_enabled', 'INTEGER DEFAULT 0');
 addColumnSafe('portrait', 'weather_city', 'TEXT');
 addColumnSafe('portrait', 'weather_lat', 'REAL');
 addColumnSafe('portrait', 'weather_lng', 'REAL');
@@ -194,6 +198,22 @@ addColumnSafe('oracle_sessions', 'auto_tags', "TEXT NOT NULL DEFAULT '[]'");
 addColumnSafe('entries', 'moon_phase', 'TEXT');
 addColumnSafe('entries', 'moon_sign',  'TEXT');
 addColumnSafe('entries', 'sky_notes',  'TEXT');
+
+// Breakthrough intensity: raw dash count preceding 🫠 in the original Notion title.
+// Null for non-breakthrough entries. Rendered as pip scale at display time.
+addColumnSafe('entries',     'breakthrough_level', 'INTEGER');
+
+// Reflection provenance: 'generated' (Liminal Mirror) vs 'imported' (pasted from
+// a Notion archive). Lets the UI demote regenerate buttons on legacy blocks.
+addColumnSafe('reflections', 'source', "TEXT NOT NULL DEFAULT 'generated'");
+
+// Link oracle sessions to their source entry or note (the "Let's talk about this" feature).
+// A session can be linked to at most one entry or one note. Bidirectional: entries/notes
+// store the linked session ID so the UI can show "conversation linked" indicators.
+addColumnSafe('oracle_sessions', 'source_entry_id', 'INTEGER');
+addColumnSafe('oracle_sessions', 'source_note_id',  'INTEGER');
+addColumnSafe('entries',         'linked_session_id', 'INTEGER');
+addColumnSafe('notes',           'linked_session_id', 'INTEGER');
 
 // Recreate portrait table to remove id=1 constraint and add user_id
 const portraitCols = db.prepare("PRAGMA table_info(portrait)").all().map(c => c.name);

@@ -64,7 +64,12 @@ export default function SelectionMenu() {
       const target = e.target;
       targetRef.current = target;
       const tag = (target?.tagName || '').toLowerCase();
-      const isInput = tag === 'input' || tag === 'textarea' || target?.isContentEditable;
+      // Atoms inside the ProseMirror editor have contentEditable=false, so
+      // target.isContentEditable is false even though the editor is editable.
+      // Check for a .ProseMirror ancestor so Paste/Cut still appear.
+      const isInput = tag === 'input' || tag === 'textarea'
+        || target?.isContentEditable
+        || !!target?.closest?.('.ProseMirror');
       // Pull selection text. For inputs/textareas, window.getSelection() is
       // empty — read it from the element directly.
       let selectionText = '';
@@ -79,6 +84,12 @@ export default function SelectionMenu() {
       }
       setSavedToMemory(false);
       setSavedToJournal(false);
+
+      // Detect if the click landed inside an atom NodeView (YouTube embed,
+      // image, tarot reading). These have `selectable: false` so right-click
+      // can't create a text selection on them — so we surface a dedicated
+      // Copy item that serializes the atom's HTML directly.
+      const atomEl = target?.closest?.('[data-youtube-embed], [data-image-embed], [data-card-reading]') || null;
 
       // Detect a misspelled word at the click point. Only do this when there's
       // no selection (a selection means the user wants to act on the highlighted
@@ -104,6 +115,7 @@ export default function SelectionMenu() {
         misspelled,
         suggestions,
         isInput,
+        atomEl,
       });
     }
     document.addEventListener('contextmenu', onContextMenu);
@@ -185,25 +197,82 @@ export default function SelectionMenu() {
     streamSpeak(popup.selection, audioRef, cancelRef);
     setPopup(null);
   }
+  function escAttr(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  async function handleCopyAtom() {
+    const el = popup.atomEl;
+    if (!el) { setPopup(null); return; }
+
+    // Build minimal HTML matching each atom's renderHTML — NOT el.outerHTML,
+    // which contains all the rendered React internals (iframe/buttons/styles)
+    // and confuses ProseMirror's clipboard parser into rendering leftover divs
+    // as literal text. For YouTube, skip HTML entirely and copy the URL —
+    // YoutubeEmbed's paste rule turns URLs back into embeds automatically.
+    let html = '';
+    let plain = '';
+
+    if (el.hasAttribute('data-youtube-embed')) {
+      const id = el.getAttribute('data-video-id') || '';
+      const title = el.getAttribute('data-title') || '';
+      const w = el.getAttribute('data-width') || '100%';
+      plain = id ? `https://www.youtube.com/watch?v=${id}` : '';
+      html = `<div data-youtube-embed="" data-video-id="${escAttr(id)}" data-title="${escAttr(title)}" data-width="${escAttr(w)}"></div>`;
+    } else if (el.hasAttribute('data-image-embed')) {
+      const src = el.getAttribute('data-src') || '';
+      const alt = el.getAttribute('data-alt') || '';
+      const width = el.getAttribute('data-width') || '100%';
+      const analyzed = el.getAttribute('data-analyzed') || 'false';
+      const hash = el.getAttribute('data-image-hash') || '';
+      html = `<div data-image-embed="" data-src="${escAttr(src)}" data-alt="${escAttr(alt)}" data-width="${escAttr(width)}" data-analyzed="${escAttr(analyzed)}" data-image-hash="${escAttr(hash)}"></div>`;
+      plain = src.startsWith('http') || src.startsWith('/') ? src : '[image]';
+    } else if (el.hasAttribute('data-card-reading')) {
+      const cards = el.getAttribute('data-cards') || '';
+      const reading = el.getAttribute('data-reading') || '';
+      const deckType = el.getAttribute('data-deck-type') || 'tarot';
+      const spread = el.getAttribute('data-spread-name') || '';
+      html = `<div data-card-reading="" data-cards="${escAttr(cards)}" data-reading="${escAttr(reading)}" data-deck-type="${escAttr(deckType)}" data-spread-name="${escAttr(spread)}"></div>`;
+      plain = '[tarot reading]';
+    } else {
+      setPopup(null);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' }),
+        }),
+      ]);
+    } catch {
+      try { await navigator.clipboard.writeText(plain || html); } catch {}
+    }
+    setPopup(null);
+  }
   async function handleCopy() {
     if (!hasSelection) return;
-    try { await navigator.clipboard.writeText(popup.selection); } catch {}
+    // execCommand('copy') preserves rich HTML + ProseMirror slice metadata, so
+    // atoms (images, YouTube, tarot) round-trip across entries. writeText would
+    // strip everything to plain text and drop the atoms.
+    try { document.execCommand('copy'); }
+    catch { try { await navigator.clipboard.writeText(popup.selection); } catch {} }
     setPopup(null);
   }
   async function handleCut() {
     if (!hasSelection) return;
-    try { await navigator.clipboard.writeText(popup.selection); } catch {}
-    document.execCommand('cut');
+    try { document.execCommand('cut'); }
+    catch { try { await navigator.clipboard.writeText(popup.selection); } catch {} }
     setPopup(null);
   }
   async function handlePaste() {
-    let text = '';
-    try { text = await navigator.clipboard.readText(); } catch {}
-    if (!text) { setPopup(null); return; }
     const target = targetRef.current;
     if (!target) { setPopup(null); return; }
     const tag = (target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
+      let text = '';
+      try { text = await navigator.clipboard.readText(); } catch {}
+      if (!text) { setPopup(null); return; }
       const start = target.selectionStart ?? target.value.length;
       const end = target.selectionEnd ?? target.value.length;
       const next = target.value.slice(0, start) + text + target.value.slice(end);
@@ -212,9 +281,45 @@ export default function SelectionMenu() {
       setter.call(target, next);
       target.dispatchEvent(new Event('input', { bubbles: true }));
       try { target.setSelectionRange(start + text.length, start + text.length); } catch {}
-    } else if (target.isContentEditable) {
-      target.focus();
-      try { document.execCommand('insertText', false, text); } catch {}
+    } else {
+      // Target is contentEditable, or inside a ProseMirror editor (atoms have
+      // contentEditable=false but sit inside the editable .ProseMirror element).
+      const editable = target.isContentEditable
+        ? target
+        : target.closest?.('.ProseMirror');
+      if (!editable) { setPopup(null); return; }
+      editable.focus();
+
+      // Read clipboard HTML. If it contains atom markup (YouTube/image/tarot),
+      // dispatch a custom event so WritingCanvas can insert via Tiptap's
+      // editor.commands.insertContent — the only reliable path for atom nodes.
+      // execCommand('paste') doesn't work in Electron.
+      let html = '';
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          if (item.types.includes('text/html')) {
+            html = await (await item.getType('text/html')).text();
+            break;
+          }
+        }
+      } catch {}
+
+      const isAtomHtml = html && /data-(youtube-embed|image-embed|card-reading)/.test(html);
+      if (isAtomHtml) {
+        editable.dispatchEvent(new CustomEvent('liminal-paste-atom', {
+          bubbles: true,
+          detail: { html },
+        }));
+      } else {
+        let pasted = false;
+        try { pasted = document.execCommand('paste'); } catch {}
+        if (!pasted) {
+          let text = '';
+          try { text = await navigator.clipboard.readText(); } catch {}
+          if (text) { try { document.execCommand('insertText', false, text); } catch {} }
+        }
+      }
     }
     setPopup(null);
   }
@@ -348,12 +453,23 @@ export default function SelectionMenu() {
     items.push(<Separator key="sep-sel" />);
   }
 
+  // Atom copy — right-click on a YouTube/image/tarot block: Copy without
+  // needing a text selection. Serializes the atom's HTML so it can be
+  // pasted into any other entry.
+  if (popup.atomEl && !hasSelection) {
+    items.push(<MenuItem key="copy-atom" label={t('common.copy')} onClick={handleCopyAtom} />);
+    items.push(<Separator key="sep-atom" />);
+  }
+
   // Clipboard ops — always present, but cut/copy require selection,
   // paste requires an editable target.
   if (popup.isInput) {
     items.push(<MenuItem key="cut" label={t('common.cut')} onClick={handleCut} disabled={!hasSelection} />);
   }
-  items.push(<MenuItem key="copy" label={t('common.copy')} onClick={handleCopy} disabled={!hasSelection} />);
+  // Skip the generic disabled Copy row if we already showed an atom copy item.
+  if (!(popup.atomEl && !hasSelection)) {
+    items.push(<MenuItem key="copy" label={t('common.copy')} onClick={handleCopy} disabled={!hasSelection} />);
+  }
   if (popup.isInput) {
     items.push(<MenuItem key="paste" label={t('common.paste')} onClick={handlePaste} />);
   }

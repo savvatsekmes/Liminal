@@ -1339,6 +1339,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         body: JSON.stringify({ title, body }),
       });
       setSaved(true);
+      window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
     } catch {}
   }
 
@@ -2042,13 +2043,6 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             </div>
             {!layout.editMode && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                <button
-                  onClick={() => setSearchOpen(true)}
-                  title="Search"
-                  style={{ width: 28, height: 28, borderRadius: '50%', border: 'var(--border-style)', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--body)', padding: 0 }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
-                </button>
                 <ThemeToggle size="sm" />
                 <button
                   onClick={() => layout.setEditMode(true)}
@@ -2057,6 +2051,14 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 >
                   <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
                   Edit
+                </button>
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  title="Search"
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+                  Search
                 </button>
               </div>
             )}
@@ -2265,7 +2267,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       <div style={s.inner}>
         {/* Greeting + Quick Ask row */}
         <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', minHeight: '160px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
-          <img src={theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png'} alt="Liminal" onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} style={{ width: '120px', objectFit: 'contain', alignSelf: 'center', opacity: 0.85, flexShrink: 0, marginRight: '8px' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'center', flexShrink: 0, marginRight: '8px', gap: '6px' }}>
+            <img src={theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png'} alt="Liminal" onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} style={{ width: '100px', objectFit: 'contain', opacity: 0.85 }} />
+            <img src="/liminal-wordmark.png" alt="Liminal." style={{ width: '90px', objectFit: 'contain', opacity: 0.75, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+          </div>
           <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '32px 28px 16px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               <div ref={avatarPopoutRef} style={{ position: 'relative', flexShrink: 0 }}>
@@ -2289,15 +2294,6 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             </div>
             {!layout.editMode && (
               <div style={{ alignSelf: 'flex-end', marginTop: 'auto', marginRight: '-14px', marginBottom: '-4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button
-                  onClick={() => setSearchOpen(true)}
-                  title="Search"
-                  style={{ width: 32, height: 32, borderRadius: '50%', border: 'var(--border-style)', background: 'var(--panel-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--body)', padding: 0, transition: 'background 0.12s, color 0.12s' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--panel-bg)'; e.currentTarget.style.color = 'var(--body)'; }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
-                </button>
                 <ThemeToggle size="sm" />
                 <button
                   onClick={() => layout.setEditMode(true)}
@@ -2307,6 +2303,16 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 >
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
                   Edit layout
+                </button>
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  title="Search"
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+                  Search
                 </button>
               </div>
             )}

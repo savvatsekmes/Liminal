@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { tagLabel } from '../utils/tagEmoji';
 
 const s = {
   root: {
@@ -63,7 +64,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
 
       {tags.map((tag) => (
         <span key={tag} className="tag">
-          {tag}
+          {tagLabel(tag)}
           <button
             className="tag-remove"
             onClick={() => removeTag(tag)}

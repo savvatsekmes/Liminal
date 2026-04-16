@@ -205,7 +205,15 @@ function ImageEmbedView({ node, updateAttributes, deleteNode }) {
   if (!src) return null;
 
   return (
-    <NodeViewWrapper style={{ display: 'block' }}>
+    <NodeViewWrapper
+      data-image-embed=""
+      data-src={src || ''}
+      data-alt={alt || ''}
+      data-width={width || '100%'}
+      data-analyzed={analyzed ? 'true' : 'false'}
+      data-image-hash={node.attrs.imageHash || ''}
+      style={{ display: 'block' }}
+    >
       <div
         ref={outerRef}
         contentEditable={false}

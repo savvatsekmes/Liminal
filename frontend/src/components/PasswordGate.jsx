@@ -52,10 +52,16 @@ const s = {
     flexShrink: 0,
   },
   brandLogo: {
-    width: '120px',
+    width: '100px',
     height: 'auto',
     opacity: 0.85,
-    marginBottom: '16px',
+    marginBottom: '4px',
+  },
+  brandWordmark: {
+    width: '90px',
+    height: 'auto',
+    opacity: 0.75,
+    marginBottom: '12px',
   },
   brandName: {
     fontSize: '22px',
@@ -202,6 +208,7 @@ function LoginForm({ onSuccess, onRegister }) {
       <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
         <div className="auth-brand-col" style={s.brandCol}>
           <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <div style={s.tagline}>{t('auth.tagline')}</div>
         </div>
         <div style={s.formCol}>
@@ -295,6 +302,7 @@ function RegisterForm({ onSuccess, onBack }) {
       <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
         <div className="auth-brand-col" style={s.brandCol}>
           <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <div style={s.tagline}>{t('auth.tagline')}</div>
         </div>
         <div style={s.formCol}>

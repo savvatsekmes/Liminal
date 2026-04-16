@@ -51,7 +51,7 @@ function normaliseTagPair(tags, autoTags) {
 router.get('/', (req, res) => {
   const { tag, search, limit = 100, offset = 0 } = req.query;
 
-  let query = `SELECT id, title, body_text, date, tags, auto_tags, created_at, updated_at
+  let query = `SELECT id, title, body_text, date, tags, auto_tags, linked_session_id, created_at, updated_at
                FROM entries`;
   const params = [];
   const conditions = [`user_id = ?`];
@@ -116,7 +116,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
 
-  const { title, body, body_text, date, tags, auto_tags } = req.body;
+  const { title, body, body_text, date, tags, auto_tags, linked_session_id } = req.body;
 
   const fields = [];
   const params = [];
@@ -125,6 +125,7 @@ router.put('/:id', (req, res) => {
   if (body !== undefined) { fields.push('body = ?'); params.push(body); }
   if (body_text !== undefined) { fields.push('body_text = ?'); params.push(body_text); }
   if (date !== undefined) { fields.push('date = ?'); params.push(date); }
+  if (linked_session_id !== undefined) { fields.push('linked_session_id = ?'); params.push(linked_session_id); }
 
   // Tag updates run through normalisation so a tag can never end up in both
   // arrays. If only one of the two is being updated, merge with the existing

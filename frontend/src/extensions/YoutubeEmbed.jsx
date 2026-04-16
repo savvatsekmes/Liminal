@@ -21,6 +21,8 @@ export const YoutubeEmbed = Node.create({
   name: 'youtubeEmbed',
   group: 'block',
   atom: true,
+  selectable: false,
+  isolating: true,
   draggable: true,
 
   addAttributes() {
@@ -126,7 +128,13 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode }) {
   }[status] || '';
 
   return (
-    <NodeViewWrapper style={{ display: 'block' }}>
+    <NodeViewWrapper
+      data-youtube-embed=""
+      data-video-id={videoId || ''}
+      data-title={title || ''}
+      data-width={width || '100%'}
+      style={{ display: 'block' }}
+    >
       <div
         ref={outerRef}
         contentEditable={false}

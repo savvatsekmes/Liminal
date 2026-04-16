@@ -331,6 +331,11 @@ function CardReadingView({ node, deleteNode }) {
 
   return (
     <NodeViewWrapper
+      data-card-reading=""
+      data-cards={encodeAttr(node.attrs.cards)}
+      data-reading={encodeAttr(node.attrs.reading)}
+      data-deck-type={node.attrs.deckType}
+      data-spread-name={node.attrs.spreadName || ''}
       style={{ display: 'block' }}
       contentEditable={false}
     >

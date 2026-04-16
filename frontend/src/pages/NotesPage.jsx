@@ -23,6 +23,7 @@ import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
 import { apiFetch } from '../utils/api';
 import { parseSqliteUtc } from '../utils/dates';
+import { tagLabel } from '../utils/tagEmoji';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
 import MicButton from '../components/MicButton';
@@ -67,7 +68,7 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
 }
 
-export default function NotesPage({ initialNoteId, onNoteSelected }) {
+export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNote, onNavigateToChat }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('editor'); // 'list' | 'editor' | 'reflect'
@@ -365,6 +366,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
               active={activeNote?.id === note.id}
               onClick={() => isMobile ? mobileSelectNote(note) : selectNote(note)}
               onDelete={() => openConfirm(t('notes.deleteConfirm'), () => deleteNote(note.id))}
+              onNavigateToChat={onNavigateToChat}
             />
           ))}
         </div>
@@ -529,6 +531,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected }) {
               customTags={customTags}
               onVersionPreview={setPreviewVersion}
               previewVersionId={previewVersion?.id}
+              onTalkAboutNote={onTalkAboutNote}
             />
           ) : (
             <div style={{
@@ -699,7 +702,7 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        width: '62px',
+        width: '72px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
@@ -732,7 +735,7 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={label}
       >
-        {label}
+        {tagLabel(label)}
       </button>
       {hover && (
         <button
@@ -758,7 +761,35 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
 
 // ── NoteListItem ──────────────────────────────────────────────────────────────
 
-function NoteListItem({ note, active, onClick, onDelete }) {
+function LinkedChatButton({ onClick }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title="Go to linked chat"
+      style={{
+        width: '28px',
+        height: '28px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '14px',
+        border: 'none',
+        background: 'rgba(99,102,241,0.1)',
+        color: 'rgb(99,102,241)',
+        cursor: 'pointer',
+        flexShrink: 0,
+        transition: 'background 0.15s',
+      }}
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6l-3 3V11H4a2 2 0 0 1-2-2V3z" />
+        <circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    </button>
+  );
+}
+
+function NoteListItem({ note, active, onClick, onDelete, onNavigateToChat }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   const meta = TYPE_META[note.type] || TYPE_META.idea;
@@ -779,23 +810,31 @@ function NoteListItem({ note, active, onClick, onDelete }) {
         background: active ? 'var(--panel-bg)' : hover ? 'var(--panel-bg)' : 'transparent',
         transition: 'background 0.1s',
         position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
       }}
     >
-      <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '2px' }}>
-        {(note.tags || []).length > 0 ? (note.tags || []).join(' · ') + ' · ' : ''}{formatDate(note.created_at)}
-      </div>
-      <div style={{
-        fontSize: '12px',
-        color: active ? 'var(--strong)' : 'var(--body)',
-        lineHeight: '1.4',
-        overflow: 'hidden',
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
-        paddingRight: hover ? '18px' : '0',
-        ...meta.bodyStyle,
-      }}>
-        {note.title || preview}
+      {note.linked_session_id && onNavigateToChat && (
+        <LinkedChatButton onClick={() => onNavigateToChat(note.linked_session_id)} />
+      )}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '2px' }}>
+          {(note.tags || []).length > 0 ? (note.tags || []).map(t => tagLabel(t)).join(' · ') + ' · ' : ''}{formatDate(note.created_at)}
+        </div>
+        <div style={{
+          fontSize: '12px',
+          color: active ? 'var(--strong)' : 'var(--body)',
+          lineHeight: '1.4',
+          overflow: 'hidden',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          paddingRight: hover ? '18px' : '0',
+          ...meta.bodyStyle,
+        }}>
+          {note.title || preview}
+        </div>
       </div>
       {hover && (
         <button
@@ -940,7 +979,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
             style={{ ...pillBase, ...(active ? pillActive : {}) }}
             onClick={() => toggleTag(tag)}
           >
-            {tag}
+            {tagLabel(tag)}
           </button>
         );
       })}
@@ -956,7 +995,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
           onClick={() => toggleTag(tag)}
           title="Suggested tag — click to remove"
         >
-          {tag}
+          {tagLabel(tag)}
         </button>
       ))}
 
@@ -971,7 +1010,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
           onClick={() => applySuggestion(tag)}
           title="Suggested — click to add"
         >
-          + {tag}
+          + {tagLabel(tag)}
         </button>
       ))}
     </div>
@@ -1092,7 +1131,7 @@ const NOTE_PLACEHOLDER_KEYS = {
   none:       'notes.placeholderNone',
 };
 
-function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersionId }) {
+function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersionId, onTalkAboutNote }) {
   const { t } = useLanguage();
   const noteRef = useRef(note);
   noteRef.current = note;
@@ -1455,6 +1494,32 @@ async function handlePolish() {
         >
           <WaveformIcon playing={reading} />
         </button>
+        {onTalkAboutNote && (
+          <button
+            onClick={() => onTalkAboutNote(note.id, note.linked_session_id)}
+            title={note.linked_session_id ? t('notes.goToChat') : t('notes.talkAboutThis')}
+            type="button"
+            disabled={!hasText}
+            style={{
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '20px',
+              border: 'none',
+              background: note.linked_session_id ? 'rgba(99,102,241,0.1)' : 'var(--near-white)',
+              color: note.linked_session_id ? 'rgb(99,102,241)' : 'var(--muted)',
+              cursor: !hasText ? 'default' : 'pointer',
+              transition: 'color 0.15s, background 0.15s',
+              flexShrink: 0,
+              opacity: !hasText ? 0.35 : 1,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+            }}
+          >
+            <ChatBubbleIcon linked={!!note.linked_session_id} />
+          </button>
+        )}
       </div>
 
       <VersionsPanel
@@ -1981,6 +2046,15 @@ function SpinnerIcon() {
       <path d="M7 1a6 6 0 0 1 6 6" opacity="0.3">
         <animateTransform attributeName="transform" type="rotate" from="0 7 7" to="360 7 7" dur="0.8s" repeatCount="indefinite" />
       </path>
+    </svg>
+  );
+}
+
+function ChatBubbleIcon({ linked }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6l-3 3V11H4a2 2 0 0 1-2-2V3z" />
+      {linked && <circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none" />}
     </svg>
   );
 }

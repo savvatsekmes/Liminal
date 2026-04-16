@@ -150,7 +150,7 @@ const s = {
   },
 };
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 export default function Onboarding({ username, onComplete }) {
   const [step, setStep] = useState(0);
@@ -267,9 +267,6 @@ export default function Onboarding({ username, onComplete }) {
           {step === 0 && (
             <WelcomeStep
               onContinue={() => goTo(1)}
-              onSkipForNow={handleSkipForNow}
-              onSkipCompletely={handleSkipCompletely}
-              saving={saving}
             />
           )}
           {step === 1 && (
@@ -277,6 +274,7 @@ export default function Onboarding({ username, onComplete }) {
               data={data}
               set={set}
               onContinue={() => goTo(2)}
+              onBack={() => goTo(0)}
               onSkipForNow={handleSkipForNow}
               onSkipCompletely={handleSkipCompletely}
               saving={saving}
@@ -287,6 +285,7 @@ export default function Onboarding({ username, onComplete }) {
               data={data}
               set={set}
               onContinue={() => goTo(3)}
+              onBack={() => goTo(1)}
               onSkipForNow={handleSkipForNow}
               onSkipCompletely={handleSkipCompletely}
               saving={saving}
@@ -297,23 +296,37 @@ export default function Onboarding({ username, onComplete }) {
               data={data}
               set={set}
               onContinue={() => goTo(4)}
+              onBack={() => goTo(2)}
               onSkipForNow={handleSkipForNow}
               onSkipCompletely={handleSkipCompletely}
               saving={saving}
             />
           )}
           {step === 4 && (
-            <OllamaStep
+            <ResponseStyleStep
+              data={data}
+              set={set}
               onContinue={() => goTo(5)}
+              onBack={() => goTo(3)}
               onSkipForNow={handleSkipForNow}
               onSkipCompletely={handleSkipCompletely}
               saving={saving}
             />
           )}
           {step === 5 && (
+            <OllamaStep
+              onContinue={() => goTo(6)}
+              onBack={() => goTo(4)}
+              onSkipForNow={handleSkipForNow}
+              onSkipCompletely={handleSkipCompletely}
+              saving={saving}
+            />
+          )}
+          {step === 6 && (
             <DoneStep
               data={data}
               onFinish={saveAndComplete}
+              onBack={() => goTo(5)}
               saving={saving}
             />
           )}
@@ -350,7 +363,19 @@ function SkipButtons({ onSkipForNow, onSkipCompletely, saving }) {
   );
 }
 
-function WelcomeStep({ onContinue, onSkipForNow, onSkipCompletely, saving }) {
+function BackButton({ onClick }) {
+  const { t } = useLanguage();
+  return (
+    <button
+      style={{ ...s.skip, marginBottom: '8px', fontSize: '12px' }}
+      onClick={onClick}
+    >
+      {t('common.back')}
+    </button>
+  );
+}
+
+function WelcomeStep({ onContinue }) {
   const { t } = useLanguage();
   return (
     <>
@@ -358,18 +383,51 @@ function WelcomeStep({ onContinue, onSkipForNow, onSkipCompletely, saving }) {
       <div style={{ ...s.subtitle, whiteSpace: 'pre-line' }}>
         {t('onboarding.welcomeSubtitle')}
       </div>
+      <div style={{
+        fontSize: '12px',
+        color: 'var(--body)',
+        lineHeight: '1.7',
+        padding: '16px 18px',
+        background: 'var(--panel-bg)',
+        border: 'var(--border-style)',
+        borderRadius: '2px',
+        marginBottom: '28px',
+      }}>
+        <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '11px', letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          Before we begin
+        </div>
+        Liminal is a journaling companion, not a therapist, doctor, or psychologist.
+        The reflections you receive are AI-generated — sometimes surprisingly insightful,
+        sometimes way off. Think of it as a thoughtful friend with a good bookshelf,
+        not a licensed professional.
+        <br /><br />
+        If you're going through something heavy — grief, crisis, dark thoughts — please
+        reach out to a real human. A counsellor, a helpline, someone who knows you.
+        Liminal can't replace that, and it isn't trying to.
+        <br /><br />
+        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+          Crisis resources: <strong>988</strong> (USA), <strong>116 123</strong> (UK Samaritans),{' '}
+          <strong>13 11 14</strong> (AU Lifeline), <strong>988</strong> (Canada),{' '}
+          <strong>112</strong> (EU) — or visit befrienders.org
+        </span>
+        <br /><br />
+        <span style={{ fontStyle: 'italic', color: 'var(--muted)' }}>
+          That said — if you show up honestly, you might be surprised what comes back.
+          Trust the process, but tie your camel.
+        </span>
+      </div>
       <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>
-      <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
     </>
   );
 }
 
 // ── Step 1: Who You Are ──────────────────────────────────────────────────────
 
-function WhoYouAreStep({ data, set, onContinue, onSkipForNow, onSkipCompletely, saving }) {
+function WhoYouAreStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
   const { t } = useLanguage();
   return (
     <>
+      <BackButton onClick={onBack} />
       <div style={s.title}>{t('onboarding.whoYouAre')}</div>
       <div style={s.subtitle}>
         {t('onboarding.whoYouAreSubtitle')}
@@ -415,7 +473,7 @@ function WhoYouAreStep({ data, set, onContinue, onSkipForNow, onSkipCompletely, 
 
 // ── Step 2: Birth Details ────────────────────────────────────────────────────
 
-function BirthDetailsStep({ data, set, onContinue, onSkipForNow, onSkipCompletely, saving }) {
+function BirthDetailsStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
   const [calculating, setCalculating] = useState(false);
   const [astroResults, setAstroResults] = useState(null);
   const timerRef = useRef(null);
@@ -477,6 +535,7 @@ function BirthDetailsStep({ data, set, onContinue, onSkipForNow, onSkipCompletel
 
   return (
     <>
+      <BackButton onClick={onBack} />
       <div style={s.title}>{t('onboarding.birthDetails')}</div>
       <div style={{ ...s.subtitle, whiteSpace: 'pre-line' }}>
         {t('onboarding.birthDetailsSubtitle')}
@@ -544,10 +603,11 @@ function BirthDetailsStep({ data, set, onContinue, onSkipForNow, onSkipCompletel
 
 // ── Step 3: Personality ──────────────────────────────────────────────────────
 
-function PersonalityStep({ data, set, onContinue, onSkipForNow, onSkipCompletely, saving }) {
+function PersonalityStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
   const { t } = useLanguage();
   return (
     <>
+      <BackButton onClick={onBack} />
       <div style={s.title}>{t('onboarding.personality')}</div>
       <div style={{ ...s.subtitle, whiteSpace: 'pre-line' }}>
         {t('onboarding.personalitySubtitle')}
@@ -582,40 +642,185 @@ function PersonalityStep({ data, set, onContinue, onSkipForNow, onSkipCompletely
         placeholder={t('onboarding.humanDesignPlaceholder')}
       />
 
-      <button style={s.btn} onClick={onContinue}>{t('onboarding.finishSetup')}</button>
+      <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>
       <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
     </>
   );
 }
 
-// ── Step 4: Ollama Setup ────────────────────────────────────────────────────
+// ── Step 4: Response Style ───────────────────────────────────────────────────
 
-function OllamaStep({ onContinue, onSkipForNow, onSkipCompletely, saving }) {
+const ONBOARDING_SLIDERS = [
+  { key: 'slider_rational_spiritual',      low: 'Rational',       high: 'Spiritual' },
+  { key: 'slider_gentle_direct',           low: 'Gentle',         high: 'Direct' },
+  { key: 'slider_reflective_action',       low: 'Reflective',     high: 'Action-oriented' },
+  { key: 'slider_light_deep',              low: 'Light touch',    high: 'Deep dive' },
+  { key: 'slider_conversational_poetic',   low: 'Conversational', high: 'Poetic' },
+  { key: 'slider_encouraging_challenging', low: 'Encouraging',    high: 'Challenging' },
+  { key: 'slider_candor',                  low: 'Agreeable',      high: 'Candid' },
+  { key: 'slider_friend_stranger',         low: 'Friend',         high: 'Stranger' },
+];
+
+function ResponseStyleStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
+  return (
+    <>
+      <BackButton onClick={onBack} />
+      <div style={s.title}>Response style</div>
+      <div style={s.subtitle}>
+        How should the Mirror talk to you? These shape the tone of every reflection.
+        You can fine-tune these later in Settings.
+      </div>
+
+      {ONBOARDING_SLIDERS.map(({ key, low, high }) => (
+        <div key={key} style={{ marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', width: '90px', textAlign: 'right', flexShrink: 0 }}>{low}</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              style={{ flex: 1, accentColor: 'var(--body)' }}
+              value={data[key] ?? (key === 'slider_friend_stranger' ? 30 : 50)}
+              onChange={(e) => set(key, Number(e.target.value))}
+            />
+            <span style={{ fontSize: '11px', color: 'var(--muted)', width: '90px', flexShrink: 0 }}>{high}</span>
+          </div>
+          {key === 'slider_candor' && (data.slider_candor ?? 50) > 65 && (
+            <div style={{
+              fontSize: '11px',
+              color: '#c44',
+              marginTop: '4px',
+              padding: '8px 12px',
+              background: 'rgba(204,68,68,0.06)',
+              borderRadius: '2px',
+              lineHeight: '1.5',
+            }}>
+              <strong>Heads up.</strong> High candor means the Mirror will push back — name
+              avoidance, play devil's advocate, challenge your framing. This can be powerful,
+              but if you're in a vulnerable place, it might not be what you need right now.
+              You can always dial it back later.
+            </div>
+          )}
+        </div>
+      ))}
+
+      <div style={{
+        fontSize: '11px',
+        color: 'var(--muted)',
+        fontStyle: 'italic',
+        marginTop: '8px',
+        marginBottom: '24px',
+        lineHeight: '1.6',
+      }}>
+        There are no wrong answers here. The defaults work well for most people.
+        These become more meaningful once you've written a few entries.
+      </div>
+
+      <button style={s.btn} onClick={onContinue}>Continue</button>
+      <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
+    </>
+  );
+}
+
+// ── Step 5: Ollama Setup ────────────────────────────────────────────────────
+
+const PERFORMANCE_TIERS = [
+  { id: 'low',     label: 'Lightweight',       model: 'qwen3.5:2b',  size: '2.7 GB', desc: 'Older laptops, 4-6 GB VRAM, integrated graphics' },
+  { id: 'mid',     label: 'Mid-range',         model: 'qwen3.5:4b',  size: '3.4 GB', desc: 'Modern laptops, 6-8 GB VRAM, GTX 1060+' },
+  { id: 'high',    label: 'High performance',   model: 'qwen3.5:9b',  size: '6.6 GB', desc: 'Gaming PC / M1 Pro+, 8-12 GB VRAM' },
+  { id: 'extreme', label: 'Extreme',            model: 'qwen3.5:27b', size: '17 GB',  desc: 'RTX 4080+, M2 Max/Ultra, 16+ GB VRAM' },
+];
+
+function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
   const { t } = useLanguage();
-  const [ollamaStatus, setOllamaStatus] = useState(null); // null = checking, true = online, false = offline
+  const [ollamaStatus, setOllamaStatus] = useState(null);
+  const [installedModels, setInstalledModels] = useState(new Set());
+  const [selectedTier, setSelectedTier] = useState('');
+  const [pulling, setPulling] = useState(null); // { status, progress, total }
+  const [pullDone, setPullDone] = useState(false);
 
-  useEffect(() => {
-    apiFetch('/api/ollama/models')
-      .then(r => r.json())
-      .then(data => setOllamaStatus(data.online === true))
-      .catch(() => setOllamaStatus(false));
-  }, []);
-
-  function recheckOllama() {
+  function checkOllama() {
     setOllamaStatus(null);
     apiFetch('/api/ollama/models')
       .then(r => r.json())
-      .then(data => setOllamaStatus(data.online === true))
+      .then(data => {
+        setOllamaStatus(data.online === true);
+        if (data.models) setInstalledModels(new Set(data.models.map(m => m.name)));
+      })
       .catch(() => setOllamaStatus(false));
+  }
+
+  useEffect(() => { checkOllama(); }, []);
+
+  const tier = PERFORMANCE_TIERS.find(t => t.id === selectedTier);
+  const isInstalled = tier && installedModels.has(tier.model);
+
+  async function downloadModel() {
+    if (!tier) return;
+    setPulling({ status: 'Starting\u2026', progress: 0, total: 0 });
+    setPullDone(false);
+    try {
+      const res = await apiFetch('/api/ollama/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: tier.model }),
+      });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const msg = JSON.parse(line.slice(6));
+            if (msg.error) {
+              setPulling({ status: `Error: ${msg.error}`, progress: 0, total: 0 });
+            } else if (msg.status === 'done' || msg.status === 'success') {
+              setPulling(null);
+              setPullDone(true);
+              setInstalledModels(prev => new Set([...prev, tier.model]));
+              // Set as the active model for all features
+              apiFetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ollama_model: tier.model, llm_provider: 'ollama' }),
+              }).catch(() => {});
+            } else {
+              setPulling({ status: msg.status, progress: msg.completed || 0, total: msg.total || 0 });
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      setPulling({ status: `Failed: ${err.message}`, progress: 0, total: 0 });
+    }
+  }
+
+  function handleSelectInstalled() {
+    if (!tier) return;
+    // Set as active model
+    apiFetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ollama_model: tier.model, llm_provider: 'ollama' }),
+    }).catch(() => {});
+    setPullDone(true);
   }
 
   return (
     <>
+      <BackButton onClick={onBack} />
       <div style={s.title}>{t('onboarding.ollamaTitle')}</div>
       <div style={{ ...s.subtitle, whiteSpace: 'pre-line' }}>
         {t('onboarding.ollamaSubtitle')}
       </div>
 
+      {/* Install instructions */}
       <div style={{
         padding: '16px 18px',
         border: 'var(--border-style)',
@@ -631,32 +836,20 @@ function OllamaStep({ onContinue, onSkipForNow, onSkipCompletely, saving }) {
         </div>
         <div>1. {t('onboarding.ollamaStep1')}</div>
         <div style={{ marginLeft: '16px', marginBottom: '4px' }}>
-          <a
-            href="https://ollama.com/download"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--strong)', textDecoration: 'underline' }}
-          >
+          <a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer"
+            style={{ color: 'var(--strong)', textDecoration: 'underline' }}>
             ollama.com/download
           </a>
         </div>
         <div>2. {t('onboarding.ollamaStep2')}</div>
-        <div>3. {t('onboarding.ollamaStep3')}</div>
+        <div>3. Choose a model below and download it</div>
       </div>
 
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        marginBottom: '20px',
-        fontSize: '12px',
-      }}>
+      {/* Ollama status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '12px' }}>
         <div style={{
-          width: '7px',
-          height: '7px',
-          borderRadius: '50%',
+          width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
           background: ollamaStatus === null ? 'var(--border)' : ollamaStatus ? '#2ecc71' : '#e74c3c',
-          flexShrink: 0,
         }} />
         <span style={{ color: ollamaStatus ? 'var(--body)' : 'var(--muted)' }}>
           {ollamaStatus === null
@@ -666,22 +859,89 @@ function OllamaStep({ onContinue, onSkipForNow, onSkipCompletely, saving }) {
               : t('onboarding.ollamaNotDetected')}
         </span>
         {ollamaStatus !== null && (
-          <button
-            onClick={recheckOllama}
-            style={{
-              fontSize: '11px',
-              color: 'var(--muted)',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              fontFamily: 'var(--font)',
-              textDecoration: 'underline',
-            }}
-          >
+          <button onClick={checkOllama}
+            style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font)', textDecoration: 'underline' }}>
             {t('onboarding.ollamaRecheck')}
           </button>
         )}
       </div>
+
+      {/* Performance tier selector */}
+      {ollamaStatus && (
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '10px' }}>
+            Choose your computer's performance level
+          </div>
+
+          {PERFORMANCE_TIERS.map(t => {
+            const active = selectedTier === t.id;
+            const installed = installedModels.has(t.model);
+            return (
+              <button
+                key={t.id}
+                onClick={() => { setSelectedTier(t.id); setPullDone(false); }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '10px 14px',
+                  marginBottom: '6px',
+                  border: active ? '1.5px solid var(--strong)' : 'var(--border-style)',
+                  borderRadius: '2px',
+                  background: active ? 'var(--panel-bg)' : 'var(--white)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font)',
+                  transition: 'border-color 0.15s',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--strong)' }}>{t.label}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t.model} · {t.size}</span>
+                  {installed && <span style={{ fontSize: '10px', color: '#2ecc71', fontStyle: 'italic' }}>installed</span>}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>{t.desc}</div>
+              </button>
+            );
+          })}
+
+          {/* Download / Use button */}
+          {tier && !pulling && (
+            <div style={{ marginTop: '10px' }}>
+              {isInstalled && !pullDone ? (
+                <button
+                  onClick={handleSelectInstalled}
+                  style={{ ...s.btn, background: 'var(--strong)', marginBottom: '0' }}
+                >
+                  Use {tier.model}
+                </button>
+              ) : isInstalled || pullDone ? (
+                <div style={{ fontSize: '12px', color: '#2ecc71', fontWeight: '500', textAlign: 'center', padding: '8px' }}>
+                  {tier.model} is ready to go
+                </div>
+              ) : (
+                <button
+                  onClick={downloadModel}
+                  style={{ ...s.btn, marginBottom: '0' }}
+                >
+                  Download {tier.model} ({tier.size})
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Progress bar */}
+          {pulling && (
+            <div style={{ marginTop: '10px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>{pulling.status}</div>
+              {pulling.total > 0 && (
+                <div style={{ height: '3px', background: 'var(--panel-bg)', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', background: 'var(--strong)', width: `${Math.round((pulling.progress / pulling.total) * 100)}%`, transition: 'width 0.3s' }} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
         {t('onboarding.ollamaSettingsHint')}
@@ -695,10 +955,11 @@ function OllamaStep({ onContinue, onSkipForNow, onSkipCompletely, saving }) {
 
 // ── Step 5: Done ─────────────────────────────────────────────────────────────
 
-function DoneStep({ data, onFinish, saving }) {
+function DoneStep({ data, onFinish, onBack, saving }) {
   const { t } = useLanguage();
   return (
     <>
+      <BackButton onClick={onBack} />
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: '24px', marginBottom: '16px' }}>✦</div>
         <div style={{ ...s.title, textAlign: 'center' }}>{t('onboarding.done')}</div>

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
 import Calendar from './Calendar';
 
 const ALL_TAG = '__all__';
@@ -202,7 +203,7 @@ function formatEntryDate(dateStr) {
   }
 }
 
-export default function EntryList({ entries, activeId, onSelect, onNew, onDelete, allTags = [], allManualTags, allAutoTags, onDeleteTag, onAddTag }) {
+export default function EntryList({ entries, activeId, onSelect, onNew, onDelete, allTags = [], allManualTags, allAutoTags, onDeleteTag, onAddTag, onNavigateToChat }) {
   // Manual tags above LLM-applied auto tags with a divider between them.
   // If the parent didn't pass the split arrays, fall back to treating allTags
   // as a single manual list — keeps the component backward-compatible.
@@ -306,6 +307,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
               active={entry.id === activeId}
               onClick={() => onSelect(entry)}
               onDelete={onDelete ? () => confirmDelete(entry.id, entry.title) : null}
+              onNavigateToChat={onNavigateToChat}
             />
           ))}
         </div>
@@ -459,7 +461,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        width: '62px',
+        width: '72px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
@@ -492,7 +494,9 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={label}
       >
-        {label}
+        {IMG_EMOJI[label.toLowerCase()]
+          ? <><img src={IMG_EMOJI[label.toLowerCase()]} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {label}</>
+          : tagLabel(label)}
       </button>
       {hover && (
         <button
@@ -516,8 +520,49 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   );
 }
 
-function EntryItem({ entry, active, onClick, onDelete }) {
+function breakthroughPips(level) {
+  if (level == null) return '';
+  if (level === 0) return '∙';
+  if (level <= 4) return '∙∙';
+  if (level <= 8) return '∙∙∙';
+  if (level <= 12) return '∙∙∙∙';
+  return '∙∙∙∙∙';
+}
+
+function LinkedChatButton({ onClick }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title="Go to linked chat"
+      style={{
+        width: '28px',
+        height: '28px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '14px',
+        border: 'none',
+        background: 'rgba(99,102,241,0.1)',
+        color: 'rgb(99,102,241)',
+        cursor: 'pointer',
+        flexShrink: 0,
+        transition: 'background 0.15s',
+      }}
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6l-3 3V11H4a2 2 0 0 1-2-2V3z" />
+        <circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none" />
+      </svg>
+    </button>
+  );
+}
+
+function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
   const [hover, setHover] = useState(false);
+
+  const tags = entry.tags || [];
+  const isFight = tags.includes('fights');
+  const isBreakthrough = tags.includes('breakthrough') || entry.breakthrough_level != null;
 
   return (
     <div
@@ -525,6 +570,9 @@ function EntryItem({ entry, active, onClick, onDelete }) {
         ...s.item,
         position: 'relative',
         ...(active ? s.itemActive : hover ? { background: 'var(--panel-bg)' } : {}),
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
       }}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
@@ -534,11 +582,27 @@ function EntryItem({ entry, active, onClick, onDelete }) {
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
     >
-      <div style={{ ...s.itemDate }}>
-        {formatEntryDate(entry.date || entry.created_at)}
-      </div>
-      <div style={{ ...s.itemTitle, paddingRight: hover ? '18px' : '0' }}>
-        {entry.title || 'Untitled'}
+      {entry.linked_session_id && onNavigateToChat && (
+        <LinkedChatButton onClick={() => onNavigateToChat(entry.linked_session_id)} />
+      )}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ ...s.itemDate, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>{formatEntryDate(entry.date || entry.created_at)}</span>
+          {isBreakthrough && (
+            <span
+              title={`Breakthrough${entry.breakthrough_level != null ? ` (${entry.breakthrough_level})` : ''}`}
+              style={{ color: 'var(--strong)', letterSpacing: '1px', fontSize: '11px' }}
+            >
+              {breakthroughPips(entry.breakthrough_level)}
+            </span>
+          )}
+          {isFight && (
+            <span title="Fight" style={{ fontSize: '9px', opacity: 0.7 }}>🔥</span>
+          )}
+        </div>
+        <div style={{ ...s.itemTitle, paddingRight: hover ? '18px' : '0' }}>
+          {entry.title || 'Untitled'}
+        </div>
       </div>
       {hover && onDelete && (
         <button

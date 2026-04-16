@@ -40,6 +40,7 @@ router.get('/sessions', (req, res) => {
   const sessions = db.prepare(`
     SELECT
       s.id, s.archetype, s.title, s.tag, s.tags, s.auto_tags, s.created_at,
+      s.source_entry_id, s.source_note_id,
       COUNT(m.id) AS message_count,
       (SELECT content FROM oracle_messages
        WHERE session_id = s.id AND role = 'user'
@@ -124,11 +125,23 @@ router.post('/sessions/import', (req, res) => {
 
 // ── POST /api/oracle/sessions ──────────────────────────────────────────────
 router.post('/sessions', (req, res) => {
-  const { archetype = 'Zen' } = req.body;
+  const { archetype = 'Auto', sourceEntryId, sourceNoteId } = req.body;
   const result = db.prepare(
-    'INSERT INTO oracle_sessions (user_id, archetype) VALUES (?, ?)'
-  ).run(req.userId, archetype);
-  const session = db.prepare('SELECT * FROM oracle_sessions WHERE id = ?').get(result.lastInsertRowid);
+    'INSERT INTO oracle_sessions (user_id, archetype, source_entry_id, source_note_id) VALUES (?, ?, ?, ?)'
+  ).run(req.userId, archetype, sourceEntryId || null, sourceNoteId || null);
+  const sessionId = result.lastInsertRowid;
+
+  // Bidirectional link: update the source entry/note with the new session id
+  if (sourceEntryId) {
+    db.prepare('UPDATE entries SET linked_session_id = ? WHERE id = ? AND user_id = ?')
+      .run(sessionId, sourceEntryId, req.userId);
+  }
+  if (sourceNoteId) {
+    db.prepare('UPDATE notes SET linked_session_id = ? WHERE id = ? AND user_id = ?')
+      .run(sessionId, sourceNoteId, req.userId);
+  }
+
+  const session = db.prepare('SELECT * FROM oracle_sessions WHERE id = ?').get(sessionId);
   res.json(sessionRow(session));
 });
 
@@ -144,6 +157,23 @@ router.get('/sessions/:id', (req, res) => {
   ).all(session.id);
 
   res.json({ ...sessionRow(session), messages });
+});
+
+// ── GET /api/oracle/linked-session?entryId=&noteId= ─────────────────────
+router.get('/linked-session', (req, res) => {
+  const { entryId, noteId } = req.query;
+  let session = null;
+  if (entryId) {
+    session = db.prepare(
+      'SELECT * FROM oracle_sessions WHERE source_entry_id = ? AND user_id = ?'
+    ).get(entryId, req.userId);
+  } else if (noteId) {
+    session = db.prepare(
+      'SELECT * FROM oracle_sessions WHERE source_note_id = ? AND user_id = ?'
+    ).get(noteId, req.userId);
+  }
+  if (!session) return res.json({ session: null });
+  res.json({ session: sessionRow(session) });
 });
 
 // ── POST /api/oracle/sessions/:id/messages ────────────────────────────────
@@ -182,10 +212,9 @@ router.post('/sessions/:id/messages', async (req, res) => {
     "SELECT role, content FROM oracle_messages WHERE session_id = ? AND content != '' ORDER BY created_at ASC LIMIT 30"
   ).all(session.id);
 
-  const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype);
-
   try {
-    const answer = await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 1200 });
+    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session);
+    const answer = await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 200 });
     const trimmed = answer.trim();
 
     // Don't save empty responses

@@ -105,6 +105,7 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
 
   const editable = typeof onChange === 'function' || typeof onPatch === 'function';
   const isManual = block.archetype === 'Manual';
+  const isImported = block.source === 'imported' || block.archetype === 'Imported';
 
   async function handleListen() {
     if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
@@ -163,7 +164,19 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
             inputStyle={{ fontWeight: '600', color: 'var(--strong)' }}
           />
         ) : (
-          <div style={s.title}>{block.title}</div>
+          <div style={s.title}>
+            {block.title}
+            {isImported && (
+              <span style={{
+                marginLeft: 8,
+                fontSize: '10px',
+                fontWeight: 400,
+                fontStyle: 'italic',
+                color: 'var(--muted)',
+                letterSpacing: '0.3px',
+              }}>imported</span>
+            )}
+          </div>
         )}
 
         {editable ? (

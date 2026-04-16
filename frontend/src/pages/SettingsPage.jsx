@@ -278,6 +278,7 @@ function StatusIndicator({ ok, message }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarChange, onNavigate }) {
   const { t } = useLanguage();
+  const { theme } = useTheme();
   const isMobile = useIsMobile();
   const [cfg, setCfg] = useState(null);
   const [activeTab, setActiveTab] = useState('general');
@@ -320,7 +321,14 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
         borderBottom: 'var(--border-style)', background: 'var(--near-white)',
         padding: '0 8px', gap: '0', WebkitOverflowScrolling: 'touch',
       } : s.tabStrip}>
-        {!isMobile && <div style={s.tabStripTitle}>{t('settings.title')}</div>}
+        {!isMobile && (
+          <>
+            <div style={{ padding: '0 16px 14px', display: 'flex', justifyContent: 'flex-start' }}>
+              <img src="/liminal-wordmark.png" alt="Liminal." style={{ width: '72px', objectFit: 'contain', opacity: 0.7, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+            </div>
+            <div style={s.tabStripTitle}>{t('settings.title')}</div>
+          </>
+        )}
         {TABS.map(tab => (
           <button
             key={tab.id}
@@ -1848,6 +1856,7 @@ function AppearanceSection() {
 
 function GeneralSection({ cfg, set, save, saving, showToast }) {
   const { t } = useLanguage();
+  const { theme } = useTheme();
 
   // ── Version / updates ───────────────────────────────────────────────────
   const [info, setInfo] = useState(null);
@@ -1998,7 +2007,7 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
       {/* Version & updates */}
       <Section title={t('settings.aboutVersion')}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--strong)' }}>Liminal</div>
+          <img src="/liminal-wordmark.png" alt="Liminal" style={{ height: '22px', objectFit: 'contain', opacity: 0.8, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <div style={{
             fontSize: '11px',
             padding: '3px 10px',

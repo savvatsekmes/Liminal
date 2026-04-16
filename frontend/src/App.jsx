@@ -26,7 +26,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   const [activeView, setActiveView] = useState(() => {
     const saved = sessionStorage.getItem('liminal_view');
     if (saved && ['home','journal','notes','oracle','portrait','memory','settings'].includes(saved)) return saved;
-    return isFirstSession ? 'journal' : 'home';
+    return 'home';
   });
   const handleViewChange = useCallback((view) => {
     setActiveView(view);
@@ -146,6 +146,51 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     await reflect(activeEntry, archetype);
   }
 
+  async function handleTalkAboutEntry(entry) {
+    if (!entry?.id) return;
+    // If already linked, navigate to that session
+    if (entry.linked_session_id) {
+      setPendingSessionId(entry.linked_session_id);
+      handleViewChange('oracle');
+      return;
+    }
+    try {
+      const res = await apiFetch('/api/oracle/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceEntryId: entry.id }),
+      });
+      const session = await res.json();
+      // Update local entry with linked session id
+      await updateEntry(entry.id, { linked_session_id: session.id });
+      setPendingSessionId(session.id);
+      handleViewChange('oracle');
+    } catch (err) {
+      console.error('Failed to create linked session:', err);
+    }
+  }
+
+  async function handleTalkAboutNote(noteId, linkedSessionId) {
+    if (!noteId) return;
+    if (linkedSessionId) {
+      setPendingSessionId(linkedSessionId);
+      handleViewChange('oracle');
+      return;
+    }
+    try {
+      const res = await apiFetch('/api/oracle/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceNoteId: noteId }),
+      });
+      const session = await res.json();
+      setPendingSessionId(session.id);
+      handleViewChange('oracle');
+    } catch (err) {
+      console.error('Failed to create linked session:', err);
+    }
+  }
+
   return (
     <>
     {locked && <LockScreen username={username} onUnlock={() => { setLocked(false); resetLockTimer(); }} />}
@@ -163,6 +208,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             allAutoTags={allAutoTags}
             onDeleteTag={handleDeleteTag}
             onAddTag={handleAddTagToActive}
+            onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }}
           />
         ),
 
@@ -185,8 +231,15 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNavigateToSettings={() => handleViewChange('settings')}
             />
           );
-          if (activeView === 'oracle') return <OraclePage initialSessionId={pendingSessionId} onSessionSelected={() => setPendingSessionId(null)} />;
-          if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} />;
+          if (activeView === 'oracle') return (
+            <OraclePage
+              initialSessionId={pendingSessionId}
+              onSessionSelected={() => setPendingSessionId(null)}
+              onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
+              onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
+            />
+          );
+          if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
           if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
           if (activeView === 'memory') return <MemoryPage />;
           if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} onNavigate={handleViewChange} />;
@@ -202,6 +255,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               previewVersionId={previewVersion?.id}
               isFirstSession={isFirstSession}
               allTags={allTags}
+              onTalkAboutThis={handleTalkAboutEntry}
             />
           );
         },

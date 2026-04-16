@@ -110,6 +110,17 @@ export default function TermsOfService({ onBack }) {
             <p style={s.paragraph}>{t('terms.notAdviceBody')}</p>
           </div>
 
+          {/* Crisis & Self-Harm */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.crisisTitle')}</div>
+            <p style={s.paragraph}>{t('terms.crisisBody1')}</p>
+            <p style={s.paragraph}>{t('terms.crisisBody2')}</p>
+            <p style={{ ...s.paragraph, whiteSpace: 'pre-line', padding: '10px 14px', background: 'var(--panel-bg)', borderRadius: '4px', fontSize: '12px', lineHeight: '1.8' }}>
+              {t('terms.crisisResources')}
+            </p>
+            <p style={s.paragraph}>{t('terms.crisisBody3')}</p>
+          </div>
+
           {/* Tarot & Oracle */}
           <div style={s.section}>
             <div style={s.sectionTitle}>{t('terms.tarotTitle')}</div>
@@ -123,6 +134,13 @@ export default function TermsOfService({ onBack }) {
             <p style={s.paragraph}>{t('terms.privacyBody1')}</p>
             <p style={s.paragraph}>{t('terms.privacyBody2')}</p>
             <p style={s.paragraph}>{t('terms.privacyBody3')}</p>
+            <p style={s.paragraph}>{t('terms.privacyBody4')}</p>
+          </div>
+
+          {/* Your Data Rights */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.privacyRightsTitle')}</div>
+            <p style={s.paragraph}>{t('terms.privacyRightsBody')}</p>
           </div>
 
           {/* Backups & Encryption */}
@@ -131,6 +149,7 @@ export default function TermsOfService({ onBack }) {
             <p style={s.paragraph}>{t('terms.backupsBody1')}</p>
             <p style={s.paragraph}>{t('terms.backupsBody2')}</p>
             <p style={s.paragraph}>{t('terms.backupsBody3')}</p>
+            <p style={{ ...s.paragraph, fontWeight: '600' }}>{t('terms.backupsBody4')}</p>
           </div>
 
           {/* User Responsibility */}
@@ -148,13 +167,74 @@ export default function TermsOfService({ onBack }) {
           {/* Limitation of Liability */}
           <div style={s.section}>
             <div style={s.sectionTitle}>{t('terms.liabilityTitle')}</div>
-            <p style={s.paragraph}>{t('terms.liabilityBody')}</p>
+            <p style={s.paragraph}>{t('terms.liabilityBody1')}</p>
+            <p style={s.paragraph}>{t('terms.liabilityBody2')}</p>
+          </div>
+
+          {/* Mature Content */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.matureContentTitle')}</div>
+            <p style={s.paragraph}>{t('terms.matureContentBody')}</p>
+          </div>
+
+          {/* Eligibility & Children's Privacy */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.eligibilityTitle')}</div>
+            <p style={s.paragraph}>{t('terms.eligibilityBody1')}</p>
+            <p style={s.paragraph}>{t('terms.eligibilityBody2')}</p>
+            <p style={s.paragraph}>{t('terms.eligibilityBody3')}</p>
+          </div>
+
+          {/* Third-Party Services */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.thirdPartyTitle')}</div>
+            <p style={s.paragraph}>{t('terms.thirdPartyBody')}</p>
+          </div>
+
+          {/* Indemnification */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.indemnificationTitle')}</div>
+            <p style={s.paragraph}>{t('terms.indemnificationBody')}</p>
+          </div>
+
+          {/* Dispute Resolution */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.disputeTitle')}</div>
+            <p style={s.paragraph}>{t('terms.disputeBody1')}</p>
+            <p style={s.paragraph}>{t('terms.disputeBody2')}</p>
+            <p style={s.paragraph}>{t('terms.disputeBody3')}</p>
+          </div>
+
+          {/* Content Ownership */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.contentOwnershipTitle')}</div>
+            <p style={s.paragraph}>{t('terms.contentOwnershipBody')}</p>
+          </div>
+
+          {/* Severability */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.severabilityTitle')}</div>
+            <p style={s.paragraph}>{t('terms.severabilityBody')}</p>
+          </div>
+
+          {/* Governing Law & Jurisdiction */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.governingLawTitle')}</div>
+            <p style={s.paragraph}>{t('terms.governingLawBody1')}</p>
+            <p style={s.paragraph}>{t('terms.governingLawBody2')}</p>
+            <p style={s.paragraph}>{t('terms.governingLawBody3')}</p>
           </div>
 
           {/* Changes to Terms */}
           <div style={s.section}>
             <div style={s.sectionTitle}>{t('terms.changesTitle')}</div>
             <p style={s.paragraph}>{t('terms.changesBody')}</p>
+          </div>
+
+          {/* Entire Agreement */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.entireAgreementTitle')}</div>
+            <p style={s.paragraph}>{t('terms.entireAgreementBody')}</p>
           </div>
         </div>
 

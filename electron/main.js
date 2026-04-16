@@ -148,8 +148,24 @@ function startControlServer() {
     res.writeHead(404);
     res.end();
   });
-  // Use a fixed port so we don't race on address resolution across processes.
-  controlServerPort = 3099;
+  // Pick a port outside Windows' dynamic excluded ranges (Hyper-V/WSL reserve
+  // large swathes of the ephemeral range). 3099 fell inside 3002–3101 on many
+  // machines, causing EACCES. 13099 is well outside typical exclusions.
+  // If the port is still held (fast restart), retry then fall back to OS-assigned.
+  controlServerPort = 13099;
+  server.on('error', (err) => {
+    if (err.code === 'EACCES' || err.code === 'EADDRINUSE') {
+      const retries = server._retryCount || 0;
+      if (retries < 3) {
+        server._retryCount = retries + 1;
+        setTimeout(() => server.listen(controlServerPort, '127.0.0.1'), 500);
+      } else {
+        server.listen(0, '127.0.0.1', () => {
+          controlServerPort = server.address().port;
+        });
+      }
+    }
+  });
   server.listen(controlServerPort, '127.0.0.1');
   return controlServerPort;
 }

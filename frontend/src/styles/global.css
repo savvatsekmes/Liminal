@@ -19,7 +19,7 @@
   --body:       #555555;
   --strong:     #1A1A1A;
 
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
 
   --sidebar-width:    66px;
   --entrylist-width:  196px;

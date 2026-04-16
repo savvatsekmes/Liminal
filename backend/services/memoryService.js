@@ -526,6 +526,33 @@ function translateSlidersToVoice(portrait) {
     instructions.push('Bring full presence and personality — don\'t be generic or bland.');
   }
 
+  // friend ↔ stranger
+  const fs = v('slider_friend_stranger');
+  if (fs < 25) {
+    instructions.push('Speak like a close friend — casual, warm, blunt when needed. Use slang, contractions, short sentences. Drop the therapist distance. Talk like you actually know them. Call them out affectionately. "Dude", "honestly", "look" are fine. You\'re not a coach or a stranger.');
+  } else if (fs < 45) {
+    instructions.push('Speak like a trusted friend — warm and direct, not clinical. Casual tone, but still thoughtful. You know this person.');
+  } else if (fs > 75) {
+    instructions.push('Maintain professional distance — thoughtful, measured, considered. You are a wise guide, not a friend.');
+  }
+
+  // swearing (slider: 0 = none, 100 = heavy)
+  const sw = v('slider_swearing');
+  if (sw > 0) {
+    if (sw < 30) {
+      instructions.push('You may occasionally use mild profanity ("damn", "hell", "crap") when it fits naturally. Keep it rare and low-key.');
+    } else if (sw < 60) {
+      instructions.push('You may use profanity naturally where it fits the tone — "shit", "damn", "fuck" etc. Don\'t force it or overdo it. Swear like a real person would in casual conversation, not for shock value.');
+    } else {
+      instructions.push('Swear freely and naturally — "shit", "fuck", "damn", "bullshit" etc. Use it the way a close friend would when being real with you. Don\'t hold back, but don\'t be gratuitous either. Match or exceed the energy of what they wrote.');
+    }
+  }
+
+  // sexual content
+  if (portrait?.sexual_content_enabled) {
+    instructions.push('The user has enabled mature/sexual content. You may discuss sexuality, intimacy, desire, and relationships openly and frankly when the journal entry touches on these themes. Don\'t shy away or euphemise — speak about it the way a trusted friend or therapist would. Be real, not clinical.');
+  }
+
   return instructions.join('\n');
 }
 
@@ -663,7 +690,7 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   return sections.join('\n\n');
 }
 
-async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
+async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null) {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
@@ -673,6 +700,40 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
   if (memSection) sections.push(memSection);
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
+
+  // Inject linked entry/note context when this session was created from "Let's talk about this"
+  try {
+    if (session?.source_entry_id) {
+      const entry = db.prepare('SELECT title, body_text, date, tags FROM entries WHERE id = ? AND user_id = ?').get(session.source_entry_id, userId);
+      if (entry) {
+        const tags = (() => { try { return JSON.parse(entry.tags || '[]'); } catch { return []; } })();
+        sections.push(
+          `THIS CONVERSATION IS ABOUT A SPECIFIC JOURNAL ENTRY. The user wants to explore and discuss this entry with you.\n\n` +
+          `Entry title: "${entry.title || 'Untitled'}"\n` +
+          `Date: ${entry.date || 'unknown'}\n` +
+          (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
+          `\nFull entry text:\n"""\n${entry.body_text || '(empty)'}\n"""\n\n` +
+          `Ground your responses in the content, emotions, and themes of this specific entry. Reference specific things they wrote. Help them go deeper into what they were feeling and thinking.`
+        );
+      }
+    }
+    if (session?.source_note_id) {
+      const note = db.prepare('SELECT title, body, tags FROM notes WHERE id = ? AND user_id = ?').get(session.source_note_id, userId);
+      if (note) {
+        const tags = (() => { try { return JSON.parse(note.tags || '[]'); } catch { return []; } })();
+        const noteText = (note.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        sections.push(
+          `THIS CONVERSATION IS ABOUT A SPECIFIC NOTE. The user wants to explore and discuss this note with you.\n\n` +
+          `Note title: "${note.title || 'Untitled'}"\n` +
+          (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
+          `\nFull note text:\n"""\n${noteText || '(empty)'}\n"""\n\n` +
+          `Ground your responses in the content and themes of this specific note. Reference specific things they wrote. Help them think through and develop their ideas further.`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('[memoryService] Failed to inject linked entry/note context:', err.message);
+  }
 
   if (skyWeight > 0) {
     try {
@@ -714,6 +775,7 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen') {
     `\n\nYou are in an ongoing conversation with this person. ` +
     `You know them deeply through their journal — their patterns, struggles, growth, and what they're moving toward. ` +
     `Prose only — no bullet points, no lists, no headers. Be warm, direct, and personally resonant. ` +
+    `Keep responses very short: 1–2 sentences only. Say one meaningful thing, not everything. Be concise — every word should count. ` +
     `Speak to them as "you". Stay unmistakably in the ${archetype} voice throughout — your vocabulary, rhythm, and frame should make it obvious which voice is speaking.`
   );
 

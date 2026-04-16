@@ -39,6 +39,10 @@ router.put('/', (req, res) => {
     slider_candor,
     slider_sky_weight,
     slider_portrait_weight,
+    slider_friend_stranger,
+    swearing_enabled,
+    slider_swearing,
+    sexual_content_enabled,
     archetypes,
     active_archetypes,
     language,
@@ -81,6 +85,10 @@ router.put('/', (req, res) => {
     slider_candor,
     slider_sky_weight,
     slider_portrait_weight,
+    slider_friend_stranger,
+    swearing_enabled,
+    slider_swearing,
+    sexual_content_enabled,
     life_path_number,
   };
 

@@ -450,9 +450,14 @@ async function buildSingleArchetypeReflectPrompt(portrait, archetype, userId) {
   } catch {}
   if (!voice) voice = memory.getArchetypeVoice(archetype);
 
+  // Inject response style sliders so they apply even in single-archetype mode
+  const sliderVoice = memory.translateSlidersToVoice(portrait);
+
   return `You are the ${archetype} voice. Speak ONLY as ${archetype} — no other voice, tradition, or register.
 
 ${voice || ''}
+
+${sliderVoice ? `The user has also set these response style preferences. Honour them while staying in the ${archetype} voice:\n${sliderVoice}\n` : ''}
 
 ${shortSummary ? `Brief context about this person (do not let it pull you out of voice):\n${shortSummary}\n` : ''}
 

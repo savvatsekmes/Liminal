@@ -118,15 +118,11 @@ export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
         audioRef.current = audio;
         audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
         audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-        audio.play();
+        audio.play().catch(() => { URL.revokeObjectURL(url); resolve(); });
       });
     }
-  } catch {
-    // If streaming fails, fall back to browser TTS
-    if (window.speechSynthesis) {
-      const utt = new SpeechSynthesisUtterance(text);
-      window.speechSynthesis.speak(utt);
-    }
+  } catch (err) {
+    console.error('[tts] Streaming failed, NOT falling back:', err);
   }
 }
 

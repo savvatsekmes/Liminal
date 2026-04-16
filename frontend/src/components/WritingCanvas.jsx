@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDictation } from '../hooks/useDictation';
 import { useTagSuggestions } from '../hooks/useTagSuggestions';
+import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
+
+function TagLabel({ tag }) {
+  const src = IMG_EMOJI[tag.toLowerCase()];
+  if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
+  return tagLabel(tag);
+}
 import MicButton from './MicButton';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
@@ -159,6 +166,7 @@ export default function WritingCanvas({
   previewVersionId,
   isFirstSession,
   allTags = [],
+  onTalkAboutThis,
 }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
@@ -351,6 +359,22 @@ const editor = useEditor({
 
   // Keep editorRef in sync for dictation insertion
   useEffect(() => { editorRef.current = editor; }, [editor]);
+
+  // Listen for atom paste events from the right-click menu (SelectionMenu).
+  // execCommand('paste') doesn't work in Electron for rich content, so the
+  // menu dispatches a custom event with the atom's HTML. We insert it via
+  // Tiptap's insertContent which parses through the schema properly.
+  useEffect(() => {
+    if (!editor) return;
+    const handler = (e) => {
+      const html = e.detail?.html;
+      if (!html) return;
+      editor.chain().focus().insertContent(html).run();
+    };
+    const el = editor.view.dom;
+    el.addEventListener('liminal-paste-atom', handler);
+    return () => el.removeEventListener('liminal-paste-atom', handler);
+  }, [editor]);
 
   // Reload content when active entry changes
   useEffect(() => {
@@ -630,6 +654,32 @@ const editor = useEditor({
           >
             <WaveformIcon playing={reading} />
           </button>
+          {onTalkAboutThis && (
+            <button
+              onClick={() => onTalkAboutThis(entry)}
+              title={entry.linked_session_id ? t('journal.goToChat') : t('journal.talkAboutThis')}
+              type="button"
+              disabled={words === 0}
+              style={{
+                width: '36px',
+                height: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '20px',
+                border: 'none',
+                background: entry.linked_session_id ? 'rgba(99,102,241,0.1)' : 'var(--near-white)',
+                color: entry.linked_session_id ? 'rgb(99,102,241)' : 'var(--muted)',
+                cursor: words === 0 ? 'default' : 'pointer',
+                transition: 'color 0.15s, background 0.15s',
+                flexShrink: 0,
+                opacity: words === 0 ? 0.35 : 1,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+              }}
+            >
+              <ChatBubbleIcon linked={!!entry.linked_session_id} />
+            </button>
+          )}
         </div>
       )}
 
@@ -713,6 +763,15 @@ function WaveformIcon({ playing }) {
       <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
         {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
       </rect>
+    </svg>
+  );
+}
+
+function ChatBubbleIcon({ linked }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6l-3 3V11H4a2 2 0 0 1-2-2V3z" />
+      {linked && <circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none" />}
     </svg>
   );
 }
@@ -820,7 +879,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => toggleTag(tag)}
           title="Manual tag — click to remove"
         >
-          {tag}
+          <TagLabel tag={tag} />
         </button>
       ))}
       {sortedAuto.map((tag) => (
@@ -830,7 +889,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => toggleTag(tag)}
           title="Suggested tag — click to remove"
         >
-          {tag}
+          <TagLabel tag={tag} />
         </button>
       ))}
       {sortedOther.map((tag) => (
@@ -840,7 +899,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => toggleTag(tag)}
           title="Filter tag — click to add to this entry"
         >
-          {tag}
+          <TagLabel tag={tag} />
         </button>
       ))}
       {freshSuggestions.map((tag) => (
@@ -850,7 +909,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => applySuggestion(tag)}
           title="Suggested — click to add"
         >
-          + {tag}
+          + <TagLabel tag={tag} />
         </button>
       ))}
       {adding ? (
