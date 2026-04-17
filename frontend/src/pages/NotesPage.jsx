@@ -15,15 +15,19 @@ import HardBreak from '@tiptap/extension-hard-break';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import Blockquote from '../extensions/Blockquote';
 import History from '@tiptap/extension-history';
+import Gapcursor from '@tiptap/extension-gapcursor';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useNotes } from '../hooks/useNotes';
 import { useDictation } from '../hooks/useDictation';
 import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
+import { InstagramEmbed } from '../extensions/InstagramEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
+import { DetailsBlock } from '../extensions/DetailsBlock';
+import { MediaRow } from '../extensions/MediaRow';
 import { apiFetch } from '../utils/api';
 import { parseSqliteUtc } from '../utils/dates';
-import { tagLabel, tagEmoji, IMG_EMOJI } from '../utils/tagEmoji';
+import { tagLabel, tagEmoji, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 
 function TagLabel({ tag }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
@@ -371,7 +375,10 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
               note={note}
               active={activeNote?.id === note.id}
               onClick={() => isMobile ? mobileSelectNote(note) : selectNote(note)}
-              onDelete={() => openConfirm(t('notes.deleteConfirm'), () => deleteNote(note.id))}
+              onDelete={() => openConfirm(
+                t(note.linked_session_id ? 'notes.deleteConfirmWithChat' : 'notes.deleteConfirm'),
+                () => deleteNote(note.id)
+              )}
               onNavigateToChat={onNavigateToChat}
             />
           ))}
@@ -625,7 +632,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: '1.6', marginBottom: '24px' }}>
+        <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: '1.6', marginBottom: '24px', whiteSpace: 'pre-line' }}>
           {message}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -846,6 +853,31 @@ function NoteListItem({ note, active, onClick, onDelete, onNavigateToChat }) {
           {note.title || preview}
         </div>
       </div>
+      {(() => {
+        const emojiTags = tagEmojisFromTags(note.tags || []);
+        if (!emojiTags.length) return null;
+        return (
+          <div
+            title={emojiTags.map(e => e.tag).join(', ')}
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: '3px',
+              flexShrink: 0,
+              fontSize: '15px',
+              lineHeight: 1,
+              marginRight: hover ? '14px' : '0',
+            }}
+          >
+            {emojiTags.slice(0, 3).map((e) => (
+              e.img
+                ? <img key={e.tag} src={e.img} alt={e.tag} style={{ width: '15px', height: '15px', display: 'block' }} />
+                : <span key={e.tag}>{e.glyph}</span>
+            ))}
+          </div>
+        );
+      })()}
       {hover && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -1091,7 +1123,10 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle,
       <div style={divider} />
       {btn('Bullet list',   editor.isActive('bulletList'),   () => editor.chain().focus().toggleBulletList().run(),   '≡')}
       {btn('Ordered list',  editor.isActive('orderedList'),  () => editor.chain().focus().toggleOrderedList().run(),  '#')}
+      {btn('Indent',  false,  () => editor.chain().focus().sinkListItem('listItem').run(),  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="21" y2="16"/><polyline points="9 4 13 8 9 12"/></svg>)}
+      {btn('Outdent', false,  () => editor.chain().focus().liftListItem('listItem').run(),  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="21" y2="16"/><polyline points="13 4 9 8 13 12"/></svg>)}
       {btn('Quote',         editor.isActive('blockquote'),   () => editor.chain().focus().toggleBlockquote().run(),   '"')}
+      {btn('Toggle', editor.isActive('detailsBlock'), () => editor.chain().focus().setDetailsBlock().run(), <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="6,4 20,12 6,20" fill="currentColor" stroke="none"/></svg>)}
       <div style={divider} />
       {btn('Horizontal rule', false, () => editor.chain().focus().setHorizontalRule().run(), '—')}
       <div style={divider} />
@@ -1161,7 +1196,7 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [reading, setReading] = useState(false);
   const [editorText, setEditorText] = useState('');
   const isMobileEditor = useIsMobile();
-  const [editMode, setEditMode] = useState(isMobileEditor);
+  const [editMode, setEditMode] = useState(true);
   const ttsAudioRef = useRef(null);
   const ttsCancelRef = useRef(false);
   const editorWrapRef = useRef(null);
@@ -1299,9 +1334,12 @@ async function handlePolish() {
       Document, Paragraph, Text, Bold, Italic, Strike, Code,
       Heading.configure({ levels: [1, 2, 3] }),
       BulletList, OrderedList, ListItem,
-      HardBreak, HorizontalRule, Blockquote, History,
+      HardBreak, HorizontalRule, Blockquote, History, Gapcursor,
       YoutubeEmbed,
+      InstagramEmbed,
       ImageEmbed,
+      DetailsBlock,
+      MediaRow,
       CardReading,
       Placeholder.configure({
         placeholder: t(NOTE_PLACEHOLDER_KEYS[note.type] || 'notes.placeholderReflection'),
@@ -1345,10 +1383,8 @@ async function handlePolish() {
     if (editor) editor.setEditable(editMode);
   }, [editor, editMode]);
 
-  // When switching notes, drop back to read-only on desktop so users don't
-  // accidentally edit. On mobile, keep edit mode on — otherwise tapping a
-  // freshly-opened note does nothing because the editor is non-editable.
-  useEffect(() => { setEditMode(isMobileEditor); }, [note.id, isMobileEditor]);
+  // Keep edit mode on when switching notes — users expect to type immediately.
+  // (Previously reset to read-only on desktop, but that confused users.)
 
   const { isRecording, isProcessing, toggle: toggleDictation } = useDictation((text) => {
     editorRef.current?.chain().focus().insertContent(text + ' ').run();

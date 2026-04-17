@@ -235,6 +235,72 @@ hr {
   height: 0;
 }
 
+/* ── Drag stability — prevent layout shift during drag ──────────────────── */
+
+.ProseMirror [data-node-view-wrapper].ProseMirror-selectednode {
+  outline: 2px solid var(--accent, #4a9eff);
+  outline-offset: 2px;
+  border-radius: 14px;
+}
+/* While dragging, prevent child atoms from collapsing */
+.ProseMirror.ProseMirror-focused [draggable="true"] {
+  -webkit-user-drag: element;
+}
+
+/* ── Media Row (stackable flex grid for embeds) ─────────────────────────── */
+
+.ProseMirror [data-media-row] > div {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.ProseMirror [data-media-row] > div > * {
+  flex: 1 1 0%;
+  min-width: 0;
+  max-width: 100%;
+}
+/* Remove vertical margins on atoms inside rows and fix flex alignment */
+.ProseMirror [data-media-row] [data-node-view-wrapper] {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  display: flex !important;
+  flex-direction: column;
+  align-self: flex-start;
+}
+/* Override inline-block + margins on inner wrappers inside rows */
+.ProseMirror [data-media-row] [data-image-embed],
+.ProseMirror [data-media-row] [data-youtube-embed],
+.ProseMirror [data-media-row] [data-card-reading],
+.ProseMirror [data-media-row] [data-toggle] {
+  display: block !important;
+  margin: 0 !important;
+  width: 100%;
+}
+/* Also catch inner wrapper divs that have inline margin/display */
+.ProseMirror [data-media-row] [data-image-embed] > div,
+.ProseMirror [data-media-row] [data-youtube-embed] > div,
+.ProseMirror [data-media-row] [data-card-reading] > div,
+.ProseMirror [data-media-row] [data-node-view-wrapper] > div {
+  margin: 0 !important;
+  display: block !important;
+  width: 100% !important;
+}
+/* Inside rows: make drag handles easier to grab */
+.ProseMirror [data-media-row] [data-drag-handle] {
+  padding: 4px 8px !important;
+  margin: -4px -4px -4px -8px !important;
+  opacity: 0.7 !important;
+  font-size: 14px !important;
+  cursor: grab !important;
+}
+
+/* Mobile: stack vertically */
+@media (max-width: 768px) {
+  .ProseMirror [data-media-row] > div {
+    flex-direction: column;
+  }
+}
+
 /* ── Utility ─────────────────────────────────────────────────────────────── */
 
 .sr-only {

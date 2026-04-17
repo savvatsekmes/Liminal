@@ -20,7 +20,7 @@
  *   editorProps: { handleDOMEvents: { dragstart: atomDragGuard } }
  */
 
-const ATOM_SELECTOR = '[data-card-reading], [data-image-embed], [data-youtube-embed]';
+const ATOM_SELECTOR = '[data-card-reading], [data-image-embed], [data-youtube-embed], [data-instagram-embed], [data-media-row], [data-toggle]';
 
 export function atomDragGuard(_view, event) {
   const target = event.target;

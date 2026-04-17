@@ -91,3 +91,33 @@ export function tagLabel(tag) {
   const emoji = tagEmoji(tag);
   return emoji ? `${emoji} ${tag}` : tag;
 }
+
+/**
+ * Extract emoji glyphs for a list of tags, preserving order and deduping.
+ * Falls back to the first codepoint if the tag itself begins with an emoji.
+ * Used by the right-side tag strip on journal / notes / conversations list items.
+ */
+export function tagEmojisFromTags(tags) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of tags || []) {
+    if (!raw) continue;
+    const tag = String(raw).trim();
+    let glyph = '';
+    const first = tag.codePointAt(0);
+    if (first > 0x2600) {
+      // Tag already starts with a user-chosen emoji — pull it off the front
+      glyph = String.fromCodePoint(first);
+      // Include the variation selector if present (e.g. ✈️)
+      const next = tag.codePointAt(glyph.length);
+      if (next === 0xfe0f) glyph += '\uFE0F';
+    } else {
+      glyph = TAG_EMOJI[tag.toLowerCase()] || '';
+    }
+    if (glyph && !seen.has(glyph)) {
+      seen.add(glyph);
+      out.push({ tag, glyph, img: IMG_EMOJI[tag.toLowerCase()] || null });
+    }
+  }
+  return out;
+}

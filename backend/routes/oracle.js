@@ -126,9 +126,27 @@ router.post('/sessions/import', (req, res) => {
 // ── POST /api/oracle/sessions ──────────────────────────────────────────────
 router.post('/sessions', (req, res) => {
   const { archetype = 'Auto', sourceEntryId, sourceNoteId } = req.body;
+
+  // Inherit the title from the source entry/note so the linked chat is
+  // identifiable in the sessions list instead of showing "New conversation".
+  let title = null;
+  if (sourceEntryId) {
+    const src = db.prepare('SELECT title FROM entries WHERE id = ? AND user_id = ?').get(sourceEntryId, req.userId);
+    if (src?.title) title = src.title;
+  } else if (sourceNoteId) {
+    const src = db.prepare('SELECT title, body FROM notes WHERE id = ? AND user_id = ?').get(sourceNoteId, req.userId);
+    if (src?.title) {
+      title = src.title;
+    } else if (src?.body) {
+      // Notes often have no title — fall back to the first line of body (plain text, trimmed to 80)
+      const firstLine = String(src.body).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (firstLine) title = firstLine;
+    }
+  }
+
   const result = db.prepare(
-    'INSERT INTO oracle_sessions (user_id, archetype, source_entry_id, source_note_id) VALUES (?, ?, ?, ?)'
-  ).run(req.userId, archetype, sourceEntryId || null, sourceNoteId || null);
+    'INSERT INTO oracle_sessions (user_id, archetype, source_entry_id, source_note_id, title) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.userId, archetype, sourceEntryId || null, sourceNoteId || null, title);
   const sessionId = result.lastInsertRowid;
 
   // Bidirectional link: update the source entry/note with the new session id

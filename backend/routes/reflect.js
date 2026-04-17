@@ -30,7 +30,7 @@ router.post('/', async (req, res) => {
 
   try {
     // 1. Build system prompt — single-archetype voice if requested, otherwise blended Auto
-    const preferredName = require('../services/settingsService').get('display_name')?.trim() || null;
+    const preferredName = require('../services/settingsService').getForUser('display_name', req.userId)?.trim() || null;
     const systemPrompt = singleArchetype
       ? await buildSingleArchetypeReflectPrompt(portrait, singleArchetype, req.userId)
       : await memory.buildReflectSystemPrompt(portrait, text, entryId || null, req.userId, preferredName);

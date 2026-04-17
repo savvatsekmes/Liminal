@@ -34,7 +34,7 @@ router.get('/pulse', async (req, res) => {
 
   // Load portrait for context
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-  const displayName = settingsService.get('display_name');
+  const displayName = settingsService.getForUser('display_name', req.userId);
   let context = '';
   if (displayName) context += `Name: ${displayName}. `;
   if (portrait) {
@@ -90,7 +90,7 @@ router.get('/insight', async (req, res) => {
 
   // Gather context
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-  const displayName = settingsService.get('display_name');
+  const displayName = settingsService.getForUser('display_name', req.userId);
   let context = '';
   if (displayName) context += `Name: ${displayName}. `;
   if (portrait) {
@@ -324,7 +324,7 @@ router.get('/portrait-snippet', async (req, res) => {
 
   // Build context from portrait
   const lines = [];
-  const displayName = settingsService.get('display_name');
+  const displayName = settingsService.getForUser('display_name', req.userId);
   if (displayName) lines.push(`Name: ${displayName}`);
   if (portrait.mbti) lines.push(`MBTI: ${portrait.mbti}`);
   if (portrait.enneagram) lines.push(`Enneagram: ${portrait.enneagram}`);

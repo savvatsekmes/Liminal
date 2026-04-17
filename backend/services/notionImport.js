@@ -27,6 +27,7 @@ if (!fs.existsSync(MEDIA_ROOT)) fs.mkdirSync(MEDIA_ROOT, { recursive: true });
 
 const MEDIA_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp4', '.svg']);
 const YOUTUBE_RE = /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?(?:[^\s]*&)?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^\s)]*/;
+const INSTAGRAM_RE = /https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/[A-Za-z0-9_-]+[^\s]*/;
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -163,12 +164,13 @@ function walkMarkdown(dir) {
 function processMarkdownFile(filePath, csvTagMap) {
   const filename = path.basename(filePath, '.md');
   const raw = fs.readFileSync(filePath, 'utf-8');
-  const stripped = stripFrontmatter(raw).trim();
+  const { content, meta } = extractFrontmatter(raw);
+  const stripped = stripLeadingTitle(content.trim()).trim();
   if (!stripped) return null;
 
   const { date, title, tags, breakthrough_level } = parseTitle(filename, filePath);
 
-  const { bodyMd, reflectionMd } = splitReflection(stripped);
+  const { bodyMd, reflectionBlocks } = splitReflection(stripped);
 
   // Collect media references from body markdown and the page's sibling asset folder
   const pageAssetDir = findAssetDir(filePath, filename);
@@ -185,10 +187,11 @@ function processMarkdownFile(filePath, csvTagMap) {
     date,
     tags: merged,
     breakthrough_level,
-    reflectionMd,
+    reflectionBlocks,
     mediaRefs,
     pageAssetDir,
     sourceDir: path.dirname(filePath),
+    createdAt: meta.notion_created_time || null,
   };
 }
 
@@ -204,8 +207,8 @@ function parseTitle(filename, filePath) {
   let date = null;
   let title = name;
 
-  // Format 1: "DD.MM.YYYY - Title" (the user's manual format)
-  let m = name.match(/^\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*[-–—]\s*(.+)$/);
+  // Format 1: "DD.MM.YYYY - Title" (the user's manual format; dash optional)
+  let m = name.match(/^\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*[-–—]?\s+(.+)$/);
   if (m) {
     const [, d, mo, y, t] = m;
     date = `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
@@ -224,6 +227,15 @@ function parseTitle(filename, filePath) {
         const [, y, mo, d, t] = m;
         date = `${y}-${mo}-${d}`;
         title = t;
+      } else {
+        // Format 4: "D-M-YY - Title" or "DD-MM-YYYY - Title" (old user format with dashes)
+        m = name.match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})\s*[-–—]\s*(.+)$/);
+        if (m) {
+          const [, d, mo, yRaw, t] = m;
+          const y = yRaw.length === 2 ? '20' + yRaw : yRaw;
+          date = `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+          title = t;
+        }
       }
     }
   }
@@ -264,65 +276,124 @@ function parseTitle(filename, filePath) {
 
 // ── Reflection split ─────────────────────────────────────────────────────────
 
+// Two Leela formats are supported:
+//   1. H2-terminated: user's writing, then `## \`Section\`` H2 blocks at the end
+//      with code-wrapped paragraphs under each heading.
+//   2. Interleaved: ChatGPT responses appear as consecutive paragraphs wrapped
+//      fully in backticks, sprinkled throughout the user's raw writing. No H2s.
+//
+// Algorithm: walk paragraphs (blocks separated by blank lines), classify each
+// as H2-header / code-paragraph / body. Open a reflection "run" at any H2 or
+// at the start of a contiguous stretch of code-paragraphs. Body paragraphs
+// close the current run. Each closed run is one reflection block.
 function splitReflection(md) {
-  const lines = md.split('\n');
+  const paragraphs = splitParagraphs(md);
 
-  // Preferred split: `---` divider followed within 3 lines by an `## ` heading
-  for (let i = 0; i < lines.length; i++) {
-    if (/^-{3,}\s*$/.test(lines[i])) {
-      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-        if (/^##\s+/.test(lines[j])) {
-          return {
-            bodyMd: lines.slice(0, i).join('\n').trim(),
-            reflectionMd: lines.slice(i).join('\n').trim(),
-          };
-        }
-      }
-    }
-  }
-
-  // Fallback: first H2 in the file marks the reflection start
-  for (let i = 0; i < lines.length; i++) {
-    if (/^##\s+/.test(lines[i])) {
-      return {
-        bodyMd: lines.slice(0, i).join('\n').trim(),
-        reflectionMd: lines.slice(i).join('\n').trim(),
-      };
-    }
-  }
-
-  return { bodyMd: md, reflectionMd: '' };
-}
-
-function parseReflectionBlocks(md) {
-  if (!md) return [];
-  const lines = md.split('\n');
+  const bodyParts = [];
   const blocks = [];
-  let current = null;
+  let current = null; // { title, bodyLines }
+  let autoCount = 0;
 
-  for (const line of lines) {
-    const h2 = line.match(/^##\s+(.+?)\s*$/);
-    if (h2) {
-      if (current) blocks.push(current);
-      current = { title: h2[1].trim(), bodyLines: [] };
+  const flush = () => {
+    if (!current) return;
+    const body = markdownToPlainText(current.bodyLines.join('\n\n')).trim();
+    if (body) {
+      blocks.push({
+        title: current.title,
+        body,
+        quote: null,
+        archetype: 'Imported',
+      });
+    }
+    current = null;
+  };
+
+  for (const para of paragraphs) {
+    // Toggle blocks are always body content — never treat as heading or code paragraph
+    if (para.startsWith(':::toggle ')) {
+      flush();
+      bodyParts.push(para);
       continue;
     }
-    if (current) {
-      // Ignore stand-alone horizontal rules between sections
-      if (/^-{3,}\s*$/.test(line)) continue;
-      current.bodyLines.push(line);
-    }
-  }
-  if (current) blocks.push(current);
 
-  return blocks
-    .map((b) => ({
-      title: b.title.replace(/`/g, '').trim(),
-      body: markdownToPlainText(b.bodyLines.join('\n')).trim(),
-      quote: null,
-      archetype: 'Imported',
-    }))
-    .filter((b) => b.body.length > 0);
+    const heading = para.match(/^#{2,3}\s+(.+?)\s*$/);
+    if (heading) {
+      flush();
+      const rawTitle = heading[1].trim()
+        .replace(/`/g, '')           // strip code wrapping
+        .replace(/^\*+|\*+$/g, '')   // strip bold/italic markers
+        .replace(/^[\p{Emoji}\p{Emoji_Presentation}\u200d\uFE0F]+\s*/u, '') // strip leading emoji
+        .trim();
+      current = {
+        title: rawTitle || `Reflection ${++autoCount}`,
+        bodyLines: [],
+      };
+      continue;
+    }
+
+    if (isCodeParagraph(para)) {
+      if (!current) {
+        // Extract a title from the first code run's text (strip backticks, bold, etc.)
+        const firstText = para.replace(/`/g, '').replace(/\*+/g, '').replace(/^[-*+]\s+/, '').trim();
+        const autoTitle = firstText.split(/[.!?\n]/)[0].trim().slice(0, 80) || `Reflection ${++autoCount}`;
+        current = { title: autoTitle, bodyLines: [] };
+      }
+      current.bodyLines.push(para);
+      continue;
+    }
+
+    // Horizontal rule inside reflection run — keep the run open, skip the rule
+    if (/^-{3,}\s*$/.test(para) && current) continue;
+
+    // Body paragraph — close any open reflection run
+    flush();
+    bodyParts.push(para);
+  }
+  flush();
+
+  return {
+    bodyMd: bodyParts.join('\n\n').trim(),
+    reflectionBlocks: blocks,
+  };
+}
+
+// Split markdown into paragraph-sized blocks on blank lines.
+// Toggle fences (:::toggle...:::endtoggle) are collapsed into single blocks
+// using \x00 as an internal paragraph separator so blank lines inside them
+// don't split the fence apart.
+function splitParagraphs(md) {
+  let text = String(md || '').replace(/\r\n?/g, '\n');
+  // Protect toggle fences from being split on blank lines
+  text = text.replace(/:::toggle ([^\n]*)\n([\s\S]*?):::endtoggle/g, (_, title, body) => {
+    return `:::toggle ${title}\x00${body.trim().replace(/\n\n+/g, '\x00')}\x00:::endtoggle`;
+  });
+  return text
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+}
+
+// A "code paragraph" is one where the backtick-wrapped runs cover ≥60% of
+// non-whitespace characters. Handles partial bold/italic markers around the
+// code runs (e.g. `**\`text\`**`) and paragraphs with multiple code runs.
+function isCodeParagraph(para) {
+  if (!para.includes('`')) return false;
+  // Strip horizontal-rule-only lines from consideration
+  if (/^-{3,}\s*$/.test(para)) return false;
+
+  const nonWs = para.replace(/\s+/g, '').length;
+  if (nonWs === 0) return false;
+
+  let codeChars = 0;
+  const re = /`([^`]+)`/g;
+  let m;
+  while ((m = re.exec(para))) {
+    // Include the wrapping backticks — for very short runs like `or` the
+    // backticks themselves dominate the character count and the content
+    // would otherwise fall below the 60% threshold (2/4 = 0.5 → body).
+    codeChars += m[0].replace(/\s+/g, '').length;
+  }
+  return codeChars / nonWs >= 0.6;
 }
 
 // ── Markdown → Tiptap-compatible HTML ────────────────────────────────────────
@@ -334,19 +405,83 @@ function parseReflectionBlocks(md) {
  *
  * Not a general-purpose MD engine — handles what Notion exports commonly use.
  */
+/**
+ * Parse a markdown list block (ul or ol) with nested sub-items into HTML.
+ * Indented lines (2+ spaces before the marker) become nested lists.
+ */
+function parseNestedList(block, defaultTag, mediaMap) {
+  const lines = block.split('\n').filter((l) => l.trim());
+  const isUl = (l) => /^\s*[-*+]\s+/.test(l);
+  const isOl = (l) => /^\s*\d+\.\s+/.test(l);
+  const getIndent = (l) => l.match(/^(\s*)/)[1].length;
+  const stripMarker = (l) => l.replace(/^\s*(?:[-*+]|\d+\.)\s+/, '');
+
+  function buildList(idx, baseIndent) {
+    const items = [];
+    while (idx < lines.length) {
+      const line = lines[idx];
+      const indent = getIndent(line);
+      if (indent < baseIndent) break;
+      if (indent === baseIndent && (isUl(line) || isOl(line))) {
+        const text = inlineMd(stripMarker(line), mediaMap);
+        idx++;
+        // Check for children at deeper indent
+        if (idx < lines.length && getIndent(lines[idx]) > baseIndent) {
+          const childResult = buildList(idx, getIndent(lines[idx]));
+          const childTag = isOl(lines[idx]) ? 'ol' : (isUl(lines[idx]) ? 'ul' : defaultTag);
+          items.push(`<li>${text}<${childTag}>${childResult.html}</${childTag}></li>`);
+          idx = childResult.idx;
+        } else {
+          items.push(`<li>${text}</li>`);
+        }
+      } else {
+        // Indented content that's not a list marker — skip or treat as text
+        idx++;
+      }
+    }
+    return { html: items.join(''), idx };
+  }
+
+  const result = buildList(0, getIndent(lines[0] || ''));
+  return `<${defaultTag}>${result.html}</${defaultTag}>`;
+}
+
 function markdownToHtml(md, mediaMap = {}, entryId = null) {
   if (!md) return '';
 
   // Normalise line endings
   let text = md.replace(/\r\n?/g, '\n');
 
+  // Collapse :::toggle...:::endtoggle fences — use \x00 as internal separator
+  // so blank-line splitting doesn't break them apart
+  text = text.replace(/:::toggle ([^\n]*)\n([\s\S]*?):::endtoggle/g, (_, title, body) => {
+    return `:::toggle ${title}\x00${body.trim().replace(/\n\n+/g, '\x00')}`;
+  });
+
   // Split into blocks on blank lines
-  const blocks = text.split(/\n{2,}/);
+  const rawBlocks = text.split(/\n{2,}/);
+  // Re-merge toggle blocks: :::toggle line + all following blocks until we have all content
+  const blocks = [];
+  for (let i = 0; i < rawBlocks.length; i++) {
+    blocks.push(rawBlocks[i]);
+  }
   const htmlBlocks = [];
 
   for (let raw of blocks) {
     const block = raw.trim();
     if (!block) continue;
+
+    // Toggle block (:::toggle Title\x00content...\x00:::endtoggle)
+    if (block.startsWith(':::toggle ')) {
+      const parts = block.split('\x00').filter(p => p.trim() !== ':::endtoggle');
+      const summary = escapeHtml(parts[0].replace(/^:::toggle\s+/, ''));
+      const innerMd = parts.slice(1).join('\n\n');
+      const innerHtml = innerMd ? markdownToHtml(innerMd, mediaMap, entryId) : '<p></p>';
+      htmlBlocks.push(
+        `<details data-toggle="" data-summary="${escapeAttr(summary)}" open><div data-details-content>${innerHtml}</div></details>`
+      );
+      continue;
+    }
 
     // Image-only paragraph → Tiptap image embed
     const imgOnly = block.match(/^!\[([^\]]*)\]\(([^)]+)\)\s*$/);
@@ -369,6 +504,16 @@ function markdownToHtml(md, mediaMap = {}, entryId = null) {
       continue;
     }
 
+    // Standalone Instagram URL line → embed
+    const igMatch = block.match(new RegExp(`^${INSTAGRAM_RE.source}\\s*$`));
+    if (igMatch) {
+      const igUrl = igMatch[0].trim().split('?')[0].replace(/\/$/, '');
+      htmlBlocks.push(
+        `<div data-instagram-embed="" data-url="${escapeAttr(igUrl)}" data-width="100%"></div>`
+      );
+      continue;
+    }
+
     // Heading
     const h = block.match(/^(#{1,6})\s+(.+)$/);
     if (h) {
@@ -384,23 +529,15 @@ function markdownToHtml(md, mediaMap = {}, entryId = null) {
       continue;
     }
 
-    // Unordered list
+    // Unordered list (with nested sub-items)
     if (/^[-*+]\s+/.test(block)) {
-      const items = block
-        .split('\n')
-        .filter((l) => /^[-*+]\s+/.test(l))
-        .map((l) => `<li>${inlineMd(l.replace(/^[-*+]\s+/, ''), mediaMap)}</li>`);
-      htmlBlocks.push(`<ul>${items.join('')}</ul>`);
+      htmlBlocks.push(parseNestedList(block, 'ul', mediaMap));
       continue;
     }
 
-    // Ordered list
+    // Ordered list (with nested sub-items)
     if (/^\d+\.\s+/.test(block)) {
-      const items = block
-        .split('\n')
-        .filter((l) => /^\d+\.\s+/.test(l))
-        .map((l) => `<li>${inlineMd(l.replace(/^\d+\.\s+/, ''), mediaMap)}</li>`);
-      htmlBlocks.push(`<ol>${items.join('')}</ol>`);
+      htmlBlocks.push(parseNestedList(block, 'ol', mediaMap));
       continue;
     }
 
@@ -592,7 +729,7 @@ function mergeTags(primary, extras) {
 // ── DB insertion ─────────────────────────────────────────────────────────────
 
 function saveEntry(parsed) {
-  const { title, bodyMd, body_text, date, tags, breakthrough_level, reflectionMd, mediaRefs, sourceDir } = parsed;
+  const { title, bodyMd, body_text, date, tags, breakthrough_level, reflectionBlocks, mediaRefs, sourceDir, createdAt } = parsed;
 
   const existing = db
     .prepare('SELECT id FROM entries WHERE title = ? AND date = ?')
@@ -601,12 +738,19 @@ function saveEntry(parsed) {
 
   // Insert with empty body first, then rewrite with media-resolved HTML so we
   // can use the auto-generated id in the media URL path.
-  const result = db
-    .prepare(
-      `INSERT INTO entries (title, body, body_text, date, tags, breakthrough_level)
-       VALUES (?, '', ?, ?, ?, ?)`
-    )
-    .run(title, body_text, date, JSON.stringify(tags), breakthrough_level);
+  const result = createdAt
+    ? db
+        .prepare(
+          `INSERT INTO entries (title, body, body_text, date, tags, breakthrough_level, created_at)
+           VALUES (?, '', ?, ?, ?, ?, ?)`
+        )
+        .run(title, body_text, date, JSON.stringify(tags), breakthrough_level, createdAt)
+    : db
+        .prepare(
+          `INSERT INTO entries (title, body, body_text, date, tags, breakthrough_level)
+           VALUES (?, '', ?, ?, ?, ?)`
+        )
+        .run(title, body_text, date, JSON.stringify(tags), breakthrough_level);
 
   const entryId = Number(result.lastInsertRowid);
 
@@ -616,9 +760,8 @@ function saveEntry(parsed) {
   db.prepare('UPDATE entries SET body = ? WHERE id = ?').run(html, entryId);
 
   // Reflections
-  const blocks = parseReflectionBlocks(reflectionMd);
-  if (blocks.length) {
-    const data = { opening: null, blocks };
+  if (reflectionBlocks && reflectionBlocks.length) {
+    const data = { opening: null, blocks: reflectionBlocks };
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, source, updated_at)
        VALUES (?, 1, ?, 'imported', CURRENT_TIMESTAMP)`
@@ -630,11 +773,33 @@ function saveEntry(parsed) {
 
 // ── Misc helpers ─────────────────────────────────────────────────────────────
 
-function stripFrontmatter(content) {
-  if (!content.startsWith('---')) return content;
+function extractFrontmatter(content) {
+  if (!content.startsWith('---')) return { content, meta: {} };
   const end = content.indexOf('\n---', 3);
-  if (end === -1) return content;
-  return content.slice(end + 4).trim();
+  if (end === -1) return { content, meta: {} };
+  const yaml = content.slice(3, end).trim();
+  const rest = content.slice(end + 4).trim();
+  const meta = {};
+  for (const line of yaml.split('\n')) {
+    const m = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+    if (m) meta[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+  }
+  return { content: rest, meta };
+}
+
+// Notion's markdown export prepends the page title as an H1 on the first
+// non-empty line. Liminal already stores the title separately, so we strip
+// that redundant heading to avoid showing the title twice in the body.
+function stripLeadingTitle(content) {
+  const lines = content.split('\n');
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  if (i < lines.length && /^#\s+/.test(lines[i])) {
+    lines.splice(i, 1);
+    // Also drop any blank lines immediately following the removed title
+    while (i < lines.length && lines[i].trim() === '') lines.splice(i, 1);
+  }
+  return lines.join('\n');
 }
 
 function markdownToPlainText(md) {
@@ -658,6 +823,7 @@ module.exports = {
   // Exposed for unit-style testing if needed:
   _parseTitle: parseTitle,
   _splitReflection: splitReflection,
-  _parseReflectionBlocks: parseReflectionBlocks,
+  _isCodeParagraph: isCodeParagraph,
+  _extractFrontmatter: extractFrontmatter,
   _markdownToHtml: markdownToHtml,
 };

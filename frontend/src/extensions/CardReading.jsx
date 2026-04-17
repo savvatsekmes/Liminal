@@ -1,6 +1,7 @@
 import { Node } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { NodeSelection } from '@tiptap/pm/state';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
 // ── Safe attribute encoding (HTML in data-attributes breaks the parser) ──────
@@ -318,11 +319,36 @@ const st = {
 
 // ── React NodeView ───────────────────────────────────────────────────────────
 
-function CardReadingView({ node, deleteNode }) {
+function CardReadingView({ node, deleteNode, editor, getPos }) {
   const { cards: cardsJson, reading, deckType, spreadName } = node.attrs;
   const [selectedCard, setSelectedCard] = useState(null);
   const [readingExpanded, setReadingExpanded] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const wrapperRef = useRef(null);
+  const dragRef = useRef(null);
+
+  // Manual dragstart — same pattern as DetailsBlock for reliable drag from rows
+  useEffect(() => {
+    const handle = dragRef.current;
+    if (!handle) return;
+    function onDragStart(e) {
+      const pos = getPos();
+      if (typeof pos !== 'number') return;
+      const wrapper = wrapperRef.current;
+      if (wrapper) {
+        const wrapRect = wrapper.getBoundingClientRect();
+        const handleRect = handle.getBoundingClientRect();
+        e.dataTransfer.setDragImage(wrapper,
+          handleRect.x - wrapRect.x + (e.offsetX || 0),
+          handleRect.y - wrapRect.y + (e.offsetY || 0));
+      }
+      const sel = NodeSelection.create(editor.view.state.doc, pos);
+      editor.view.dispatch(editor.view.state.tr.setSelection(sel));
+    }
+    handle.draggable = true;
+    handle.addEventListener('dragstart', onDragStart);
+    return () => handle.removeEventListener('dragstart', onDragStart);
+  }, [editor, getPos]);
 
   let cards = [];
   try { cards = JSON.parse(cardsJson); } catch {}
@@ -340,6 +366,7 @@ function CardReadingView({ node, deleteNode }) {
       contentEditable={false}
     >
       <div
+        ref={wrapperRef}
         style={st.wrapper}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -347,8 +374,8 @@ function CardReadingView({ node, deleteNode }) {
         {/* Header with drag handle + delete */}
         <div style={st.header}>
           <div
+            ref={dragRef}
             data-drag-handle
-            draggable="true"
             style={{ ...st.dragHandle, opacity: hovered ? 0.8 : 0.3 }}
             title="Drag to reorder"
           >

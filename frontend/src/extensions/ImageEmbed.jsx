@@ -1,7 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useRef, useCallback, useState, useEffect } from 'react';
-import { Plugin } from '@tiptap/pm/state';
+import { Plugin, NodeSelection } from '@tiptap/pm/state';
 import { apiFetch } from '../utils/api';
 
 // ── Helper: send image to vision model for analysis ─────────────────────────
@@ -137,12 +137,36 @@ export const ImageEmbed = Node.create({
 
 // ── React NodeView ───────────────────────────────────────────────────────────
 
-function ImageEmbedView({ node, updateAttributes, deleteNode }) {
+function ImageEmbedView({ node, updateAttributes, deleteNode, editor, getPos }) {
   const { src, alt, width, analyzed } = node.attrs;
   const outerRef = useRef(null);
+  const dragRef = useRef(null);
   const analyzedRef = useRef(analyzed);
   const [hovered, setHovered] = useState(false);
   const [status, setStatus] = useState(analyzed ? 'done' : 'idle');
+
+  // Manual dragstart — same pattern as DetailsBlock for reliable drag from rows
+  useEffect(() => {
+    const handle = dragRef.current;
+    if (!handle) return;
+    function onDragStart(e) {
+      const pos = getPos();
+      if (typeof pos !== 'number') return;
+      const wrapper = outerRef.current;
+      if (wrapper) {
+        const wrapRect = wrapper.getBoundingClientRect();
+        const handleRect = handle.getBoundingClientRect();
+        e.dataTransfer.setDragImage(wrapper,
+          handleRect.x - wrapRect.x + (e.offsetX || 0),
+          handleRect.y - wrapRect.y + (e.offsetY || 0));
+      }
+      const sel = NodeSelection.create(editor.view.state.doc, pos);
+      editor.view.dispatch(editor.view.state.tr.setSelection(sel));
+    }
+    handle.draggable = true;
+    handle.addEventListener('dragstart', onDragStart);
+    return () => handle.removeEventListener('dragstart', onDragStart);
+  }, [editor, getPos]);
 
   // Auto-analyze once when first inserted — use ref to avoid re-triggering on attr updates
   useEffect(() => {
@@ -204,6 +228,9 @@ function ImageEmbedView({ node, updateAttributes, deleteNode }) {
 
   if (!src) return null;
 
+  const isDoodle = alt === 'Doodle';
+  const label = isDoodle ? 'Drawing' : (alt && alt !== 'image' ? alt : 'Image');
+
   return (
     <NodeViewWrapper
       data-image-embed=""
@@ -223,106 +250,124 @@ function ImageEmbedView({ node, updateAttributes, deleteNode }) {
           width: width || '100%',
           maxWidth: '100%',
           margin: '16px 0',
-          position: 'relative',
           display: 'inline-block',
           verticalAlign: 'top',
         }}
       >
-        {/* Drag handle */}
-        <div
-          data-drag-handle
-          draggable="true"
-          title="Drag to reorder"
-          style={{
-            position: 'absolute', top: '6px', left: '6px', zIndex: 10,
-            cursor: 'grab', background: 'rgba(0,0,0,0.45)', color: '#fff',
-            borderRadius: '3px', width: '22px', height: '22px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '13px', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s',
-            userSelect: 'none',
-          }}
-        >
-          ⠿
-        </div>
-
-        {/* Delete button */}
-        <button
-          onClick={() => deleteNode()}
-          title="Remove"
-          style={{
-            position: 'absolute', top: '6px', right: '6px', zIndex: 10,
-            background: 'rgba(0,0,0,0.45)', color: '#fff', border: 'none',
-            borderRadius: '3px', width: '22px', height: '22px', cursor: 'pointer',
-            fontSize: '16px', lineHeight: '1',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: hovered ? 1 : 0, transition: 'opacity 0.15s', padding: 0,
-          }}
-        >
-          ×
-        </button>
-
-        {/* Image */}
-        <img
-          src={src}
-          alt={alt || ''}
-          draggable={false}
-          style={{
-            display: 'block', width: '100%', height: 'auto',
-            borderRadius: '14px', border: 'var(--border-style)',
-          }}
-        />
-
-        {/* Vision analysis status bar */}
         <div style={{
-          position: 'absolute', bottom: '6px', left: '6px',
-          display: 'flex', alignItems: 'center', gap: '6px',
-          opacity: hovered || status === 'analyzing' ? 1 : 0,
-          transition: 'opacity 0.15s',
+          borderRadius: '14px',
+          border: 'var(--border-style)',
+          overflow: 'hidden',
+          background: 'var(--near-white)',
         }}>
-          {status === 'analyzing' && (
-            <span style={{
-              fontSize: '10px', color: '#fff', background: 'rgba(0,0,0,0.55)',
-              borderRadius: '3px', padding: '2px 8px',
-            }}>
-              Analyzing…
-            </span>
-          )}
-          {status === 'done' && (
-            <span style={{
-              fontSize: '10px', color: '#fff', background: 'rgba(0,0,0,0.45)',
-              borderRadius: '3px', padding: '2px 8px',
-            }}>
-              ✓ Analyzed
-            </span>
-          )}
-          {status === 'error' && (
-            <button
-              onClick={handleRetry}
+          {/* Caption bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '6px 10px',
+            borderBottom: 'var(--border-style)',
+            fontSize: '11px',
+            color: 'var(--muted)',
+            gap: '8px',
+          }}>
+            {/* Drag handle */}
+            <span
+              ref={dragRef}
+              data-drag-handle
               style={{
-                fontSize: '10px', color: '#fff', background: 'rgba(180,60,60,0.8)',
-                borderRadius: '3px', padding: '2px 8px', border: 'none',
-                cursor: 'pointer', fontFamily: 'var(--font)',
+                cursor: 'grab',
+                color: 'var(--muted)',
+                opacity: 0.5,
+                flexShrink: 0,
+                fontSize: '13px',
+                lineHeight: 1,
+                userSelect: 'none',
+                paddingRight: '2px',
+              }}
+              title="Drag to reorder"
+            >
+              ⠿
+            </span>
+
+            {/* Label */}
+            <span style={{
+              flex: 1,
+              fontWeight: 500,
+              color: 'var(--body)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {label}
+            </span>
+
+            {/* Vision status */}
+            {status === 'analyzing' && (
+              <span style={{ flexShrink: 0, fontSize: '10px' }}>Analyzing…</span>
+            )}
+            {status === 'done' && (
+              <span style={{ flexShrink: 0, fontSize: '10px', color: 'var(--body)' }}>✓ Analyzed</span>
+            )}
+            {status === 'error' && (
+              <span
+                onClick={handleRetry}
+                style={{ flexShrink: 0, fontSize: '10px', cursor: 'pointer', color: '#c44' }}
+              >
+                ✕ Retry
+              </span>
+            )}
+
+            {/* Delete button */}
+            <button
+              onClick={() => deleteNode()}
+              title="Remove"
+              style={{
+                flexShrink: 0,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '0 2px',
+                fontSize: '14px',
+                lineHeight: 1,
+                color: 'var(--muted)',
+                opacity: 0.6,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Image */}
+          <div style={{ position: 'relative' }}>
+            <img
+              src={src}
+              alt={alt || ''}
+              draggable={false}
+              style={{
+                display: 'block', width: '100%', height: 'auto',
+              }}
+            />
+
+            {/* Resize handle */}
+            <div
+              onMouseDown={handleResizeStart}
+              title="Drag to resize"
+              style={{
+                position: 'absolute', bottom: 0, right: 0,
+                width: '18px', height: '18px', cursor: 'nwse-resize',
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end',
+                padding: '3px', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s',
               }}
             >
-              ✕ Retry
-            </button>
-          )}
-        </div>
-
-        {/* Resize handle */}
-        <div
-          onMouseDown={handleResizeStart}
-          title="Drag to resize"
-          style={{
-            position: 'absolute', bottom: 0, right: 0,
-            width: '18px', height: '18px', cursor: 'nwse-resize',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end',
-            padding: '3px', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s',
-          }}
-        >
-          <svg width="9" height="9" viewBox="0 0 8 8" fill="none">
-            <path d="M7 1L1 7M7 4L4 7" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
+              <svg width="9" height="9" viewBox="0 0 8 8" fill="none">
+                <path d="M7 1L1 7M7 4L4 7" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
     </NodeViewWrapper>

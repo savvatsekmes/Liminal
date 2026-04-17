@@ -172,7 +172,7 @@ Return only the portrait text. No headers, no preamble.`;
   const lines = ['Here is everything known about this person:'];
 
   // Identity
-  const displayName = require('../services/settingsService').get('display_name');
+  const displayName = require('../services/settingsService').getForUser('display_name', req.userId);
   if (displayName)             lines.push(`Name: ${displayName}`);
   if (portrait.sex)            lines.push(`Sex: ${portrait.sex}`);
   if (portrait.pronouns)       lines.push(`Pronouns: ${portrait.pronouns}`);

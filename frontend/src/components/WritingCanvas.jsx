@@ -10,7 +10,10 @@ function TagLabel({ tag }) {
 }
 import MicButton from './MicButton';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
+import { InstagramEmbed } from '../extensions/InstagramEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
+import { DetailsBlock } from '../extensions/DetailsBlock';
+import { MediaRow } from '../extensions/MediaRow';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
@@ -25,6 +28,7 @@ import ListItem from '@tiptap/extension-list-item';
 import HardBreak from '@tiptap/extension-hard-break';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import History from '@tiptap/extension-history';
+import Gapcursor from '@tiptap/extension-gapcursor';
 import Placeholder from '@tiptap/extension-placeholder';
 import Code from '@tiptap/extension-code';
 import Blockquote from '../extensions/Blockquote';
@@ -318,8 +322,12 @@ const editor = useEditor({
       HorizontalRule,
       Blockquote,
       History,
+      Gapcursor,
       YoutubeEmbed,
+      InstagramEmbed,
       ImageEmbed,
+      DetailsBlock,
+      MediaRow,
       CardReading,
       Placeholder.configure({
         placeholder: isFirstSession
@@ -471,11 +479,32 @@ const editor = useEditor({
         </ToolbarButton>
 
         <ToolbarButton
+          label="Indent"
+          onClick={() => editor?.chain().focus().sinkListItem('listItem').run()}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="21" y2="16"/><polyline points="9 4 13 8 9 12"/></svg>
+        </ToolbarButton>
+        <ToolbarButton
+          label="Outdent"
+          onClick={() => editor?.chain().focus().liftListItem('listItem').run()}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="21" y2="16"/><polyline points="13 4 9 8 13 12"/></svg>
+        </ToolbarButton>
+
+        <ToolbarButton
           label="Quote"
           active={editor?.isActive('blockquote')}
           onClick={() => editor?.chain().focus().toggleBlockquote().run()}
         >
           "
+        </ToolbarButton>
+
+        <ToolbarButton
+          label="Toggle"
+          active={editor?.isActive('detailsBlock')}
+          onClick={() => editor?.chain().focus().setDetailsBlock().run()}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="6,4 20,12 6,20" fill="currentColor" stroke="none"/></svg>
         </ToolbarButton>
 
         <div style={s.toolbarDivider} />

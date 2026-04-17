@@ -36,6 +36,9 @@ const DEFAULTS = {
   max_backups:               '10',
 };
 
+// Keys that are scoped per-user (stored as "key::userId" in the DB)
+const USER_SCOPED_KEYS = new Set(['display_name']);
+
 // ── Core get/set ─────────────────────────────────────────────────────────────
 
 function get(key) {
@@ -45,6 +48,24 @@ function get(key) {
   const envKey = key.toUpperCase();
   if (process.env[envKey]) return process.env[envKey];
   return DEFAULTS[key] ?? '';
+}
+
+/** Get a user-scoped setting. Falls back to global key for backwards compat. */
+function getForUser(key, userId) {
+  if (userId && USER_SCOPED_KEYS.has(key)) {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(`${key}::${userId}`);
+    if (row) return row.value;
+  }
+  return get(key);
+}
+
+/** Set a user-scoped setting. */
+function setForUser(key, value, userId) {
+  if (userId && USER_SCOPED_KEYS.has(key)) {
+    set(`${key}::${userId}`, value);
+    return;
+  }
+  set(key, value);
 }
 
 function set(key, value) {
@@ -108,4 +129,4 @@ function maskSecret(value) {
   return value.slice(0, 4) + '••••••••' + value.slice(-4);
 }
 
-module.exports = { get, set, setMany, getAll, hasSecret, SECRET_KEYS };
+module.exports = { get, set, setMany, getAll, hasSecret, SECRET_KEYS, getForUser, setForUser };

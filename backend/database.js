@@ -318,6 +318,20 @@ if (memoryCount === 0) {
   }
 }
 
+// Migrate global display_name → user 1's scoped key (one-time)
+{
+  const globalDN = db.prepare("SELECT value FROM settings WHERE key = 'display_name'").get();
+  const scopedDN = db.prepare("SELECT key FROM settings WHERE key = 'display_name::1'").get();
+  if (globalDN && globalDN.value && !scopedDN) {
+    db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('display_name::1', ?, CURRENT_TIMESTAMP)")
+      .run(globalDN.value);
+  }
+  // Clear global key so it doesn't leak to other users via fallback
+  if (globalDN) {
+    db.prepare("DELETE FROM settings WHERE key = 'display_name'").run();
+  }
+}
+
 // Seed settings from .env on first run (only if keys not already in DB)
 function seedSettingFromEnv(key, envVar) {
   const exists = db.prepare('SELECT key FROM settings WHERE key = ?').get(key);

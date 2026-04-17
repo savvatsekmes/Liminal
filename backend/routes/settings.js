@@ -11,6 +11,9 @@ const { DATA_DIR } = require('../paths');
 // Returns all settings with secrets masked
 router.get('/', (req, res) => {
   const all = s.getAll();
+  // Override display_name with user-scoped value
+  const userId = resolveUserId(req);
+  all.display_name = s.getForUser('display_name', userId);
   // Add hasKey booleans for secrets so the UI knows they're set
   all.has_anthropic_key = s.hasSecret('anthropic_api_key');
   all.has_openai_key    = s.hasSecret('openai_api_key');
@@ -38,6 +41,13 @@ router.put('/', (req, res) => {
   // Clamp numeric TTS values
   for (const k of ['chatterbox_exaggeration', 'chatterbox_cfg_weight', 'chatterbox_temperature']) {
     if (k in updates) updates[k] = String(parseFloat(updates[k]) || 0);
+  }
+
+  // Scope display_name per user
+  if ('display_name' in updates) {
+    const userId = resolveUserId(req);
+    s.setForUser('display_name', updates.display_name, userId);
+    delete updates.display_name;
   }
 
   s.setMany(updates);
@@ -272,7 +282,8 @@ router.put('/username', (req, res) => {
   if (typeof display_name !== 'string') {
     return res.status(400).json({ error: 'display_name required' });
   }
-  s.set('display_name', display_name.trim());
+  const userId = resolveUserId(req);
+  s.setForUser('display_name', display_name.trim(), userId);
   res.json({ success: true, display_name: display_name.trim() });
 });
 
@@ -470,8 +481,12 @@ function buildExportData(userId) {
   const settingsRows = db.prepare('SELECT key, value FROM settings').all();
   const settingsObj = {};
   for (const { key, value } of settingsRows) {
+    // Skip user-scoped keys from export — export the current user's value as the plain key
+    if (key.includes('::')) continue;
     settingsObj[key] = value;
   }
+  // Export the current user's scoped display_name as plain "display_name"
+  settingsObj.display_name = s.getForUser('display_name', userId);
 
   // Export only the current user (not all users)
   const user = db.prepare(`
@@ -757,26 +772,27 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     }
   }
 
-  // 12. Settings — clear and replace, but preserve identity-sensitive keys
-  //     that belong to the *current* logged-in user (settings table is global,
-  //     not scoped per user, so a restore must not overwrite another user's name).
+  // 12. Settings — clear and replace, but preserve all user-scoped keys
+  //     (display_name::N) so a restore doesn't overwrite another user's name.
   if (data.settings && typeof data.settings === 'object') {
-    const currentDisplayName = s.get('display_name');
+    // Preserve all user-scoped settings before wiping
+    const scopedRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE '%::%'").all();
     db.prepare('DELETE FROM settings').run();
     for (const [key, value] of Object.entries(data.settings)) {
       try {
-        // Keep the current user's display name — don't let a backup rename them
-        if (key === 'display_name' && currentDisplayName) {
-          s.set(key, currentDisplayName);
+        // Import the backup's display_name as the restoring user's scoped key
+        if (key === 'display_name') {
+          s.setForUser('display_name', value, userId);
         } else {
           s.set(key, value);
         }
         counts.settings = (counts.settings || 0) + 1;
       } catch { counts.skipped++; }
     }
-    // Ensure display_name is restored if the backup didn't include it
-    if (!data.settings.display_name && currentDisplayName) {
-      s.set('display_name', currentDisplayName);
+    // Restore all user-scoped keys that weren't for the restoring user
+    for (const { key, value } of scopedRows) {
+      if (key === `display_name::${userId}`) continue; // already set from backup
+      s.set(key, value);
     }
   }
 

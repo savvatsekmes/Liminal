@@ -79,7 +79,7 @@ router.post('/generate', async (req, res) => {
 
     // Load portrait for personalisation
     const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-    const displayName = require('../services/settingsService').get('display_name');
+    const displayName = require('../services/settingsService').getForUser('display_name', req.userId);
 
     let portraitContext = '';
     if (portrait) {

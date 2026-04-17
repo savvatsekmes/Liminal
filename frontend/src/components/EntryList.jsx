@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
+import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 import Calendar from './Calendar';
 
 const ALL_TAG = '__all__';
@@ -32,7 +32,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: '1.6', marginBottom: '24px' }}>
+        <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: '1.6', marginBottom: '24px', whiteSpace: 'pre-line' }}>
           {message}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -223,9 +223,10 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
     if (addingTag) tagInputRef.current?.focus();
   }, [addingTag]);
 
-  function confirmDelete(id, title) {
+  function confirmDelete(id, title, hasLinkedChat) {
+    const key = hasLinkedChat ? 'journal.deleteConfirmWithChat' : 'journal.deleteConfirm';
     setConfirmModal({
-      message: t('journal.deleteConfirm', { title: title || 'Untitled' }),
+      message: t(key, { title: title || 'Untitled' }),
       onConfirm: () => { onDelete(id); setConfirmModal(null); },
     });
   }
@@ -306,7 +307,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
               entry={entry}
               active={entry.id === activeId}
               onClick={() => onSelect(entry)}
-              onDelete={onDelete ? () => confirmDelete(entry.id, entry.title) : null}
+              onDelete={onDelete ? () => confirmDelete(entry.id, entry.title, !!entry.linked_session_id) : null}
               onNavigateToChat={onNavigateToChat}
             />
           ))}
@@ -563,6 +564,10 @@ function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
   const tags = entry.tags || [];
   const isFight = tags.includes('fights');
   const isBreakthrough = tags.includes('breakthrough') || entry.breakthrough_level != null;
+  // Right-side emoji strip — shows the glyph for every tag on the entry,
+  // including `breakthrough` (🫠) and `fights` (🔥) even though those also
+  // render as dedicated signals on the meta line.
+  const emojiTags = tagEmojisFromTags(tags);
 
   return (
     <div
@@ -604,6 +609,27 @@ function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
           {entry.title || 'Untitled'}
         </div>
       </div>
+      {emojiTags.length > 0 && (
+        <div
+          title={emojiTags.map(e => e.tag).join(', ')}
+          style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: '3px',
+            flexShrink: 0,
+            fontSize: '15px',
+            lineHeight: 1,
+            marginRight: hover && onDelete ? '14px' : '0',
+          }}
+        >
+          {emojiTags.slice(0, 3).map((e) => (
+            e.img
+              ? <img key={e.tag} src={e.img} alt={e.tag} style={{ width: '15px', height: '15px', display: 'block' }} />
+              : <span key={e.tag}>{e.glyph}</span>
+          ))}
+        </div>
+      )}
       {hover && onDelete && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}

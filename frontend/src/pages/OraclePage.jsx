@@ -4,7 +4,7 @@ import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import { apiFetch } from '../utils/api';
-import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
+import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 
 function TagLabel({ tag }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
@@ -1593,6 +1593,31 @@ function SidebarItem({ sess, active, onClick, onDelete, onNavigateToSource }) {
           {(sess.first_message || sess.title || t('oracle.newConversation')).slice(0, 60)}
         </div>
       </div>
+      {(() => {
+        const emojiTags = tagEmojisFromTags([...(sess.tags || []), ...(sess.auto_tags || [])]);
+        if (!emojiTags.length) return null;
+        return (
+          <div
+            title={emojiTags.map(e => e.tag).join(', ')}
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: '3px',
+              flexShrink: 0,
+              fontSize: '15px',
+              lineHeight: 1,
+              marginRight: hover ? '14px' : '0',
+            }}
+          >
+            {emojiTags.slice(0, 3).map((e) => (
+              e.img
+                ? <img key={e.tag} src={e.img} alt={e.tag} style={{ width: '15px', height: '15px', display: 'block' }} />
+                : <span key={e.tag}>{e.glyph}</span>
+            ))}
+          </div>
+        );
+      })()}
       {hover && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}

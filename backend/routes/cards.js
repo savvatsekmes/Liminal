@@ -67,7 +67,7 @@ router.get('/daily', async (req, res) => {
   // Generate a personalized daily reading via LLM
   try {
     const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-    const displayName = require('../services/settingsService').get('display_name');
+    const displayName = require('../services/settingsService').getForUser('display_name', req.userId);
     let context = '';
     if (portrait) {
       if (displayName) context += `Name: ${displayName}. `;
@@ -117,7 +117,7 @@ router.post('/reading', async (req, res) => {
 
   // Load portrait for personalisation
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-  const displayName = require('../services/settingsService').get('display_name');
+  const displayName = require('../services/settingsService').getForUser('display_name', req.userId);
 
   // Build portrait context
   let portraitContext = '';
@@ -201,7 +201,7 @@ router.post('/pull', async (req, res) => {
 
   // Gather context
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
-  const displayName = require('../services/settingsService').get('display_name');
+  const displayName = require('../services/settingsService').getForUser('display_name', req.userId);
   const memoryService = require('../services/memoryService');
 
   // Recent journal entries (last 5)

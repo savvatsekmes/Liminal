@@ -1,25 +1,24 @@
 import { Node, mergeAttributes, nodePasteRule } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
-import { apiFetch } from '../utils/api';
 
-// ── Video ID extraction ──────────────────────────────────────────────────────
+// ── URL extraction ──────────────────────────────────────────────────────────
 
-export function extractYoutubeId(url) {
+export function extractInstagramUrl(url) {
   const match = url.match(
-    /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+    /https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/
   );
-  return match ? match[1] : null;
+  return match ? match[0].split('?')[0] : null;
 }
 
-const YOUTUBE_URL_REGEX =
-  /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^\s]*/g;
+const INSTAGRAM_URL_REGEX =
+  /https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/[A-Za-z0-9_-]+[^\s]*/g;
 
-// ── TipTap Node ──────────────────────────────────────────────────────────────
+// ── TipTap Node ─────────────────────────────────────────────────────────────
 
-export const YoutubeEmbed = Node.create({
-  name: 'youtubeEmbed',
+export const InstagramEmbed = Node.create({
+  name: 'instagramEmbed',
   group: 'block',
   atom: true,
   selectable: false,
@@ -28,44 +27,40 @@ export const YoutubeEmbed = Node.create({
 
   addAttributes() {
     return {
-      videoId: { default: null },
-      title:   { default: '' },
-      width:   { default: '100%' },
+      url:   { default: null },
+      width: { default: '100%' },
     };
   },
 
   parseHTML() {
     return [{
-      tag: 'div[data-youtube-embed]',
+      tag: 'div[data-instagram-embed]',
       getAttrs: (dom) => ({
-        videoId: dom.getAttribute('data-video-id') || null,
-        title:   dom.getAttribute('data-title') || '',
-        width:   dom.getAttribute('data-width') || '100%',
+        url:   dom.getAttribute('data-url') || null,
+        width: dom.getAttribute('data-width') || '100%',
       }),
     }];
   },
 
   renderHTML({ node }) {
     return ['div', mergeAttributes({
-      'data-youtube-embed': '',
-      'data-video-id': node.attrs.videoId || '',
-      'data-title':    node.attrs.title || '',
-      'data-width':    node.attrs.width || '100%',
+      'data-instagram-embed': '',
+      'data-url':   node.attrs.url || '',
+      'data-width': node.attrs.width || '100%',
     })];
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(YoutubeEmbedView);
+    return ReactNodeViewRenderer(InstagramEmbedView);
   },
 
   addPasteRules() {
     return [
       nodePasteRule({
-        find: YOUTUBE_URL_REGEX,
+        find: INSTAGRAM_URL_REGEX,
         type: this.type,
         getAttributes: (match) => ({
-          videoId: extractYoutubeId(match[0]),
-          title: '',
+          url: extractInstagramUrl(match[0]) || match[0],
           width: '100%',
         }),
       }),
@@ -73,13 +68,20 @@ export const YoutubeEmbed = Node.create({
   },
 });
 
-// ── React NodeView ───────────────────────────────────────────────────────────
+// ── React NodeView ──────────────────────────────────────────────────────────
 
-function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }) {
-  const { videoId, title, width } = node.attrs;
-  const [status, setStatus] = useState('idle'); // idle | loading | done | no-captions | error
+function parseInstagramUrl(url) {
+  if (!url) return { type: 'post', shortcode: '' };
+  const m = url.match(/instagram\.com\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+  return m ? { type: m[1] === 'p' ? 'post' : m[1], shortcode: m[2] } : { type: 'post', shortcode: '' };
+}
+
+function InstagramEmbedView({ node, updateAttributes, deleteNode, editor, getPos }) {
+  const { url, width } = node.attrs;
   const outerRef = useRef(null);
   const dragRef = useRef(null);
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
 
   // Manual dragstart — same pattern as DetailsBlock for reliable drag from rows
   useEffect(() => {
@@ -103,24 +105,7 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }
     handle.addEventListener('dragstart', onDragStart);
     return () => handle.removeEventListener('dragstart', onDragStart);
   }, [editor, getPos]);
-
-  const fetchTranscript = () => {
-    if (!videoId || status === 'loading') return;
-    setStatus('loading');
-    apiFetch('/api/youtube/embed', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.title) updateAttributes({ title: data.title });
-        setStatus(data.hadCaptions ? 'done' : 'no-captions');
-      })
-      .catch(() => setStatus('error'));
-  };
-
-  useEffect(() => { fetchTranscript(); }, [videoId]);
+  const { type, shortcode } = parseInstagramUrl(url);
 
   const handleResizeStart = useCallback((e) => {
     e.preventDefault();
@@ -145,18 +130,18 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }
     document.addEventListener('mouseup', onUp);
   }, [updateAttributes]);
 
-  const statusLabel = {
-    loading:       'Fetching transcript…',
-    done:          '✓ Transcript saved',
-    'no-captions': 'No captions',
-    error:         '',
-  }[status] || '';
+  const openExternal = () => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener');
+  };
+
+  const typeLabel = type === 'reel' ? 'Reel' : type === 'tv' ? 'IGTV' : 'Post';
+  const embedSrc = url ? `${url.replace(/\/$/, '')}/embed/captioned/` : '';
 
   return (
     <NodeViewWrapper
-      data-youtube-embed=""
-      data-video-id={videoId || ''}
-      data-title={title || ''}
+      data-instagram-embed=""
+      data-url={url || ''}
       data-width={width || '100%'}
       style={{ display: 'block' }}
     >
@@ -165,7 +150,7 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }
         contentEditable={false}
         style={{
           width: width || '100%',
-          maxWidth: '100%',
+          maxWidth: '540px',
           margin: '16px 0',
           position: 'relative',
           display: 'inline-block',
@@ -188,7 +173,6 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }
             color: 'var(--muted)',
             gap: '8px',
           }}>
-            {/* Drag handle */}
             <span
               ref={dragRef}
               data-drag-handle
@@ -207,7 +191,12 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }
               ⠿
             </span>
 
-            {/* Title */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+              <rect x="2" y="2" width="20" height="20" rx="5" stroke="currentColor" strokeWidth="2"/>
+              <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="2"/>
+              <circle cx="17.5" cy="6.5" r="1.5" fill="currentColor"/>
+            </svg>
+
             <span style={{
               flex: 1,
               fontWeight: 500,
@@ -215,26 +204,11 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-            }}>
-              {title || `youtube.com/watch?v=${videoId}`}
+              cursor: 'pointer',
+            }} onClick={openExternal} title="Open in Instagram">
+              Instagram {typeLabel}
             </span>
 
-            {/* Transcript status */}
-            {statusLabel && (
-              <span
-                style={{
-                  flexShrink: 0,
-                  color: status === 'done' ? 'var(--body)' : 'var(--muted)',
-                  cursor: status === 'no-captions' ? 'pointer' : 'default',
-                }}
-                title={status === 'no-captions' ? 'Click to retry' : undefined}
-                onClick={status === 'no-captions' ? fetchTranscript : undefined}
-              >
-                {statusLabel}
-              </span>
-            )}
-
-            {/* Delete button */}
             <button
               onClick={() => deleteNode()}
               title="Remove"
@@ -258,19 +232,71 @@ function YoutubeEmbedView({ node, updateAttributes, deleteNode, editor, getPos }
             </button>
           </div>
 
-          {/* 16:9 iframe */}
-          <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
-            <iframe
-              src={`https://www.youtube-nocookie.com/embed/${videoId}`}
-              title={title || 'YouTube video'}
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
+          {/* Iframe embed — Instagram allows framing from any origin */}
+          {!errored ? (
+            <div style={{ position: 'relative', minHeight: loaded ? 0 : '480px' }}>
+              {!loaded && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--muted)', fontSize: '12px',
+                }}>
+                  Loading Instagram {typeLabel.toLowerCase()}…
+                </div>
+              )}
+              <iframe
+                src={embedSrc}
+                title={`Instagram ${typeLabel}`}
+                onLoad={() => setLoaded(true)}
+                onError={() => setErrored(true)}
+                style={{
+                  width: '100%',
+                  minHeight: '480px',
+                  border: 'none',
+                  display: 'block',
+                  opacity: loaded ? 1 : 0,
+                  transition: 'opacity 0.2s',
+                }}
+                referrerPolicy="no-referrer"
+                allow="encrypted-media"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            /* Fallback link card if iframe fails */
+            <div
+              onClick={openExternal}
+              style={{
+                padding: '20px 16px',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '12px',
+              }}
+            >
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+                <defs>
+                  <linearGradient id="ig-grad" x1="0" y1="24" x2="24" y2="0">
+                    <stop offset="0%" stopColor="#FFDC80"/>
+                    <stop offset="25%" stopColor="#F77737"/>
+                    <stop offset="50%" stopColor="#E1306C"/>
+                    <stop offset="75%" stopColor="#C13584"/>
+                    <stop offset="100%" stopColor="#833AB4"/>
+                  </linearGradient>
+                </defs>
+                <rect x="2" y="2" width="20" height="20" rx="5" stroke="url(#ig-grad)" strokeWidth="2"/>
+                <circle cx="12" cy="12" r="5" stroke="url(#ig-grad)" strokeWidth="2"/>
+                <circle cx="17.5" cy="6.5" r="1.5" fill="url(#ig-grad)"/>
+              </svg>
+              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                Open in Instagram
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Resize handle — bottom-right corner */}
+        {/* Resize handle */}
         <div
           onMouseDown={handleResizeStart}
           title="Drag to resize"

@@ -49,7 +49,7 @@ function normaliseTagPair(tags, autoTags) {
 
 // ── GET /api/entries ─────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
-  const { tag, search, limit = 100, offset = 0 } = req.query;
+  const { tag, search, limit = 5000, offset = 0 } = req.query;
 
   let query = `SELECT id, title, body_text, date, tags, auto_tags, linked_session_id, created_at, updated_at
                FROM entries`;
@@ -158,8 +158,14 @@ router.put('/:id', (req, res) => {
 
 // ── DELETE /api/entries/:id ──────────────────────────────────────────────────
 router.delete('/:id', (req, res) => {
-  const existing = db.prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const existing = db.prepare('SELECT id, linked_session_id FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!existing) return res.status(404).json({ error: 'Entry not found' });
+
+  // Cascade: remove the linked Oracle conversation so orphaned chats don't
+  // linger after the entry they were spawned from is deleted.
+  if (existing.linked_session_id) {
+    db.prepare('DELETE FROM oracle_sessions WHERE id = ? AND user_id = ?').run(existing.linked_session_id, req.userId);
+  }
 
   db.prepare('DELETE FROM entries WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
   res.json({ success: true });
