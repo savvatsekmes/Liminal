@@ -1,10 +1,32 @@
 /**
  * Small SVG avatar for archetypes — 28x28 by default.
- * Built-in archetypes get unique icons; custom ones get initials.
+ * Built-in archetypes get unique icons; custom ones get a user-uploaded image
+ * (stored as a data URL on `archetype.image`) or fall back to initials.
  */
 export default function ArchetypeAvatar({ archetype, size = 28, color }) {
   const fill = color || '#888';
   const r = size / 2;
+
+  // Custom archetype with user-uploaded image — render it clipped to a circle.
+  const image = archetype?.image;
+  if (image) {
+    return (
+      <img
+        src={image}
+        alt=""
+        width={size}
+        height={size}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          objectFit: 'cover',
+          display: 'inline-block',
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
 
   // Custom archetype — show initials
   const icon = archetype?.icon;
@@ -113,16 +135,6 @@ export default function ArchetypeAvatar({ archetype, size = 28, color }) {
           </mask>
         </defs>
         <circle cx={r} cy={r} r={r * 0.45} fill={c} opacity="0.7" mask={`url(#sufi-${s})`} />
-      </svg>
-    ),
-    watts: (
-      <svg width={s} height={s} viewBox={v}>
-        {bg}
-        {/* Mountain + wave — East meets West */}
-        <path d={`M ${r * 0.35} ${r * 1.35} L ${r} ${r * 0.55} L ${r * 1.65} ${r * 1.35}`}
-          stroke={c} strokeWidth="1.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <path d={`M ${r * 0.4} ${r * 1.45} Q ${r * 0.7} ${r * 1.25} ${r} ${r * 1.45} T ${r * 1.6} ${r * 1.45}`}
-          stroke={c} strokeWidth="1" fill="none" strokeLinecap="round" opacity="0.6" />
       </svg>
     ),
   };

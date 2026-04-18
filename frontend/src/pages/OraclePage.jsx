@@ -3,6 +3,8 @@ import { useDictation } from '../hooks/useDictation';
 import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
+import TagContextMenu from '../components/TagContextMenu';
+import { useLockedTags } from '../hooks/useLockedTags';
 import { apiFetch } from '../utils/api';
 import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 
@@ -16,6 +18,7 @@ import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/arche
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import Calendar from '../components/Calendar';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useListArrowNav } from '../hooks/useListArrowNav';
 
 const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.map(a => a.value);
 const ALL_TAG = '__all__';
@@ -948,6 +951,8 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
     setMobileView('chat');
   };
 
+  useListArrowNav(searchedSessions, (sess) => sess.id, currentSession?.id, (sess) => loadSession(sess.id));
+
   return (
     <div style={s.root}>
       {/* History sidebar — hidden on mobile when viewing chat */}
@@ -1205,7 +1210,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
               const builtIn = BUILT_IN_ARCH_OBJECTS.find(a => a.value === archetype);
               const custom = customArchetypesList.find(a => a.name === archetype);
               if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color="var(--strong)" />;
-              if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+              if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={20} color={custom.color || 'var(--strong)'} />;
               return <ArchetypeAvatar archetype={{ value: archetype }} size={20} color="var(--strong)" />;
             })()}
           </button>
@@ -1258,7 +1263,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+                  <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
                   <span style={{ marginLeft: '8px' }}>{c.name}</span>
                 </button>
               ))}
@@ -1474,6 +1479,10 @@ function TagFilterPill({ label, active, onClick }) {
 function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
+  const [menu, setMenu] = useState(null);
+  const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
+  const locked = isLocked(label);
+  const always = isAlwaysLocked(label);
   // Auto (LLM-applied) tags get a dashed border + italic so they read as
   // distinct from user-typed manual tags at a glance.
   const borderStyle = auto
@@ -1494,6 +1503,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }); }}
     >
       <button
         onClick={onClick}
@@ -1515,11 +1525,11 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
           whiteSpace: 'nowrap',
           minWidth: 0,
         }}
-        title={label}
+        title={locked ? `${label} (locked)` : label}
       >
-        <TagLabel tag={label} />
+        <TagLabel tag={label} />{locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
       </button>
-      {hover && (
+      {hover && !locked && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           title={t('oracle.deleteTag')}
@@ -1536,6 +1546,18 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         >
           ×
         </button>
+      )}
+      {menu && (
+        <TagContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            locked
+              ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
+              : { label: 'Lock tag', onClick: () => lock(label) },
+          ]}
+        />
       )}
     </div>
   );
@@ -1736,11 +1758,13 @@ function SessionTagSelector({ tags, autoTags = [], allTags, suggestedTags = [], 
     fontStyle: 'italic',
   };
 
-  // Auto-applied (LLM) tags already on the session: dashed border, no italic.
+  // Auto-applied (LLM) tags already on the session: filled like manual tags so
+  // it's obvious they've been added; dashed border keeps the LLM-origin hint.
   const pillAuto = {
-    border: '1px dashed var(--border)',
-    background: 'transparent',
-    color: 'var(--muted)',
+    border: '1px dashed var(--strong)',
+    background: 'var(--strong)',
+    color: 'var(--white)',
+    fontWeight: '600',
   };
 
   const sortedManual = [...tags].sort();

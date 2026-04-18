@@ -17,6 +17,10 @@ export default {
   'common.edit': 'Edit',
   'common.delete': 'Delete',
   'common.close': 'Close',
+  'findBar.find': 'Find',
+  'findBar.noMatches': 'No matches',
+  'findBar.previous': 'Previous',
+  'findBar.next': 'Next',
   'common.continue': 'Continue',
   'common.add': 'Add',
   'common.adding': 'Adding\u2026',
@@ -181,8 +185,37 @@ export default {
   'terms.thirdPartyTitle': 'Third-Party Services',
   'terms.thirdPartyBody': 'Liminal integrates with third-party services including but not limited to Ollama, Anthropic Claude, OpenAI, and Notion. These services are governed by their own terms of service and privacy policies. The creators of Liminal are not responsible for the availability, accuracy, or conduct of any third-party service, and your use of such services is entirely at your own risk.',
 
+  'uploadRights.helper': 'Only upload material you have the rights to use. You\u2019re responsible for copyright and likeness \u2014 see Terms.',
+  'uploadRights.confirmTitle': 'Confirm you have the rights to this content',
+  'uploadRights.confirmBody': 'By uploading, you confirm that you created this content yourself, own the rights to it, or have clear and informed permission from the rightsholder. Uploading voices or likenesses of real people without consent may be unlawful in your jurisdiction. You are solely responsible for the content you upload and any output it produces.',
+  'uploadRights.confirmAccept': 'I have the rights to this content',
+  'uploadRights.confirmCancel': 'Cancel',
+
+  'terms.userUploadsTitle': 'Your Uploads & Licence',
+  'terms.userUploadsBody1': 'Liminal lets you upload avatar images for custom archetypes and voice samples used by the local Chatterbox text-to-speech model for voice cloning. These files are stored locally on your device; the creators of Liminal do not receive, host, train on, or retain your uploads.',
+  'terms.userUploadsBody2': 'By uploading content, you warrant that you either created it yourself, own the rights to it, or have clear and informed permission from the person or rightsholder who does. You retain ownership; you grant the application only the local, technical licence necessary to store, process, and play back the content on your device.',
+
+  'terms.likenessTitle': 'Copyright, Likeness & Publicity Rights',
+  'terms.likenessBody1': 'You are solely responsible for any copyright, trademark, likeness, or right-of-publicity issues arising from what you upload or generate. If you upload a photograph of a person, or clone a person\u2019s voice, you warrant that you have that person\u2019s informed consent, or that you are that person. Deceased public figures, celebrities, and strangers are not exceptions.',
+  'terms.likenessBody2': 'Generating speech that imitates a real person\u2019s voice without their consent may infringe rights under Australian passing-off and consumer-protection law, United States state right-of-publicity statutes (including the Tennessee ELVIS Act 2024 and similar laws in California, New York, and elsewhere), and comparable laws in other jurisdictions. Any such infringement is your responsibility, not the creators\u2019.',
+
+  'terms.prohibitedUsesTitle': 'Prohibited Uses',
+  'terms.prohibitedUsesBody1': 'You agree not to use Liminal \u2014 and in particular the avatar, custom archetype, and voice-cloning features \u2014 to:',
+  'terms.prohibitedUsesBody2': '\u2022 Impersonate a real person without their explicit, informed consent.\n\u2022 Create deceptive deepfakes, fraudulent audio, or any content designed to mislead others about who is speaking or pictured.\n\u2022 Clone voices or likenesses for scams, social engineering, harassment, defamation, or any unlawful purpose.\n\u2022 Generate sexual content involving minors (CSAM), or any sexual or intimate imagery or audio of a real person without their explicit, informed consent.\n\u2022 Produce content that harasses, defames, threatens, or incites violence against an identifiable person.',
+  'terms.prohibitedUsesBody3': 'These rules apply even though the application runs locally on your device. Violating them voids your licence to use Liminal and may expose you to civil and criminal liability in your jurisdiction, including under the Australian Online Safety Act 2021, the Criminal Code Act 1995 (Cth), and equivalent laws elsewhere.',
+
+  'terms.voiceCloneDisclaimerTitle': 'Voice Cloning Disclaimer',
+  'terms.voiceCloneDisclaimerBody1': 'Voice cloning is an experimental feature. Cloned voices can sound uncanny, drift in tone, mispronounce words, add audio artefacts, or produce output that feels unsettling or out of character. Generated audio is not a recording of the source speaker and must never be presented, shared, or distributed as one.',
+  'terms.voiceCloneDisclaimerBody2': 'Once you generate, export, or share an output, you are fully responsible for how it is used and how it lands with others. The creators of Liminal make no representation that generated audio is suitable for any particular use, including for public performance, commercial exploitation, or as a substitute for the original speaker.',
+
+  'terms.refuseServiceTitle': 'Refusal & Termination',
+  'terms.refuseServiceBody': 'The creators of Liminal reserve the right to refuse service, decline to provide updates, or terminate your licence to use the application at any time, with or without notice, if they reasonably believe you have violated these Terms or used the application unlawfully. Termination does not entitle you to a refund and does not limit any other remedy available at law.',
+
+  'terms.reportAbuseTitle': 'Reporting Abuse',
+  'terms.reportAbuseBody': 'If you believe another person has used Liminal to infringe your copyright, impersonate you, clone your voice without consent, or otherwise violate your rights, please contact savva@savvatsekmes.com with a description of the content, the rights you believe have been infringed, and how to identify the content at issue. The creators of Liminal will review reports in good faith and may, where appropriate, terminate the licence of users who violate these Terms.',
+
   'terms.indemnificationTitle': 'Indemnification',
-  'terms.indemnificationBody': 'You agree to indemnify, defend, and hold harmless the creators of Liminal from and against any claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of: (a) your violation of these Terms; (b) your unlawful or wilfully negligent use of the application; or (c) your infringement of any third party\u2019s rights. This indemnification does not apply to the extent that a claim arises from the creators\u2019 own negligence, wilful misconduct, or breach of these Terms.',
+  'terms.indemnificationBody': 'You agree to indemnify, defend, and hold harmless the creators of Liminal from and against any claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of: (a) your violation of these Terms; (b) your unlawful or wilfully negligent use of the application; (c) your infringement of any third party\u2019s copyright, trademark, likeness, privacy, or right of publicity, including through any image you upload, any voice you clone, or any output you generate, export, or share; or (d) your infringement of any other third party\u2019s rights. This indemnification does not apply to the extent that a claim arises from the creators\u2019 own negligence, wilful misconduct, or breach of these Terms.',
 
   'terms.disputeTitle': 'Dispute Resolution',
   'terms.disputeBody1': 'Any dispute arising out of or relating to these terms or your use of Liminal shall first be attempted to be resolved through good-faith negotiation by contacting savva@savvatsekmes.com. If the dispute cannot be resolved informally within thirty (30) days, it shall be submitted to mediation before litigation.',
@@ -534,7 +567,7 @@ export default {
   // ── Settings ──
   'settings.title': 'Settings',
   'settings.tabLLM': 'Language Model',
-  'settings.tabVoice': 'Voice',
+  'settings.tabVoice': 'Voice Model',
   'settings.tabAccount': 'Account',
   'settings.tabImport': 'Import',
   'settings.tabData': 'Data',
@@ -633,7 +666,7 @@ export default {
   'settings.chatterboxOffline': 'Chatterbox server offline \u2014 start it to enable voice',
   'settings.chatterboxNotReachable': 'Chatterbox not reachable',
   'settings.serverUrl': 'Server URL',
-  'settings.voice': 'Voice',
+  'settings.voice': 'Voice Model',
   'settings.uploadVoice': '+ Upload',
   'settings.deleteVoice': 'Delete selected voice',
   'settings.noVoicesFound': 'No voices found',
@@ -641,7 +674,7 @@ export default {
   'settings.voicesFolderPath': 'Voices folder path',
   'settings.voicesFolderHint': 'Where Chatterbox looks for voice files. Leave blank to use Liminal\u2019s built-in folder.',
   'settings.emotionExpression': 'Emotion / Expression',
-  'settings.testVoice': '\u25b6 Test voice',
+  'settings.testVoice': 'Test voice',
   'settings.speaking': 'Speaking\u2026',
   'settings.testVoiceHint': 'Speaks "Liminal is listening." with current settings',
   'settings.webspeechDesc': 'Using the browser\u2019s built-in speech synthesis. No setup required, but voice quality varies by browser and OS.',

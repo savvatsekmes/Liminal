@@ -46,6 +46,14 @@ contextBridge.exposeInMainWorld('liminal', {
     return () => ipcRenderer.removeListener('liminal:backup-starting', handler);
   },
 
+  // ── Clipboard ──────────────────────────────────────────────────────────────
+  clipboardWrite(payload) {
+    return ipcRenderer.invoke('liminal:clipboard-write', payload);
+  },
+  clipboardRead() {
+    return ipcRenderer.invoke('liminal:clipboard-read');
+  },
+
   // ── Open on startup ────────────────────────────────────────────────────────
   getLoginItem() {
     return ipcRenderer.invoke('liminal:get-login-item');

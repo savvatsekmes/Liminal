@@ -145,6 +145,15 @@ function startControlServer() {
       }
       return;
     }
+    if (req.url === '/relaunch' && req.method === 'POST') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 300);
+      return;
+    }
     res.writeHead(404);
     res.end();
   });
@@ -606,6 +615,32 @@ function killChild(child) {
     }
   } catch {}
 }
+
+// ── Clipboard ───────────────────────────────────────────────────────────────
+// Native clipboard access for the right-click menu. Going through Electron's
+// main-process clipboard avoids the renderer-side focus/selection quirks that
+// break document.execCommand('copy') when the menu is open.
+ipcMain.handle('liminal:clipboard-write', (_e, payload) => {
+  try {
+    const { clipboard } = require('electron');
+    const data = {};
+    if (payload?.text) data.text = payload.text;
+    if (payload?.html) data.html = payload.html;
+    if (Object.keys(data).length) clipboard.write(data);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('liminal:clipboard-read', () => {
+  try {
+    const { clipboard } = require('electron');
+    return { text: clipboard.readText() || '', html: clipboard.readHTML() || '' };
+  } catch (err) {
+    return { text: '', html: '', error: err.message };
+  }
+});
 
 // ── Open on startup ─────────────────────────────────────────────────────────
 

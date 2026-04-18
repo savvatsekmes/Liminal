@@ -134,20 +134,37 @@ router.get('/insight', async (req, res) => {
 });
 
 // ── GET /api/home/themes — recurring tags from last 30 days ─────────────────
+// Match entries by whichever date is most meaningful: the user's own `date`
+// field if set, otherwise `created_at`. This matters for imported entries
+// where `created_at` is the import time but `date` is the original Notion
+// date (or vice versa).
+//
+// Counts both manual `tags` and LLM-applied `auto_tags` so suggestions the
+// user has accepted also surface as recurring themes.
 router.get('/themes', (req, res) => {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+  const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
   const entries = db.prepare(
-    'SELECT tags FROM entries WHERE user_id = ? AND created_at >= ?'
-  ).all(req.userId, thirtyDaysAgo);
+    `SELECT tags, auto_tags FROM entries
+       WHERE user_id = ?
+         AND COALESCE(date, date(created_at)) >= ?`
+  ).all(req.userId, cutoff);
 
   const tagCounts = {};
   entries.forEach(e => {
-    let tags = [];
-    try { tags = JSON.parse(e.tags || '[]'); } catch {}
-    tags.forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
+    const bucket = new Set();
+    for (const col of [e.tags, e.auto_tags]) {
+      let tags = [];
+      try { tags = JSON.parse(col || '[]'); } catch {}
+      tags.forEach(t => bucket.add(t));
+    }
+    // Dedupe within a single entry so manual+auto copies of the same tag
+    // aren't double-counted.
+    bucket.forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
   });
 
+  // A tag has to appear in at least 2 entries to be a "recurring" theme.
   const sorted = Object.entries(tagCounts)
+    .filter(([, count]) => count >= 2)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 11)
     .map(([tag, count]) => ({ tag, count }));

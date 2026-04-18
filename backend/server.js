@@ -50,6 +50,7 @@ app.use('/api/version',  require('./routes/version'));
 app.use('/api/tags',     require('./routes/tags'));
 app.use('/api/search',   require('./routes/search'));
 app.use('/api/media',    require('./routes/media'));
+app.use('/api/debuglog', require('./routes/debuglog'));
 
 // ── Production: serve built frontend SPA from same origin (no CORS needed) ──
 // Electron main process sets LIMINAL_FRONTEND_DIST to the absolute path of

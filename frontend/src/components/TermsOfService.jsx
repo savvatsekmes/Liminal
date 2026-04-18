@@ -191,6 +191,47 @@ export default function TermsOfService({ onBack }) {
             <p style={s.paragraph}>{t('terms.thirdPartyBody')}</p>
           </div>
 
+          {/* Your Uploads & Licence */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.userUploadsTitle')}</div>
+            <p style={s.paragraph}>{t('terms.userUploadsBody1')}</p>
+            <p style={s.paragraph}>{t('terms.userUploadsBody2')}</p>
+          </div>
+
+          {/* Copyright, Likeness & Publicity */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.likenessTitle')}</div>
+            <p style={s.paragraph}>{t('terms.likenessBody1')}</p>
+            <p style={s.paragraph}>{t('terms.likenessBody2')}</p>
+          </div>
+
+          {/* Prohibited Uses */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.prohibitedUsesTitle')}</div>
+            <p style={s.paragraph}>{t('terms.prohibitedUsesBody1')}</p>
+            <p style={{ ...s.paragraph, whiteSpace: 'pre-line' }}>{t('terms.prohibitedUsesBody2')}</p>
+            <p style={s.paragraph}>{t('terms.prohibitedUsesBody3')}</p>
+          </div>
+
+          {/* Voice Cloning Disclaimer */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.voiceCloneDisclaimerTitle')}</div>
+            <p style={s.paragraph}>{t('terms.voiceCloneDisclaimerBody1')}</p>
+            <p style={s.paragraph}>{t('terms.voiceCloneDisclaimerBody2')}</p>
+          </div>
+
+          {/* Refusal & Termination */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.refuseServiceTitle')}</div>
+            <p style={s.paragraph}>{t('terms.refuseServiceBody')}</p>
+          </div>
+
+          {/* Reporting Abuse */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.reportAbuseTitle')}</div>
+            <p style={s.paragraph}>{t('terms.reportAbuseBody')}</p>
+          </div>
+
           {/* Indemnification */}
           <div style={s.section}>
             <div style={s.sectionTitle}>{t('terms.indemnificationTitle')}</div>

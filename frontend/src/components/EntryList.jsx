@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 import Calendar from './Calendar';
+import TagContextMenu from './TagContextMenu';
+import { useLockedTags } from '../hooks/useLockedTags';
+import { useListArrowNav } from '../hooks/useListArrowNav';
 
 const ALL_TAG = '__all__';
 
@@ -149,6 +152,7 @@ const s = {
     borderRadius: '10px',
     margin: '1px 6px',
     transition: 'background 0.1s',
+    outline: 'none',
   },
   itemActive: {
     background: 'var(--panel-bg)',
@@ -254,6 +258,8 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
         (e.body_text || '').toLowerCase().includes(search.toLowerCase())
     );
   }
+
+  useListArrowNav(filtered, (e) => e.id, activeId, onSelect);
 
   return (
     <div style={s.root}>
@@ -452,6 +458,10 @@ function TagPill({ label, active, onClick }) {
 
 function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const [hover, setHover] = useState(false);
+  const [menu, setMenu] = useState(null);
+  const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
+  const locked = isLocked(label);
+  const always = isAlwaysLocked(label);
   // Auto (LLM-applied) tags get a dashed border + italic so they read as
   // distinct from user-typed manual tags at a glance.
   const borderStyle = auto
@@ -472,6 +482,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }); }}
     >
       <button
         onClick={onClick}
@@ -493,13 +504,14 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
           whiteSpace: 'nowrap',
           minWidth: 0,
         }}
-        title={label}
+        title={locked ? `${label} (locked)` : label}
       >
         {IMG_EMOJI[label.toLowerCase()]
           ? <><img src={IMG_EMOJI[label.toLowerCase()]} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {label}</>
           : tagLabel(label)}
+        {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
       </button>
-      {hover && (
+      {hover && !locked && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           title="Delete tag"
@@ -516,6 +528,18 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         >
           ×
         </button>
+      )}
+      {menu && (
+        <TagContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            locked
+              ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
+              : { label: 'Lock tag', onClick: () => lock(label) },
+          ]}
+        />
       )}
     </div>
   );

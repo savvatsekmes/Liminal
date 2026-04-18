@@ -68,7 +68,7 @@ export function useNotes() {
     setActiveFilters([]);
   }
 
-  async function createNote(type = 'none', customTag = null, tags = []) {
+  async function createNote(type = 'idea', customTag = null, tags = []) {
     const body = {
       type,
       body: '',
@@ -138,12 +138,12 @@ export function useNotes() {
     await apiFetch(`${API}/custom-tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
     setAllNotes((prev) => prev.map((n) =>
       n.type === 'custom' && n.custom_tag === tag
-        ? { ...n, type: 'none', custom_tag: null }
+        ? { ...n, type: 'idea', custom_tag: null }
         : n
     ));
     setActiveNote((prev) =>
       prev?.type === 'custom' && prev?.custom_tag === tag
-        ? { ...prev, type: 'none', custom_tag: null }
+        ? { ...prev, type: 'idea', custom_tag: null }
         : prev
     );
     setCustomTags((prev) => prev.filter((t) => t !== tag));

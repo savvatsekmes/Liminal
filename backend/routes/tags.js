@@ -1,9 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const llm = require('../services/llmService');
+const db = require('../database');
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
+
+// ── Locked tags ─────────────────────────────────────────────────────────────
+// A locked tag has its × delete control hidden wherever it appears. Scope is
+// per-user and global: lock "breakthrough" once and any pill for that tag
+// (journal, notes, oracle) renders without the remove control.
+
+router.get('/locked', (req, res) => {
+  const rows = db.prepare('SELECT tag FROM locked_tags WHERE user_id = ?').all(req.userId);
+  res.json({ tags: rows.map(r => r.tag) });
+});
+
+router.post('/locked', (req, res) => {
+  const raw = String(req.body?.tag || '').trim().toLowerCase();
+  if (!raw) return res.status(400).json({ error: 'tag required' });
+  db.prepare('INSERT OR IGNORE INTO locked_tags (user_id, tag) VALUES (?, ?)').run(req.userId, raw);
+  res.json({ ok: true, tag: raw });
+});
+
+router.delete('/locked/:tag', (req, res) => {
+  const raw = String(req.params.tag || '').trim().toLowerCase();
+  db.prepare('DELETE FROM locked_tags WHERE user_id = ? AND tag = ?').run(req.userId, raw);
+  res.json({ ok: true });
+});
 
 // Same baseline categories as reflect.js autoTag — keeps the live-suggested
 // pills consistent with the post-reflect tags so users don't see two different

@@ -308,7 +308,7 @@ if (previewVersion) {
       </div>
 
       {/* Body */}
-      <div style={s.body} ref={bodyRef}>
+      <div style={s.body} ref={bodyRef} data-find-scope="1">
         {loading && <LoadingState />}
         {!loading && error && <div style={s.error}>{error}</div>}
         {!loading && !error && blocks.length === 0 && <EmptyState />}
@@ -386,7 +386,7 @@ if (previewVersion) {
               onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
-              <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+              <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
               <span style={{ marginLeft: '8px' }}>{c.name}</span>
             </button>
           ))}
@@ -463,7 +463,7 @@ if (previewVersion) {
             const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === selectedArchetype);
             const custom = mirrorCustomArchetypes.find(a => a.name === selectedArchetype);
             if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={selectedArchetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
-            if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+            if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={20} color={custom.color || 'var(--strong)'} />;
             return <ArchetypeIcon />;
           })()}
         </button>

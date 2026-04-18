@@ -123,12 +123,50 @@ async function synthesizeMemory(userId = 1) {
     return cached.summary;
   }
 
-  const items = getMemories(userId, 50);
+  // Enrich each memory with its source entry's tags so we can mark "core"
+  // memories — currently: pinned OR sourced from a breakthrough-tagged entry.
+  // Core memories keep full influence regardless of age; everything else
+  // decays so the user's current life isn't drowned out by years-old context.
+  const items = db.prepare(`
+    SELECT m.id, m.content, m.pinned, m.is_core, m.created_at, m.source_entry_id,
+           e.tags AS entry_tags,
+           COALESCE(e.date, e.created_at, m.created_at) AS effective_date
+      FROM memories m
+      LEFT JOIN entries e ON e.id = m.source_entry_id
+     WHERE m.user_id = ?
+     ORDER BY m.is_core DESC, m.pinned DESC,
+              COALESCE(e.date, e.created_at, m.created_at) DESC
+     LIMIT 50
+  `).all(userId);
   if (!items.length) return '';
 
-  const itemList = items.map((m) => {
-    const pin = m.pinned ? ' [pinned]' : '';
-    return `- ${m.content}${pin}`;
+  const now = Date.now();
+  const enriched = items.map((m) => {
+    let tags = [];
+    try { tags = JSON.parse(m.entry_tags || '[]'); } catch {}
+    const fromBreakthrough = tags.includes('breakthrough');
+    const isCore = !!m.is_core || !!m.pinned || fromBreakthrough;
+    // Use the source entry's date when available so memories inherit the age
+    // of the moment they describe, not the moment extraction ran.
+    const ref = m.effective_date || m.created_at;
+    const ageMs = ref ? now - new Date(String(ref).replace(' ', 'T') + 'Z').getTime() : 0;
+    const ageDays = Math.max(0, Math.round(ageMs / 86400000));
+    return { ...m, isCore, fromBreakthrough, ageDays };
+  });
+
+  function ageLabel(days) {
+    if (days < 14) return 'recent';
+    if (days < 60) return `${Math.round(days / 7)}w ago`;
+    if (days < 365) return `${Math.round(days / 30)}mo ago`;
+    return `${(days / 365).toFixed(1)}y ago`;
+  }
+
+  const itemList = enriched.map((m) => {
+    const markers = [];
+    if (m.pinned) markers.push('pinned');
+    if (m.fromBreakthrough) markers.push('breakthrough');
+    if (m.isCore) markers.push('core'); else markers.push(ageLabel(m.ageDays));
+    return `- ${m.content}  [${markers.join(', ')}]`;
   }).join('\n');
 
   const systemPrompt = `You are a memory synthesizer for a personal journaling app called Liminal.
@@ -136,10 +174,16 @@ Below is a list of discrete facts about a person. Synthesize them into a concise
 
 This narrative is injected into every AI reflection so the Mirror always knows the person's full story.
 
+Each memory is annotated in square brackets with its weight:
+- [pinned] — user-curated, highest importance
+- [core] / [breakthrough] — moments of genuine transformation, always central
+- [recent] / [Nw ago] / [Nmo ago] / [Ny ago] — age of the memory
+
 Rules:
 - Write in third person ("The user is...", "They...")
 - Group related facts naturally — don't just list them
-- Prioritise pinned items (user-curated, high importance)
+- Weight memories by their annotation: pinned and core memories are load-bearing; recent memories describe the person's current life; older non-core memories are background that should only appear if they still matter
+- If an old non-core memory contradicts a more recent one, trust the recent one — people change
 - Be factual, warm, and specific
 - Capture the person's full picture: identity, relationships, patterns, growth edges
 - Keep under 800 tokens
@@ -841,10 +885,6 @@ AVOID: clinical or analytical language. No "ego", "process", "trauma response". 
   'Direct Friend': `Voice: the friend who loves them enough to tell them the truth at a kitchen table.
 USE: real, plain, modern English. Name what you actually see, including the part they are flinching from. Funny when it helps. One sharp question or one honest observation, then stop talking.
 AVOID: ALL spiritual or therapeutic vocabulary — no "energy", "shadow", "presence", "process", "wisdom traditions", "felt sense", "wu wei", "the Beloved". Never sound like a teacher, monk, or therapist. Never preach. No metaphors about water or rivers or candles. Sound like a person, not a tradition.`,
-
-  'Alan Watts': `Voice: Alan Watts — playful, mischievous, English-inflected, bridging Zen and Vedanta with Western psychology.
-USE: paradox delivered with a wink — "you are the universe experiencing itself", "the menu is not the meal", "trying to define yourself is like trying to bite your own teeth". Laugh gently at the seriousness with which the ego defends itself. Slightly meandering, conversational sentences. Often start with "You see…" or "The funny thing is…".
-AVOID: solemnity. Therapeutic earnestness. The Stoic's clipped tone. Sufi devotional warmth. Never sound like you're delivering a sermon.`,
 };
 
 function getArchetypeVoice(archetype) {

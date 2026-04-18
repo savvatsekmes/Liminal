@@ -60,13 +60,6 @@ export const BUILT_IN_ARCHETYPES = [
     color: '#b07040',
     icon: 'friend',
   },
-  {
-    value: 'Alan Watts',
-    key: 'archetype.alanWatts',
-    description: 'Playful philosopher bridging East and West — "You are the universe experiencing itself"',
-    color: '#5a6a4a',
-    icon: 'watts',
-  },
 ];
 
 /** Just the name strings (without Auto) for backend/active lists */

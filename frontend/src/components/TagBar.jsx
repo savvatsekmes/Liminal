@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
+import TagContextMenu from './TagContextMenu';
+import { useLockedTags } from '../hooks/useLockedTags';
 
 function TagLabel({ tag }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
@@ -45,6 +47,8 @@ export default function TagBar({ tags = [], onTagsChange }) {
   const { t } = useLanguage();
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState('');
+  const [menu, setMenu] = useState(null); // { x, y, tag }
+  const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
 
   function removeTag(tag) {
     onTagsChange(tags.filter((t) => t !== tag));
@@ -68,18 +72,45 @@ export default function TagBar({ tags = [], onTagsChange }) {
     <div style={s.root}>
       <span style={s.label}>{t('tags.label')}</span>
 
-      {tags.map((tag) => (
-        <span key={tag} className="tag">
-          <TagLabel tag={tag} />
-          <button
-            className="tag-remove"
-            onClick={() => removeTag(tag)}
-            aria-label={`Remove tag ${tag}`}
+      {tags.map((tag) => {
+        const locked = isLocked(tag);
+        return (
+          <span
+            key={tag}
+            className="tag"
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, tag }); }}
           >
-            ×
-          </button>
-        </span>
-      ))}
+            <TagLabel tag={tag} />
+            {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
+            {!locked && (
+              <button
+                className="tag-remove"
+                onClick={() => removeTag(tag)}
+                aria-label={`Remove tag ${tag}`}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        );
+      })}
+
+      {menu && (() => {
+        const locked = isLocked(menu.tag);
+        const always = isAlwaysLocked(menu.tag);
+        return (
+          <TagContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              locked
+                ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(menu.tag) }
+                : { label: 'Lock tag', onClick: () => lock(menu.tag) },
+            ]}
+          />
+        );
+      })()}
 
       {adding ? (
         <input

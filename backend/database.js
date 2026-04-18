@@ -50,7 +50,7 @@ db.exec(`
     slider_light_deep           INTEGER DEFAULT 50,
     slider_conversational_poetic INTEGER DEFAULT 50,
     slider_encouraging_challenging INTEGER DEFAULT 50,
-    archetypes   TEXT NOT NULL DEFAULT '["Zen","Jungian","Stoic","Somatic","Taoist","Direct Friend","Alan Watts"]',
+    archetypes   TEXT NOT NULL DEFAULT '["Zen","Jungian","Stoic","Somatic","Taoist","Direct Friend"]',
     active_archetypes TEXT NOT NULL DEFAULT '["Zen","Jungian","Stoic","Direct Friend"]',
     custom_archetypes TEXT NOT NULL DEFAULT '[]',
     language     TEXT DEFAULT 'en',
@@ -141,6 +141,13 @@ db.exec(`
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS locked_tags (
+    user_id    INTEGER NOT NULL DEFAULT 1,
+    tag        TEXT    NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, tag)
+  );
 `);
 
 // Add new columns if they don't exist yet (migration for existing databases)
@@ -179,10 +186,15 @@ addColumnSafe('users', 'terms_accepted_at', 'DATETIME');
 // Mark pre-existing users as onboarded
 db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete = 0 AND last_login IS NOT NULL').run();
 
+addColumnSafe('memories',        'is_core', 'INTEGER NOT NULL DEFAULT 0');
 addColumnSafe('entries',         'user_id', 'INTEGER DEFAULT 1');
+addColumnSafe('entries',         'locked',  'INTEGER DEFAULT 0');
 addColumnSafe('notes',           'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('notes',           'title', "TEXT DEFAULT ''");
 addColumnSafe('notes',           'tags', "TEXT NOT NULL DEFAULT '[]'");
+addColumnSafe('notes',           'locked',  'INTEGER DEFAULT 0');
+// Retire the legacy 'none' note type — all such notes migrate to 'idea'.
+try { db.prepare("UPDATE notes SET type = 'idea' WHERE type = 'none'").run(); } catch {}
 addColumnSafe('life_context',    'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('oracle_sessions', 'tag',     'TEXT');
 addColumnSafe('oracle_sessions', 'tags',    "TEXT NOT NULL DEFAULT '[]'");

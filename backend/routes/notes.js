@@ -52,10 +52,10 @@ router.get('/custom-tags', (req, res) => {
 });
 
 // ── DELETE /api/notes/custom-tags/:tag ────────────────────────────────────────
-// Converts notes in a custom tag category to type 'none' rather than deleting them
+// Converts notes in a custom tag category to type 'idea' rather than deleting them
 router.delete('/custom-tags/:tag', (req, res) => {
   db.prepare(
-    "UPDATE notes SET type = 'none', custom_tag = NULL WHERE type = 'custom' AND custom_tag = ? AND user_id = ?"
+    "UPDATE notes SET type = 'idea', custom_tag = NULL WHERE type = 'custom' AND custom_tag = ? AND user_id = ?"
   ).run(req.params.tag, req.userId);
   res.json({ success: true });
 });
@@ -80,7 +80,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Note not found' });
 
 
-  const { type, body, attribution, target_date, custom_tag, tags, auto_tags } = req.body;
+  const { type, body, attribution, target_date, custom_tag, tags, auto_tags, locked } = req.body;
   const fields = [];
   const params = [];
 
@@ -90,6 +90,7 @@ router.put('/:id', (req, res) => {
   if (target_date !== undefined) { fields.push('target_date = ?'); params.push(target_date || null); }
   if (custom_tag !== undefined)  { fields.push('custom_tag = ?');  params.push(custom_tag || null); }
   if (req.body.title !== undefined) { fields.push('title = ?');    params.push(req.body.title); }
+  if (locked !== undefined)      { fields.push('locked = ?');      params.push(locked ? 1 : 0); }
 
   // Tag updates: merge with existing values for the field that wasn't passed,
   // then normalise so manual `tags` always shadows `auto_tags`.
@@ -129,6 +130,15 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/snapshot', (req, res) => {
   const existing = db.prepare('SELECT * FROM notes WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!existing?.body) return res.json({ skipped: true });
+
+  // Skip if the latest version already has identical content — avoids
+  // duplicate snapshots when autosave fires with no real change.
+  const latest = db.prepare(
+    'SELECT body FROM note_versions WHERE note_id = ? ORDER BY saved_at DESC LIMIT 1'
+  ).get(req.params.id);
+  if (latest && latest.body === existing.body) {
+    return res.json({ skipped: true });
+  }
 
   db.prepare(
     'INSERT INTO note_versions (note_id, user_id, body) VALUES (?, ?, ?)'

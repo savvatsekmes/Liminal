@@ -7,6 +7,7 @@ import MirrorPanel from './components/MirrorPanel';
 import PasswordGate from './components/PasswordGate';
 import Onboarding from './components/Onboarding';
 import SelectionMenu from './components/SelectionMenu';
+import FindBar from './components/FindBar';
 import HomePage from './pages/HomePage';
 import PortraitPage from './pages/PortraitPage';
 import NotesPage from './pages/NotesPage';
@@ -58,6 +59,32 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   const [pendingNoteId, setPendingNoteId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
   const [pendingPortraitTab, setPendingPortraitTab] = useState(null);
+  const [findBarOpen, setFindBarOpen] = useState(false);
+
+  // Ctrl/Cmd+F opens the find-on-page bar while viewing a journal entry or a
+  // note. Scoped to those views because the list-style pages (home, entries
+  // list, oracle, etc.) don't have enough prose content for find to be useful.
+  useEffect(() => {
+    const isFindView = activeView === 'journal' || activeView === 'notes';
+    function onKeyDown(e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        if (!isFindView) return;
+        e.preventDefault();
+        setFindBarOpen(true);
+      }
+    }
+    // Capture phase so the handler fires before ProseMirror (or any other
+    // editor) can swallow the keystroke.
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [activeView]);
+
+  // Auto-close the find bar when switching away from journal/notes.
+  useEffect(() => {
+    if (activeView !== 'journal' && activeView !== 'notes' && findBarOpen) {
+      setFindBarOpen(false);
+    }
+  }, [activeView, findBarOpen]);
 
   const {
     entries,
@@ -241,7 +268,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
           );
           if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
           if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
-          if (activeView === 'memory') return <MemoryPage />;
+          if (activeView === 'memory') return <MemoryPage onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }} />;
           if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} onNavigate={handleViewChange} />;
 
           return (
@@ -285,6 +312,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
       }}
     </Layout>
     <SelectionMenu />
+    {findBarOpen && <FindBar onClose={() => setFindBarOpen(false)} />}
     </>
   );
 }

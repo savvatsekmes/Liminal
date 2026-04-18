@@ -18,6 +18,7 @@ import History from '@tiptap/extension-history';
 import Gapcursor from '@tiptap/extension-gapcursor';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useNotes } from '../hooks/useNotes';
+import { useListArrowNav } from '../hooks/useListArrowNav';
 import { useDictation } from '../hooks/useDictation';
 import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
@@ -47,6 +48,8 @@ import Calendar from '../components/Calendar';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import ResizeDivider from '../components/ResizeDivider';
+import TagContextMenu from '../components/TagContextMenu';
+import { useLockedTags } from '../hooks/useLockedTags';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 
@@ -58,7 +61,6 @@ const BUILT_IN_TYPES = [
   { type: 'reflection', labelKey: 'notes.typeReflection' },
   { type: 'dream',      labelKey: 'notes.typeDream' },
   { type: 'gratitude',  labelKey: 'notes.typeGratitude' },
-  { type: 'none',       labelKey: 'notes.typeNone' },
 ];
 
 // Type-specific display config
@@ -234,7 +236,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
   function handleCreateNote() {
     // New note gets current active filters as its tags
     const tags = activeFilters.length > 0 ? [...activeFilters] : [];
-    createNote('none', null, tags);
+    createNote('idea', null, tags);
   }
 
   function handleNewCustomTag(e) {
@@ -242,7 +244,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
       const tag = newTagInput.trim().toLowerCase();
       setNewTagInput('');
       setShowNewTagInput(false);
-      createNote('none', null, [tag]);
+      createNote('idea', null, [tag]);
     }
     if (e.key === 'Escape') {
       setNewTagInput('');
@@ -277,6 +279,8 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
     selectNote(note);
     setMobileView('editor');
   };
+
+  useListArrowNav(filteredNotes, (n) => n.id, activeNote?.id, selectNote);
 
   return (
     <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', minWidth: 0 }}>
@@ -706,6 +710,10 @@ function TypePill({ label, type, active, onClick }) {
 function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
+  const [menu, setMenu] = useState(null); // { x, y }
+  const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
+  const locked = isLocked(label);
+  const always = isAlwaysLocked(label);
 
   // Auto (LLM-applied) tags get a dashed border + italic so they read as
   // distinct from user-typed manual tags at a glance.
@@ -729,6 +737,11 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
     >
       <button
         onClick={onClick}
@@ -750,11 +763,11 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
           whiteSpace: 'nowrap',
           minWidth: 0,
         }}
-        title={label}
+        title={locked ? `${label} (locked)` : label}
       >
-        <TagLabel tag={label} />
+        <TagLabel tag={label} />{locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
       </button>
-      {hover && (
+      {hover && !locked && (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           title={t('notes.deleteTag')}
@@ -771,6 +784,18 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
         >
           ×
         </button>
+      )}
+      {menu && (
+        <TagContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            locked
+              ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
+              : { label: 'Lock tag', onClick: () => lock(label) },
+          ]}
+        />
       )}
     </div>
   );
@@ -906,7 +931,7 @@ function NoteListItem({ note, active, onClick, onDelete, onNavigateToChat }) {
 
 // ── TypeSelector ──────────────────────────────────────────────────────────────
 
-const BUILT_IN_NOTE_TYPES = ['idea', 'quote', 'goal', 'reflection', 'dream', 'gratitude', 'none'];
+const BUILT_IN_NOTE_TYPES = ['idea', 'quote', 'goal', 'reflection', 'dream', 'gratitude'];
 
 const TYPE_LABEL_KEYS = {
   idea: 'notes.typeIdea',
@@ -915,7 +940,6 @@ const TYPE_LABEL_KEYS = {
   reflection: 'notes.typeReflection',
   dream: 'notes.typeDream',
   gratitude: 'notes.typeGratitude',
-  none: 'notes.typeNone',
 };
 
 function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestion, onChange }) {
@@ -981,11 +1005,13 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
     fontStyle: 'italic',
   };
 
-  // Auto-applied (LLM) tags already on the note: dashed border, no italic.
+  // Auto-applied (LLM) tags already on the note: filled like manual tags so
+  // it's obvious they've been added; dashed border keeps the LLM-origin hint.
   const pillAuto = {
-    border: '1px dashed var(--border)',
-    background: 'transparent',
-    color: 'var(--muted)',
+    border: '1px dashed var(--strong)',
+    background: 'var(--strong)',
+    color: 'var(--white)',
+    fontWeight: '600',
   };
 
   // Auto tags to render inline. Hide ones that are also a built-in type or
@@ -1133,15 +1159,31 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle,
       {btn(t('cards.pullCards'), false, () => onCardPull?.(), <svg width="12" height="15" viewBox="0 0 12 15" fill="none" stroke="currentColor" strokeWidth="1"><rect x="0.5" y="0.5" width="11" height="14" rx="1.5"/><rect x="1.5" y="1.5" width="9" height="12" rx="1" strokeWidth="0.6"/><polygon points="6,3.5 8,7.5 6,11 4,7.5" fill="currentColor" stroke="none"/></svg>)}
       {btn(t('doodle.title'), false, () => onDoodle?.(), <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12L1 13L3 12L12 3L11 2L2 11Z" /><path d="M10 3L11 4" /></svg>)}
       <div style={{ flex: 1 }} />
+      {saveStatus !== 'idle' && (
+        <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
+          {saveStatus === 'saving' ? t('common.saving') : '✓ ' + t('common.saved')}
+        </span>
+      )}
       <button
-        style={{ ...btnStyle, ...(editMode ? btnActive : {}), marginRight: '2px' }}
-        title={editMode ? 'Exit edit mode' : 'Enable edit mode'}
+        style={{
+          ...btnStyle,
+          ...(editMode ? {} : { background: 'rgba(0,0,0,0.06)', color: 'var(--strong)' }),
+          marginRight: '2px',
+        }}
+        title={editMode ? 'Lock editing' : 'Enable edit mode'}
         onClick={onToggleEditMode}
         type="button"
       >
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-          <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        </svg>
+        {editMode ? (
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <rect x="3.5" y="7.5" width="9" height="6" rx="1" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M5.5 7.5V5a2.5 2.5 0 015 0v2.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+          </svg>
+        )}
       </button>
       <button
         style={{ ...btnStyle, fontSize: '14px', marginRight: '2px' }}
@@ -1151,11 +1193,6 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle,
       >
         ◷
       </button>
-      {saveStatus !== 'idle' && (
-        <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
-          {saveStatus === 'saving' ? t('common.saving') : '✓ ' + t('common.saved')}
-        </span>
-      )}
       <span style={{ fontSize: '11px', color: 'var(--muted)', flexShrink: 0, marginRight: '4px' }}>
         {t('common.words', { count: words })}
       </span>
@@ -1184,7 +1221,10 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const saveTimer = useRef(null);
   const savedTimer = useRef(null);
   const pendingSave = useRef(null); // { id, body } — flushed on unmount
-  const lastSnapshotAt = useRef(null);
+  const snapshotTimer = useRef(null);
+  // Defensive guard for the lock-edit bug: any onUpdate whose captured
+  // noteId doesn't match this ref is a stale emission and must not persist.
+  const lastLoadedNoteIdRef = useRef(null);
   const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState([]);
@@ -1196,7 +1236,10 @@ function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersi
   const [reading, setReading] = useState(false);
   const [editorText, setEditorText] = useState('');
   const isMobileEditor = useIsMobile();
-  const [editMode, setEditMode] = useState(true);
+  // Lock state is persisted per-note on the server (`notes.locked`). Derive
+  // editMode from the note so it survives reloads and each note keeps its own
+  // lock state.
+  const editMode = !note?.locked;
   const ttsAudioRef = useRef(null);
   const ttsCancelRef = useRef(false);
   const editorWrapRef = useRef(null);
@@ -1352,6 +1395,9 @@ async function handlePolish() {
     },
     onUpdate: ({ editor }) => {
       const noteId = noteRef.current.id; // capture NOW
+      // Drop emissions that fire before this editor instance has its note's
+      // body loaded — stops a stale update from clobbering the wrong note.
+      if (noteId == null || noteId !== lastLoadedNoteIdRef.current) return;
       const body = editor.getHTML();
       pendingSave.current = { id: noteId, body };
       setEditorText(editor.getText());
@@ -1364,23 +1410,43 @@ async function handlePolish() {
         pendingSave.current = null;
         setSaveStatus('saved');
         savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
-        // Snapshot at most once per minute, tied to actual saves
-        const now = Date.now();
-        if (!lastSnapshotAt.current || now - lastSnapshotAt.current >= 60_000) {
-          lastSnapshotAt.current = now;
+        // Snapshot after 5s of save-idle so each editing session ends with a
+        // version of the true final state (backend dedupes identical bodies).
+        clearTimeout(snapshotTimer.current);
+        snapshotTimer.current = setTimeout(() => {
           apiFetch(`/api/notes/${noteId}/snapshot`, { method: 'POST' }).catch(() => {});
-        }
+        }, 5000);
       }, 800);
     },
   });
 
   // Keep editorRef stable for dictation
   const editorRef = useRef(null);
-  useEffect(() => { editorRef.current = editor; }, [editor]);
+  useEffect(() => {
+    editorRef.current = editor;
+    if (editor) lastLoadedNoteIdRef.current = noteRef.current?.id ?? null;
+  }, [editor]);
+
+  // Right-click Paste routes through this event so ProseMirror actually
+  // receives the content — execCommand('insertText') is a no-op inside Tiptap.
+  useEffect(() => {
+    if (!editor) return;
+    const handler = (e) => {
+      const html = e.detail?.html;
+      const text = e.detail?.text;
+      if (!html && !text) return;
+      editor.chain().focus().insertContent(html || text).run();
+    };
+    const el = editor.view.dom;
+    el.addEventListener('liminal-paste-atom', handler);
+    return () => el.removeEventListener('liminal-paste-atom', handler);
+  }, [editor]);
 
   // Read-only by default; toggle via the pencil button in the toolbar.
+  // `false` suppresses Tiptap's update emission so flipping editable doesn't
+  // trip the debounced save with whatever body happens to be in the editor.
   useEffect(() => {
-    if (editor) editor.setEditable(editMode);
+    if (editor) editor.setEditable(editMode, false);
   }, [editor, editMode]);
 
   // Keep edit mode on when switching notes — users expect to type immediately.
@@ -1402,7 +1468,7 @@ async function handlePolish() {
         onCardPull={() => setCardModalOpen(true)}
         onDoodle={() => setDoodleModalOpen(true)}
         editMode={editMode}
-        onToggleEditMode={() => setEditMode(v => !v)}
+        onToggleEditMode={() => note?.id && onChange(note.id, { locked: editMode ? 1 : 0 })}
       />
 
       {/* Type selector row — like the TAGS bar in Journal */}
@@ -1449,7 +1515,7 @@ async function handlePolish() {
       </div>
 
       {/* Scrollable content */}
-      <div ref={editorWrapRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }}>
+      <div ref={editorWrapRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 48px 40px', position: 'relative' }} data-find-scope="1">
         <DefaultEditor note={note} editor={editor} />
         <div
           style={{ height: '240px', cursor: 'text' }}
@@ -1845,7 +1911,7 @@ const panelStyle = {
       </div>
 
       {/* Blocks */}
-      <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
+      <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }} data-find-scope="1">
         {loading && (
           <div style={{ padding: '40px 24px', textAlign: 'center' }}>
             <div style={{ fontSize: '24px', color: 'var(--muted)', letterSpacing: '4px', animation: 'pulse 1.4s ease-in-out infinite' }}>· · ·</div>
@@ -1949,7 +2015,7 @@ const panelStyle = {
               onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
-              <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+              <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
               <span style={{ marginLeft: '8px' }}>{c.name}</span>
             </button>
           ))}
@@ -2036,7 +2102,7 @@ const panelStyle = {
             const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === selectedArchetype);
             const custom = mirrorCustomArchetypes.find(a => a.name === selectedArchetype);
             if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={selectedArchetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
-            if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+            if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={20} color={custom.color || 'var(--strong)'} />;
             return <ArchetypeIcon />;
           })()}
         </button>

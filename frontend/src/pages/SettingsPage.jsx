@@ -5,6 +5,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
 import TermsOfService from '../components/TermsOfService';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { waitForChatterbox } from '../utils/ttsStatus';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABS = [
@@ -297,9 +298,13 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
+      if (!res.ok) throw new Error(`PUT /api/settings returned ${res.status}`);
       const updated = await res.json();
-      setCfg(updated);
-      window.dispatchEvent(new CustomEvent('liminal:settings-changed', { detail: updated }));
+      // Merge the patch on top of the response so the values the user just
+      // saved always win, even if a racing save response arrives out of order.
+      const merged = { ...updated, ...patch };
+      setCfg(merged);
+      window.dispatchEvent(new CustomEvent('liminal:settings-changed', { detail: merged }));
       showToast(t('common.saved'));
     } catch { showToast(t('settings.saveFailed')); }
     finally { setSaving(false); }
@@ -906,11 +911,9 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
   const [voices, setVoices] = useState([]);
   const [ttsStatus, setTtsStatus] = useState(null);
   const [testing, setTesting] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [gpus, setGpus] = useState(null);
   const audioRef = useRef(null);
-  const fileInputRef = useRef(null);
 
   useEffect(() => {
     apiFetch('/api/tts/voices').then(r => r.json()).then(setVoices).catch(() => {});
@@ -921,10 +924,24 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
   async function testTts() {
     setTesting(true);
     try {
-      const res = await apiFetch('/api/settings/test-tts', {
+      // Show the "Loading Chatterbox into VRAM…" toast if the server needs
+      // warming up. Matches the flow used by the read-aloud buttons.
+      const ready = await waitForChatterbox(60000);
+      if (!ready) {
+        showToast(t('settings.chatterboxNotReachable'));
+        return;
+      }
+      const res = await apiFetch('/api/tts/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatterbox_url: cfg.chatterbox_url, voice: cfg.chatterbox_voice }),
+        body: JSON.stringify({
+          text: 'Liminal is listening. Your voice is ready and working.',
+          provider: 'chatterbox',
+          voice: cfg.chatterbox_voice,
+          exaggeration: parseFloat(cfg.chatterbox_exaggeration ?? 0.6),
+          cfg_weight: parseFloat(cfg.chatterbox_cfg_weight ?? 0.10),
+          temperature: parseFloat(cfg.chatterbox_temperature ?? 1.3),
+        }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
@@ -939,32 +956,6 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
     } finally {
       setTesting(false);
     }
-  }
-
-  async function uploadVoice(file) {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.append('voice', file);
-      const res = await apiFetch('/api/tts/voices', { method: 'POST', body: form });
-      const data = await res.json();
-      if (data.success) {
-        showToast(t('settings.voiceUploaded', { name: data.filename }));
-        const updated = await apiFetch('/api/tts/voices').then(r => r.json());
-        setVoices(updated);
-        save({ chatterbox_voice: data.filename });
-      }
-    } catch { showToast(t('settings.uploadFailed')); }
-    finally { setUploading(false); }
-  }
-
-  async function deleteVoice(filename, e) {
-    e.stopPropagation();
-    await apiFetch(`/api/tts/voices/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-    setVoices(prev => prev.filter(v => v.filename !== filename));
-    if (cfg.chatterbox_voice === filename) save({ chatterbox_voice: '' });
-    showToast(t('settings.voiceDeleted', { name: filename }));
   }
 
   const selectedVoice = cfg.chatterbox_voice || 'Abigail.wav';
@@ -1040,46 +1031,18 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
           )}
 
           <Field label={t('settings.voice')}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <select
-                style={{ ...s.input, flex: 1 }}
-                value={selectedVoice}
-                onChange={e => { set('chatterbox_voice', e.target.value); save({ chatterbox_voice: e.target.value }); }}
-              >
-                {voices.length === 0 && <option value="">{t('settings.noVoicesFound')}</option>}
-                {voices.map(v => (
-                  <option key={v.filename} value={v.filename}>{v.name || v.filename}</option>
-                ))}
-              </select>
-              <button
-                style={{ ...s.saveBtn, whiteSpace: 'nowrap' }}
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-              >
-                {uploading ? '…' : t('settings.uploadVoice')}
-              </button>
-              {selectedVoice && voices.find(v => v.filename === selectedVoice)?.local && (
-                <button
-                  style={{ ...s.saveBtn, background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)' }}
-                  onClick={() => deleteVoice(selectedVoice, { stopPropagation: () => {} })}
-                  title={t('settings.deleteVoice')}
-                >
-                  {t('common.delete')}
-                </button>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".wav,.mp3"
-              style={{ display: 'none' }}
-              onChange={e => e.target.files[0] && uploadVoice(e.target.files[0])}
-            />
-            <div style={{ ...s.sublabel, marginTop: '6px' }}>
-              {t('settings.voiceFileHint')}
-            </div>
+            <select
+              style={s.input}
+              value={selectedVoice}
+              onChange={e => { set('chatterbox_voice', e.target.value); save({ chatterbox_voice: e.target.value }); }}
+            >
+              {voices.length === 0 && <option value="">{t('settings.noVoicesFound')}</option>}
+              {voices.map(v => (
+                <option key={v.filename} value={v.filename}>{v.name || v.filename}</option>
+              ))}
+            </select>
             {onNavigate && (
-              <div style={{ ...s.sublabel, marginTop: '4px' }}>
+              <div style={{ ...s.sublabel, marginTop: '6px' }}>
                 Want a different voice per archetype?{' '}
                 <a
                   href="#"
@@ -1090,16 +1053,6 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
                 </a>
               </div>
             )}
-          </Field>
-
-          <Field label={t('settings.voicesFolderPath')} hint={t('settings.voicesFolderHint')}>
-            <input
-              style={s.input}
-              value={cfg.voices_path || ''}
-              onChange={e => set('voices_path', e.target.value)}
-              onBlur={() => save({ voices_path: cfg.voices_path })}
-              placeholder="C:\Chatterbox\voices  (optional)"
-            />
           </Field>
 
           <div style={s.divider} />
@@ -1372,8 +1325,6 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
         </span>
         <Btn danger onClick={onLogout}>{t('settings.logOut')}</Btn>
       </div>
-
-      <RestartButton />
 
       <div style={s.divider} />
 
@@ -1940,6 +1891,11 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
             <span style={{ fontSize: '13px', color: 'var(--body)' }}>{t('settings.openOnStartupLabel')}</span>
           </label>
         </Field>
+      </Section>
+
+      {/* Restart Liminal */}
+      <Section title={t('settings.restart')}>
+        <RestartButton />
       </Section>
 
       {/* Weather location */}

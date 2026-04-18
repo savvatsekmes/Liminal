@@ -5,6 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { BUILT_IN_ARCHETYPES, isBuiltIn } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
+import { confirmUploadRights } from '../utils/confirmUploadRights';
 
 const SLIDER_AXES = [
   { key: 'slider_rational_spiritual',      lowKey: 'context.sliderRational',       highKey: 'context.sliderSpiritual' },
@@ -79,6 +80,32 @@ const s = {
     border: 'var(--border-style)',
     borderRadius: '16px',
     background: 'var(--panel-bg)',
+  },
+  memoryItemCore: {
+    border: '1px solid #d4a843',
+    background: 'rgba(212, 168, 67, 0.08)',
+    boxShadow: '0 0 0 1px rgba(212, 168, 67, 0.25) inset',
+  },
+  coreBtn: {
+    fontSize: '14px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '0 4px',
+    lineHeight: '1',
+    flexShrink: 0,
+    fontFamily: 'var(--font)',
+    transition: 'transform 0.1s, color 0.1s',
+  },
+  coreMarker: {
+    fontSize: '10px',
+    color: '#a27c1e',
+    background: 'rgba(212, 168, 67, 0.15)',
+    border: '1px solid #d4a843',
+    borderRadius: '2px',
+    padding: '1px 5px',
+    fontFamily: 'var(--font)',
+    fontWeight: '600',
   },
   memoryContent: {
     flex: 1,
@@ -206,7 +233,7 @@ const s = {
 
 const TAB_LABELS = { style: 'context.responseStyle', archetypes: 'Archetypes', memory: 'context.memory' };
 
-export default function MemoryPage() {
+export default function MemoryPage({ onNavigateToPortrait }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [tab, setTab] = useState('style');
@@ -218,6 +245,10 @@ export default function MemoryPage() {
   const [clearPassword, setClearPassword] = useState('');
   const [clearError, setClearError] = useState('');
   const [reindexing, setReindexing] = useState(false);
+  const [memorySearch, setMemorySearch] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const [extractJob, setExtractJob] = useState({ running: false, done: 0, total: 0 });
   const [sliders, setSliders] = useState({});
   const [slidersSaved, setSlidersSaved] = useState(false);
   const [portrait, setPortrait] = useState(null);
@@ -258,7 +289,7 @@ export default function MemoryPage() {
         vals.sexual_content_enabled = p.sexual_content_enabled ?? 0;
         setSliders(vals);
         setPortrait(p);
-        setCustomArchetypes(p.custom_archetypes || []);
+        setCustomArchetypes(Array.isArray(p.custom_archetypes) ? p.custom_archetypes : []);
         setArchetypeVoices(p.archetype_voices || {});
       })
       .catch(() => {});
@@ -321,6 +352,60 @@ export default function MemoryPage() {
     finally { setAdding(false); }
   }
 
+  function startEdit(m) {
+    setEditingId(m.id);
+    setEditingText(m.content || '');
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditingText('');
+  }
+
+  async function saveEdit(id) {
+    const trimmed = editingText.trim();
+    if (!trimmed) return;
+    const prev = memories.find((m) => m.id === id);
+    if (prev && prev.content === trimmed) { cancelEdit(); return; }
+    setMemories((list) => list.map((m) => (m.id === id ? { ...m, content: trimmed } : m)));
+    setEditingId(null);
+    setEditingText('');
+    try {
+      await apiFetch(`/api/memories/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: trimmed }),
+      });
+    } catch {
+      if (prev) setMemories((list) => list.map((m) => (m.id === id ? prev : m)));
+    }
+  }
+
+  function memoryDate(m) {
+    return m.effective_date || m.created_at || '';
+  }
+
+  function sortMemories(list) {
+    return [...list].sort((a, b) => {
+      if ((b.is_core ? 1 : 0) !== (a.is_core ? 1 : 0)) return (b.is_core ? 1 : 0) - (a.is_core ? 1 : 0);
+      return memoryDate(b).localeCompare(memoryDate(a));
+    });
+  }
+
+  async function toggleCore(id, currentValue) {
+    const next = currentValue ? 0 : 1;
+    setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, is_core: next } : m))));
+    try {
+      await apiFetch(`/api/memories/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_core: next }),
+      });
+    } catch {
+      setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, is_core: currentValue } : m))));
+    }
+  }
+
   async function deleteMemory(id) {
     setMemories((prev) => prev.filter((m) => m.id !== id));
     await apiFetch(`/api/memories/${id}`, { method: 'DELETE' }).catch(() => {});
@@ -360,6 +445,52 @@ export default function MemoryPage() {
     setTimeout(() => setReindexing(false), 2000);
   }
 
+  // Kick off memory extraction across all entries and poll for progress.
+  async function extractAllMemories() {
+    try {
+      const res = await apiFetch('/api/memories/extract-all', { method: 'POST' });
+      const data = await res.json();
+      if (data.total === 0) {
+        setExtractJob({ running: false, done: 0, total: 0, note: 'All entries already processed' });
+        return;
+      }
+      setExtractJob({ running: true, done: 0, total: data.total });
+    } catch { /* polling will reflect any server-side error */ }
+  }
+
+  // Poll for extraction progress while a job is running. Reload memories when
+  // it finishes so the new items appear in the list.
+  useEffect(() => {
+    if (!extractJob.running) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await apiFetch('/api/memories/extract-status');
+        const s = await res.json();
+        if (cancelled) return;
+        setExtractJob((prev) => ({ ...prev, ...s }));
+        if (!s.running) {
+          apiFetch('/api/memories')
+            .then((r) => r.json())
+            .then((data) => !cancelled && setMemories(data))
+            .catch(() => {});
+        }
+      } catch {}
+    };
+    const handle = setInterval(tick, 2000);
+    tick();
+    return () => { cancelled = true; clearInterval(handle); };
+  }, [extractJob.running]);
+
+  // On mount, check whether a previous extraction is still running (e.g. user
+  // navigated away and back). Keeps the progress bar visible across nav.
+  useEffect(() => {
+    apiFetch('/api/memories/extract-status')
+      .then((r) => r.json())
+      .then((s) => { if (s?.running) setExtractJob(s); })
+      .catch(() => {});
+  }, []);
+
   function formatDate(iso) {
     if (!iso) return '';
     const d = new Date(iso);
@@ -389,7 +520,12 @@ export default function MemoryPage() {
 
   function handleSaveArch() {
     if (!editingArch || !editingArch.name.trim()) return;
-    const entry = { name: editingArch.name.trim(), prompt: editingArch.prompt.trim(), color: editingArch.color || '#888' };
+    const entry = {
+      name: editingArch.name.trim(),
+      prompt: editingArch.prompt.trim(),
+      color: editingArch.color || '#888',
+      image: editingArch.image || '',
+    };
     let updated;
     if (editingArch.isNew) {
       updated = [...customArchetypes, entry];
@@ -403,6 +539,42 @@ export default function MemoryPage() {
   function handleDeleteArch(name) {
     saveCustomArchetypes(customArchetypes.filter((a) => a.name !== name));
     if (archetypeVoices[name]) setArchetypeVoice(name, '');
+  }
+
+  // Read a File, center-crop to a square, resize to 128px, return a JPEG data
+  // URL. Keeps the portrait.custom_archetypes JSON blob small (~10-20KB/image).
+  function resizeImageToDataUrl(file, size = 128) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.onload = () => {
+          const srcSize = Math.min(img.width, img.height);
+          const sx = (img.width - srcSize) / 2;
+          const sy = (img.height - srcSize) / 2;
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, sx, sy, srcSize, srcSize, 0, 0, size, size);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleArchImagePick(file) {
+    if (!file || !editingArch) return;
+    const allowed = await confirmUploadRights(t);
+    if (!allowed) return;
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 128);
+      setEditingArch({ ...editingArch, image: dataUrl });
+    } catch {}
   }
 
   const pinnedCount = memories.filter((m) => m.pinned).length;
@@ -516,11 +688,9 @@ export default function MemoryPage() {
             </div>
           </div>
 
-          {/* Over 18 section */}
-          <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: '28px', marginBottom: '16px' }}>
-            Over 18
-          </div>
-
+          {/* Over 18 section — only renders when a verified DOB puts the user at 18+.
+              Otherwise we surface a compact link to Portrait so they can set their
+              birth date and unlock these response-style controls. */}
           {(() => {
             const bd = portrait?.birth_date;
             let isOver18 = false;
@@ -533,19 +703,26 @@ export default function MemoryPage() {
               if (birthDate) isOver18 = (Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000) >= 18;
             }
 
-            if (!bd) return (
-              <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
-                Set your date of birth in Portrait to unlock these settings.
-              </div>
-            );
             if (!isOver18) return (
-              <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
-                You must be 18 or older to access these settings.
+              <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginTop: '28px', marginBottom: '20px' }}>
+                Age must be 18+ for additional response controls.{' '}
+                {onNavigateToPortrait ? (
+                  <button
+                    type="button"
+                    onClick={onNavigateToPortrait}
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--body)', textDecoration: 'underline', cursor: 'pointer', fontStyle: 'italic', fontSize: 'inherit', fontFamily: 'inherit' }}
+                  >
+                    Set your birth date in Portrait →
+                  </button>
+                ) : 'Set your birth date in Portrait.'}
               </div>
             );
 
             return (
               <>
+                <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: '28px', marginBottom: '16px' }}>
+                  Over 18
+                </div>
                 <div style={{ marginBottom: '20px' }}>
                   <div style={s.sliderRow}>
                     <span style={s.sliderLabel}>None</span>
@@ -641,7 +818,7 @@ export default function MemoryPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
             {customArchetypes.map((arch) => (
               <div key={arch.name} style={s.archCard}>
-                <ArchetypeAvatar archetype={{ value: arch.name, color: arch.color }} size={36} color={arch.color} />
+                <ArchetypeAvatar archetype={{ value: arch.name, color: arch.color, image: arch.image }} size={36} color={arch.color} />
                 <div style={s.archInfo}>
                   <div style={s.archName}>{arch.name}</div>
                   <div style={s.archDesc}>{arch.prompt || 'No custom prompt'}</div>
@@ -682,6 +859,36 @@ export default function MemoryPage() {
                 {editingArch.isNew ? 'New Archetype' : `Editing: ${editingArch.originalName}`}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <ArchetypeAvatar
+                    archetype={{ value: editingArch.name || '?', color: editingArch.color, image: editingArch.image }}
+                    size={56}
+                    color={editingArch.color || '#888'}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '12px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'var(--font)', display: 'inline-block' }}>
+                      {editingArch.image ? 'Change image' : 'Upload image'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleArchImagePick(e.target.files?.[0])}
+                      />
+                    </label>
+                    {editingArch.image && (
+                      <button
+                        type="button"
+                        style={{ fontSize: '11px', color: '#b33', background: 'none', border: '1px solid #e0c0be', borderRadius: '12px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'var(--font)' }}
+                        onClick={() => setEditingArch({ ...editingArch, image: '' })}
+                      >
+                        Remove image
+                      </button>
+                    )}
+                    <div style={{ fontSize: '10px', color: 'var(--muted)', lineHeight: 1.5, maxWidth: '300px' }}>
+                      {t('uploadRights.helper')}
+                    </div>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <input
                     style={{ ...s.input, flex: 1 }}
@@ -735,8 +942,8 @@ export default function MemoryPage() {
       {/* Memory tab */}
       {tab === 'memory' && (
         <>
-          {/* Manual add */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+          {/* Manual add + search */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <input
               style={{ ...s.input, flex: 1 }}
               placeholder={t('context.addPlaceholder')}
@@ -751,37 +958,149 @@ export default function MemoryPage() {
             >
               {adding ? t('context.adding') : t('context.add')}
             </button>
+            <input
+              style={{ ...s.input, width: '180px' }}
+              placeholder={t('common.search')}
+              value={memorySearch}
+              onChange={(e) => setMemorySearch(e.target.value)}
+            />
           </div>
 
+          {(() => {
+            const q = memorySearch.trim().toLowerCase();
+            const filtered = q
+              ? memories.filter((m) => (m.content || '').toLowerCase().includes(q))
+              : memories;
+
+            // Age gradient across non-core memories: newest = fresh teal,
+            // oldest = faded gray. Core memories keep their gold styling
+            // and are excluded from the range calc. Use effective_date so
+            // memories inherit the age of the entry they were extracted from.
+            const nonCoreTimes = memories
+              .filter((m) => !m.is_core && memoryDate(m))
+              .map((m) => new Date(memoryDate(m)).getTime());
+            const newestTs = nonCoreTimes.length ? Math.max(...nonCoreTimes) : 0;
+            const oldestTs = nonCoreTimes.length ? Math.min(...nonCoreTimes) : 0;
+            const range = Math.max(1, newestTs - oldestTs);
+
+            function gradientStyle(createdAt) {
+              if (!createdAt || !nonCoreTimes.length) return {};
+              const ts = new Date(createdAt).getTime();
+              const tt = Math.min(1, Math.max(0, (newestTs - ts) / range));
+              // Wide hue sweep so the gradient reads as distinct bands:
+              // teal (165) → blue (210) → indigo (255) → violet (290) → grey (320/low-sat).
+              const hue = 165 + tt * 155;
+              const sat = 65 - tt * 55;
+              const light = 48 + tt * 32;
+              return {
+                border: `1px solid hsl(${hue}, ${sat}%, ${light}%)`,
+                background: `hsla(${hue}, ${sat}%, ${light}%, 0.09)`,
+              };
+            }
+          return (<>
           {/* Memory list */}
-          {memories.length === 0 ? (
+          {filtered.length === 0 ? (
             <div style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic', padding: '24px 0', textAlign: 'center' }}>
-              {t('context.noMemories')}
+              {q ? t('journal.noMatch') : t('context.noMemories')}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
-              {memories.map((m) => (
-                <div key={m.id} style={s.memoryItem}>
-                  <div style={{ flex: 1 }}>
-                    <div style={s.memoryContent}>{m.content}</div>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              marginBottom: '24px',
+              maxHeight: '55vh',
+              overflowY: 'auto',
+              padding: '8px',
+              border: 'var(--border-style)',
+              borderRadius: '12px',
+              background: 'var(--near-white)',
+            }}>
+              {filtered.map((m) => {
+                const isEditing = editingId === m.id;
+                return (
+                <div key={m.id} style={{ ...s.memoryItem, ...(m.is_core ? s.memoryItemCore : gradientStyle(memoryDate(m))) }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {isEditing ? (
+                      <textarea
+                        style={{ ...s.input, width: '100%', minHeight: '60px', resize: 'vertical', lineHeight: '1.5', fontSize: '13px' }}
+                        value={editingText}
+                        onChange={(e) => setEditingText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') cancelEdit();
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveEdit(m.id);
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <div
+                        style={{ ...s.memoryContent, cursor: 'text' }}
+                        onDoubleClick={() => startEdit(m)}
+                        title="Double-click to edit"
+                      >
+                        {m.content}
+                      </div>
+                    )}
                     <div style={s.memoryMeta}>
+                      {m.is_core ? <span style={s.coreMarker}>CORE</span> : null}
                       {m.pinned ? <span style={s.memoryPin}>{t('context.pinned')}</span> : null}
-                      <span>{formatDate(m.created_at)}</span>
+                      <span>{formatDate(memoryDate(m))}</span>
+                      {isEditing && (
+                        <>
+                          <button
+                            style={{ fontSize: '11px', color: 'var(--strong)', background: 'none', border: 'var(--border-style)', borderRadius: '10px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'var(--font)' }}
+                            onClick={() => saveEdit(m.id)}
+                          >
+                            Save
+                          </button>
+                          <button
+                            style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '10px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'var(--font)' }}
+                            onClick={cancelEdit}
+                          >
+                            {t('common.cancel')}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <button
-                    style={s.memoryDelete}
-                    onClick={() => deleteMemory(m.id)}
-                    title={t('context.removeMemory')}
-                    onMouseEnter={(e) => { e.target.style.opacity = 1; }}
-                    onMouseLeave={(e) => { e.target.style.opacity = 0.6; }}
-                  >
-                    ×
-                  </button>
+                  {!isEditing && (
+                    <>
+                      <button
+                        style={{ ...s.memoryDelete, fontSize: '13px' }}
+                        onClick={() => startEdit(m)}
+                        title="Edit memory"
+                        onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.6; }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        style={{ ...s.coreBtn, color: m.is_core ? '#d4a843' : 'var(--muted)', opacity: m.is_core ? 1 : 0.5 }}
+                        onClick={() => toggleCore(m.id, m.is_core)}
+                        title={m.is_core ? 'Unmark as core memory' : 'Mark as core memory (keeps full weight regardless of age)'}
+                        onMouseEnter={(e) => { if (!m.is_core) e.currentTarget.style.opacity = 1; }}
+                        onMouseLeave={(e) => { if (!m.is_core) e.currentTarget.style.opacity = 0.5; }}
+                      >
+                        {m.is_core ? '★' : '☆'}
+                      </button>
+                      <button
+                        style={s.memoryDelete}
+                        onClick={() => deleteMemory(m.id)}
+                        title={t('context.removeMemory')}
+                        onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.6; }}
+                      >
+                        ×
+                      </button>
+                    </>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
+          </>);
+          })()}
 
           {/* Footer: count */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: 'var(--border-style)', paddingTop: '16px' }}>
@@ -856,13 +1175,23 @@ export default function MemoryPage() {
             <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: '1.6', marginBottom: '10px' }}>
               {t('context.reindexDesc')}
             </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <button
                 style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: reindexing ? 0.5 : 1 }}
                 onClick={reindex}
                 disabled={reindexing}
               >
                 {reindexing ? t('context.reindexing') : t('context.reindex')}
+              </button>
+              <button
+                style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: extractJob.running ? 0.5 : 1 }}
+                onClick={extractAllMemories}
+                disabled={extractJob.running}
+                title="Run LLM memory extraction across every journal entry. Slow — expect several minutes."
+              >
+                {extractJob.running
+                  ? `Extracting… ${extractJob.done}/${extractJob.total}`
+                  : 'Extract memories from entries'}
               </button>
               {!clearStep && (
                 <button
@@ -874,6 +1203,26 @@ export default function MemoryPage() {
                 </button>
               )}
             </div>
+            {extractJob.running && extractJob.total > 0 && (
+              <div style={{ marginTop: '10px', height: '4px', background: 'var(--near-white)', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.round((extractJob.done / extractJob.total) * 100)}%`,
+                  background: 'var(--strong)',
+                  transition: 'width 0.3s',
+                }} />
+              </div>
+            )}
+            {!extractJob.running && extractJob.finishedAt && extractJob.total > 0 && (
+              <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--muted)' }}>
+                Finished — processed {extractJob.done} {extractJob.done === 1 ? 'entry' : 'entries'}.
+              </div>
+            )}
+            {!extractJob.running && extractJob.note && (
+              <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--muted)' }}>
+                {extractJob.note}
+              </div>
+            )}
           </div>
         </>
       )}

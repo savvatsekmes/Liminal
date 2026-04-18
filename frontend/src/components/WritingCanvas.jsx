@@ -38,6 +38,7 @@ import DoodleModal from './DoodleModal';
 import { CardReading } from '../extensions/CardReading';
 import { atomDragGuard } from '../extensions/atomDragGuard';
 import { apiFetch } from '../utils/api';
+import { lockbug } from '../utils/lockbugLog';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -176,7 +177,21 @@ export default function WritingCanvas({
   const isMobile = useIsMobile();
   const saveTimer = useRef(null);
   const savedTimer = useRef(null);
-  const lastSnapshotAt = useRef(null);
+  const snapshotTimer = useRef(null);
+  // Tracks which entry's body is currently loaded into the Tiptap editor.
+  // Defensive guard for the lock-edit bug: any onUpdate emission whose
+  // captured entryId does not match this ref is a stale event from a prior
+  // entry and must never be persisted.
+  const lastLoadedEntryIdRef = useRef(null);
+  // Monotonic counter bumped each time a new entry's body is loaded.
+  // Debounced saves capture the epoch at schedule time and re-check it when
+  // the timer fires — if the user switched entries in the 800ms window, the
+  // save is dropped.
+  const loadEpochRef = useRef(0);
+  // Snapshot of the HTML we loaded for the current entry. Swallows the very
+  // first post-load onUpdate emissions (from Tiptap's own appendTransaction
+  // hooks normalising the parsed doc) that don't reflect real user edits.
+  const loadedHtmlRef = useRef('');
   const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved
   const editorWrapRef = useRef(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
@@ -188,6 +203,10 @@ export default function WritingCanvas({
   const [doodleModalOpen, setDoodleModalOpen] = useState(false);
   const [reading, setReading] = useState(false);
   const [editorText, setEditorText] = useState('');
+  // Lock state is persisted per-entry on the server (`entries.locked`). We
+  // derive editMode from the entry so it survives reloads and switching between
+  // entries keeps each entry's own lock state.
+  const editMode = !entry?.locked;
   const ttsAudioRef = useRef(null);
   const ttsCancelRef = useRef(false);
 
@@ -276,6 +295,7 @@ async function fetchVersions() {
 
   async function handleGenerateTitle() {
     if (!editor || !entry?.id || titling) return;
+    const entryId = entry.id; // capture before await — entry may switch mid-fetch
     const text = editor.getText();
     if (!text || text.trim().length < 10) return;
     setTitling(true);
@@ -286,7 +306,7 @@ async function fetchVersions() {
         body: JSON.stringify({ text }),
       });
       const data = await res.json();
-      if (data.title) onUpdate({ title: data.title });
+      if (data.title) onUpdate({ title: data.title }, entryId);
     } catch (err) {
       console.error('Title generation failed:', err);
     } finally {
@@ -346,27 +366,70 @@ const editor = useEditor({
       const html = editor.getHTML();
       const text = editor.getText();
       const entryId = entry?.id; // capture NOW — prevents saving to wrong entry if switched quickly
+      const epoch = loadEpochRef.current;
+      lockbug('onUpdate', {
+        entryId,
+        ref: lastLoadedEntryIdRef.current,
+        epoch,
+        htmlLen: html.length,
+        loadedLen: loadedHtmlRef.current.length,
+        htmlPrefix: html.slice(0, 60),
+      });
+      // Drop any update that fires before setContent has loaded this entry's
+      // body. Stale emissions (e.g. from an entry switch) would otherwise
+      // overwrite the new entry with the previous entry's content.
+      if (entryId == null || entryId !== lastLoadedEntryIdRef.current) {
+        lockbug('onUpdate:DROP-id-mismatch', { entryId, ref: lastLoadedEntryIdRef.current });
+        return;
+      }
+      // Swallow the no-op emissions that appendTransaction hooks fire
+      // immediately after setContent when re-entering an entry.
+      if (html === loadedHtmlRef.current) {
+        lockbug('onUpdate:DROP-html-unchanged', { entryId });
+        return;
+      }
       setEditorText(text);
 
       setSaveStatus('saving');
       clearTimeout(saveTimer.current);
       clearTimeout(savedTimer.current);
       saveTimer.current = setTimeout(async () => {
+        // Re-check at fire time: the user may have switched entries during
+        // the 800ms debounce, invalidating the captured html/entryId.
+        if (epoch !== loadEpochRef.current) {
+          lockbug('save:DROP-epoch-stale', { entryId, epoch, current: loadEpochRef.current });
+          return;
+        }
+        if (entryId !== lastLoadedEntryIdRef.current) {
+          lockbug('save:DROP-ref-moved', { entryId, ref: lastLoadedEntryIdRef.current });
+          return;
+        }
+        lockbug('save:FIRE', { entryId, htmlLen: html.length, htmlPrefix: html.slice(0, 60) });
         await onUpdate({ body: html, body_text: text }, entryId);
         setSaveStatus('saved');
         savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
-        // Snapshot at most once per minute, tied to actual saves
-        const now = Date.now();
-        if (!lastSnapshotAt.current || now - lastSnapshotAt.current >= 60_000) {
-          lastSnapshotAt.current = now;
+        // Snapshot after 5s of save-idle so each editing session ends with a
+        // version of the true final state (backend dedupes identical bodies).
+        clearTimeout(snapshotTimer.current);
+        snapshotTimer.current = setTimeout(() => {
+          if (epoch !== loadEpochRef.current) return;
           apiFetch(`/api/entries/${entryId}/snapshot`, { method: 'POST' }).catch(() => {});
-        }
+        }, 5000);
       }, 800);
     },
   });
 
   // Keep editorRef in sync for dictation insertion
   useEffect(() => { editorRef.current = editor; }, [editor]);
+
+  // Reflect the lock/edit toggle onto the Tiptap editor.
+  // `false` as second arg suppresses the `update` event — otherwise toggling
+  // editable (including during an entry switch when old editor.getHTML() ≠
+  // new entry.body) would trip the debounced save and overwrite the incoming
+  // entry with the previous entry's body.
+  useEffect(() => {
+    if (editor) editor.setEditable(editMode, false);
+  }, [editor, editMode]);
 
   // Listen for atom paste events from the right-click menu (SelectionMenu).
   // execCommand('paste') doesn't work in Electron for rich content, so the
@@ -376,34 +439,62 @@ const editor = useEditor({
     if (!editor) return;
     const handler = (e) => {
       const html = e.detail?.html;
-      if (!html) return;
-      editor.chain().focus().insertContent(html).run();
+      const text = e.detail?.text;
+      if (!html && !text) return;
+      editor.chain().focus().insertContent(html || text).run();
     };
     const el = editor.view.dom;
     el.addEventListener('liminal-paste-atom', handler);
     return () => el.removeEventListener('liminal-paste-atom', handler);
   }, [editor]);
 
-  // Reload content when active entry changes
+  // Reload content when active entry changes.
+  // Ref + epoch are bumped BEFORE setContent so any transaction spawned by
+  // `appendTransaction` hooks (MediaRow, DetailsBlock, CardReading) — which
+  // don't inherit `preventUpdate` from setContent's primary tr — gets dropped
+  // by the onUpdate guard instead of firing a save.
   useEffect(() => {
     if (!editor) return;
     const newContent = entry?.body || '';
+    lockbug('reload:start', {
+      entryId: entry?.id,
+      newLen: newContent.length,
+      newPrefix: newContent.slice(0, 60),
+      editorPrefix: editor.getHTML().slice(0, 60),
+    });
+    lastLoadedEntryIdRef.current = entry?.id ?? null;
+    loadEpochRef.current += 1;
     if (editor.getHTML() !== newContent) {
       editor.commands.setContent(newContent, false);
     }
+    // Snapshot the HTML actually in the editor (Tiptap may normalise parsed
+    // input) so the onUpdate equality check catches appendTransaction echoes.
+    loadedHtmlRef.current = editor.getHTML();
     setEditorText(editor.getText());
+    lockbug('reload:done', { entryId: entry?.id, loadedLen: loadedHtmlRef.current.length, epoch: loadEpochRef.current });
   }, [entry?.id]);
 
-  // Reset save status and snapshot timer when switching entries
+  // Reset save status and timers when switching entries. Clearing saveTimer
+  // is critical: a pending debounced save captured from the previous entry
+  // would otherwise fire after the editor has reloaded with the new entry's
+  // content, silently overwriting one entry's body with another.
   useEffect(() => {
     setSaveStatus('idle');
-    lastSnapshotAt.current = null;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (snapshotTimer.current) {
+      clearTimeout(snapshotTimer.current);
+      snapshotTimer.current = null;
+    }
   }, [entry?.id]);
 
   // Cleanup debounce on unmount
   useEffect(() => () => {
     clearTimeout(saveTimer.current);
     clearTimeout(savedTimer.current);
+    clearTimeout(snapshotTimer.current);
   }, []);
 
   const words = wordCount(editor?.getText() || '');
@@ -541,6 +632,27 @@ const editor = useEditor({
         )}
 
         <button
+          style={{
+            ...s.toolbarBtn,
+            ...(editMode ? {} : { background: 'rgba(0,0,0,0.06)', color: 'var(--strong)' }),
+          }}
+          title={editMode ? 'Lock editing' : 'Enable edit mode'}
+          onClick={() => entry?.id && onUpdate({ locked: editMode ? 1 : 0 }, entry.id)}
+          type="button"
+        >
+          {editMode ? (
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <rect x="3.5" y="7.5" width="9" height="6" rx="1" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M5.5 7.5V5a2.5 2.5 0 015 0v2.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+            </svg>
+          )}
+        </button>
+
+        <button
           style={{ ...s.toolbarBtn, fontSize: '14px' }}
           title={t('journal.versionHistory')}
           onClick={() => { setVersionsOpen(true); fetchVersions(); }}
@@ -561,8 +673,8 @@ const editor = useEditor({
           allTags={allTags}
           suggestedTags={suggestedTags}
           onDismissSuggestion={dismissSuggestion}
-          onTagsChange={(tags) => onUpdate({ tags })}
-          onAutoTagsChange={(auto_tags) => onUpdate({ auto_tags })}
+          onTagsChange={(tags) => entry?.id && onUpdate({ tags }, entry.id)}
+          onAutoTagsChange={(auto_tags) => entry?.id && onUpdate({ auto_tags }, entry.id)}
         />
       )}
 
@@ -572,7 +684,7 @@ const editor = useEditor({
           <input
             style={s.dateTitle}
             value={entry.title || ''}
-            onChange={(e) => onUpdate({ title: e.target.value })}
+            onChange={(e) => entry?.id && onUpdate({ title: e.target.value }, entry.id)}
             placeholder={t('journal.entryTitle')}
             aria-label={t('journal.entryTitle')}
           />
@@ -581,7 +693,7 @@ const editor = useEditor({
       )}
 
       {/* Editor */}
-      <div style={{ ...s.editorWrap, position: 'relative', ...(isMobile ? { padding: '12px 16px 80px' } : {}) }} ref={editorWrapRef}>
+      <div style={{ ...s.editorWrap, position: 'relative', ...(isMobile ? { padding: '12px 16px 80px' } : {}) }} ref={editorWrapRef} data-find-scope="1">
         {entry ? (
           <>
             <EditorContent editor={editor} />
@@ -878,12 +990,14 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
     fontStyle: 'italic',
   };
 
-  // Auto-applied (LLM) tags already on the entry: dashed border so they
-  // visually match suggestions, but not italic — they're real tags now.
+  // Auto-applied (LLM) tags already on the entry: filled like manual tags so
+  // it's obvious they've been added, but keep a dashed border as the hint
+  // that they originated from an LLM suggestion.
   const pillAuto = {
-    border: '1px dashed var(--border)',
-    background: 'transparent',
-    color: 'var(--muted)',
+    border: '1px dashed var(--strong)',
+    background: 'var(--strong)',
+    color: 'var(--white)',
+    fontWeight: '600',
   };
 
   // Sorted lists so the row layout is stable as the editor refreshes.

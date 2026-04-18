@@ -44,14 +44,15 @@ router.put('/', (req, res) => {
   }
 
   // Scope display_name per user
+  const userId = resolveUserId(req);
   if ('display_name' in updates) {
-    const userId = resolveUserId(req);
     s.setForUser('display_name', updates.display_name, userId);
     delete updates.display_name;
   }
 
   s.setMany(updates);
   const result = s.getAll();
+  result.display_name      = s.getForUser('display_name', userId);
   result.has_anthropic_key = s.hasSecret('anthropic_api_key');
   result.has_openai_key    = s.hasSecret('openai_api_key');
   result.has_tavily_key    = s.hasSecret('tavily_api_key');
@@ -288,17 +289,108 @@ router.put('/username', (req, res) => {
 });
 
 // ── POST /api/settings/restart ────────────────────────────────────────────────
-// Spawns restart.vbs detached, then exits this process.
-// The VBS kills the frontend and relaunches everything via start.vbs.
+// Restart the Electron app. First try Electron's /relaunch control endpoint;
+// if that 404s (old packaged build) or there's no control URL, fall back to
+// spawning a detached relauncher that kills the parent Electron process and
+// starts a fresh instance.
 router.post('/restart', (req, res) => {
   res.json({ ok: true });
-  const { spawn } = require('child_process');
-  const vbs = path.join(__dirname, '../../restart.vbs');
-  setTimeout(() => {
-    spawn('wscript', [vbs], { detached: true, stdio: 'ignore' }).unref();
-    process.exit(0);
-  }, 400);
+  setTimeout(doRestart, 400);
 });
+
+function doRestart() {
+  const controlUrl = process.env.LIMINAL_CONTROL_URL;
+  if (!controlUrl) return fallbackRestart();
+
+  const http = require('http');
+  const url = new URL(controlUrl + '/relaunch');
+  const r = http.request({
+    hostname: url.hostname,
+    port: url.port,
+    path: url.pathname,
+    method: 'POST',
+  }, (resp) => {
+    if (resp.statusCode === 200) return; // Electron will relaunch
+    fallbackRestart();
+  });
+  r.on('error', fallbackRestart);
+  r.end();
+}
+
+function fallbackRestart() {
+  // Spawn a detached relauncher that waits, kills the parent Electron (our
+  // ppid), then starts a new Electron instance via process.execPath (Liminal.exe
+  // in packaged build). On Windows we write a temp .bat, then launch it via
+  // `start` through a shell — `start` creates a new process that orphans from
+  // our spawned cmd (which exits immediately), so taskkill /T on Electron's
+  // tree won't find and kill the running bat.
+  const { spawn, exec } = require('child_process');
+  const electronExe = process.execPath;
+  const parentPid = process.ppid;
+  const restartLog = path.join(DATA_DIR, 'restart.log');
+
+  if (process.platform === 'win32') {
+    const stamp = Date.now();
+    const batDir = DATA_DIR;
+    try { fs.mkdirSync(batDir, { recursive: true }); } catch {}
+
+    // Best-effort cleanup of stale restart artifacts from previous runs so
+    // these don't accumulate indefinitely. Keep anything written in the last
+    // 60 seconds (in case two restarts race).
+    try {
+      const cutoff = Date.now() - 60_000;
+      for (const f of fs.readdirSync(batDir)) {
+        if (!/^restart-\d+\.(bat|log|vbs)$/.test(f)) continue;
+        const full = path.join(batDir, f);
+        try {
+          const st = fs.statSync(full);
+          if (st.mtimeMs < cutoff) fs.unlinkSync(full);
+        } catch {}
+      }
+    } catch {}
+
+    const batPath = path.join(batDir, `restart-${stamp}.bat`);
+    const vbsPath = path.join(batDir, `restart-${stamp}.vbs`);
+    const logPath = path.join(batDir, `restart-${stamp}.log`);
+    const lines = [
+      '@echo off',
+      `echo [%date% %time%] relauncher start >> "${logPath}"`,
+      'ping 127.0.0.1 -n 3 >nul',
+      `echo [%date% %time%] taskkill >> "${logPath}"`,
+      `taskkill /PID ${parentPid} /T /F >> "${logPath}" 2>&1`,
+      'ping 127.0.0.1 -n 2 >nul',
+      // Clear ELECTRON_RUN_AS_NODE so the launched Liminal.exe runs as the
+      // Electron app, not as a headless Node interpreter (it was set for the
+      // backend child process and inherited down the cmd chain).
+      'set "ELECTRON_RUN_AS_NODE="',
+      `echo [%date% %time%] starting "${electronExe}" >> "${logPath}"`,
+      `start "" "${electronExe}"`,
+      `echo [%date% %time%] done >> "${logPath}"`,
+      // Self-delete the bat and vbs after we're done so artifacts don't pile up.
+      `(goto) 2>nul & del "${vbsPath}" & del "%~f0"`,
+    ];
+    fs.writeFileSync(batPath, lines.join('\r\n'));
+
+    // Run the .bat through a VBScript wrapper with windowStyle=0 so no
+    // console window is ever visible. Previous approach used `start /min`
+    // which still flashed (and sometimes stranded) a minimised cmd window.
+    const vbsEscapedBat = batPath.replace(/"/g, '""');
+    const vbsBody = `CreateObject("Wscript.Shell").Run "cmd /c ""${vbsEscapedBat}""", 0, False\r\n`;
+    fs.writeFileSync(vbsPath, vbsBody);
+
+    try { fs.appendFileSync(restartLog, `[${new Date().toISOString()}] wrote bat ${batPath}\n`); } catch {}
+
+    spawn('wscript.exe', [vbsPath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }).unref();
+  } else {
+    const script = `sleep 1; kill -9 ${parentPid} 2>/dev/null; "${electronExe}" &`;
+    spawn('sh', ['-c', script], { detached: true, stdio: 'ignore' }).unref();
+  }
+  setTimeout(() => process.exit(0), 200);
+}
 
 // ── POST /api/settings/import-json ───────────────────────────────────────────
 // Import full Liminal backup (entries, notes, oracle, reflections, portrait, memories, versions, settings, users)

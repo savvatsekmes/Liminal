@@ -251,74 +251,97 @@ export default function SelectionMenu() {
     setPopup(null);
   }
   async function handleCopy() {
-    if (!hasSelection) return;
-    // execCommand('copy') preserves rich HTML + ProseMirror slice metadata, so
-    // atoms (images, YouTube, tarot) round-trip across entries. writeText would
-    // strip everything to plain text and drop the atoms.
-    try { document.execCommand('copy'); }
-    catch { try { await navigator.clipboard.writeText(popup.selection); } catch {} }
+    if (!hasSelection) { setPopup(null); return; }
+    const text = popup.selection;
+    let ok = false;
+    if (window.liminal?.clipboardWrite) {
+      try {
+        const res = await window.liminal.clipboardWrite({ text });
+        ok = res?.ok === true;
+      } catch (err) { console.warn('[copy] IPC failed', err); }
+    }
+    if (!ok) { try { ok = document.execCommand('copy') === true; } catch {} }
+    if (!ok) {
+      try { await navigator.clipboard.writeText(text); } catch (err) {
+        console.warn('[copy] navigator.clipboard failed', err);
+      }
+    }
     setPopup(null);
   }
   async function handleCut() {
     if (!hasSelection) return;
-    try { document.execCommand('cut'); }
-    catch { try { await navigator.clipboard.writeText(popup.selection); } catch {} }
+    const text = popup.selection;
+    let ok = false;
+    if (window.liminal?.clipboardWrite) {
+      try { const res = await window.liminal.clipboardWrite({ text }); ok = res?.ok === true; } catch {}
+    }
+    if (!ok) { try { ok = document.execCommand('cut') === true; } catch {} }
+    if (!ok) { try { await navigator.clipboard.writeText(text); } catch {} }
     setPopup(null);
   }
   async function handlePaste() {
     const target = targetRef.current;
     if (!target) { setPopup(null); return; }
+
+    let clipText = '';
+    let clipHtml = '';
+    if (window.liminal?.clipboardRead) {
+      try {
+        const data = await window.liminal.clipboardRead();
+        clipText = data?.text || '';
+        clipHtml = data?.html || '';
+      } catch (err) { console.warn('[paste] IPC read failed', err); }
+    }
+    if (!clipText && !clipHtml) {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          if (!clipHtml && item.types.includes('text/html')) {
+            clipHtml = await (await item.getType('text/html')).text();
+          }
+          if (!clipText && item.types.includes('text/plain')) {
+            clipText = await (await item.getType('text/plain')).text();
+          }
+        }
+      } catch {
+        try {
+          clipText = await navigator.clipboard.readText();
+        } catch (err) { console.warn('[paste] navigator.readText failed', err); }
+      }
+    }
+
     const tag = (target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
-      let text = '';
-      try { text = await navigator.clipboard.readText(); } catch {}
-      if (!text) { setPopup(null); return; }
+      if (!clipText) { setPopup(null); return; }
+      target.focus();
       const start = target.selectionStart ?? target.value.length;
       const end = target.selectionEnd ?? target.value.length;
-      const next = target.value.slice(0, start) + text + target.value.slice(end);
+      const next = target.value.slice(0, start) + clipText + target.value.slice(end);
       const proto = tag === 'textarea' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
       setter.call(target, next);
       target.dispatchEvent(new Event('input', { bubbles: true }));
-      try { target.setSelectionRange(start + text.length, start + text.length); } catch {}
+      try { target.setSelectionRange(start + clipText.length, start + clipText.length); } catch {}
     } else {
-      // Target is contentEditable, or inside a ProseMirror editor (atoms have
-      // contentEditable=false but sit inside the editable .ProseMirror element).
-      const editable = target.isContentEditable
-        ? target
-        : target.closest?.('.ProseMirror');
+      const pmEditor = target.closest?.('.ProseMirror');
+      const editable = pmEditor || (target.isContentEditable ? target : null);
       if (!editable) { setPopup(null); return; }
       editable.focus();
 
-      // Read clipboard HTML. If it contains atom markup (YouTube/image/tarot),
-      // dispatch a custom event so WritingCanvas can insert via Tiptap's
-      // editor.commands.insertContent — the only reliable path for atom nodes.
-      // execCommand('paste') doesn't work in Electron.
-      let html = '';
-      try {
-        const items = await navigator.clipboard.read();
-        for (const item of items) {
-          if (item.types.includes('text/html')) {
-            html = await (await item.getType('text/html')).text();
-            break;
-          }
-        }
-      } catch {}
+      const isAtomHtml = clipHtml && /data-(youtube-embed|image-embed|card-reading)/.test(clipHtml);
 
-      const isAtomHtml = html && /data-(youtube-embed|image-embed|card-reading)/.test(html);
-      if (isAtomHtml) {
+      if (pmEditor) {
+        pmEditor.dispatchEvent(new CustomEvent('liminal-paste-atom', {
+          bubbles: true,
+          detail: isAtomHtml ? { html: clipHtml } : { text: clipText },
+        }));
+      } else if (isAtomHtml) {
         editable.dispatchEvent(new CustomEvent('liminal-paste-atom', {
           bubbles: true,
-          detail: { html },
+          detail: { html: clipHtml },
         }));
-      } else {
-        let pasted = false;
-        try { pasted = document.execCommand('paste'); } catch {}
-        if (!pasted) {
-          let text = '';
-          try { text = await navigator.clipboard.readText(); } catch {}
-          if (text) { try { document.execCommand('insertText', false, text); } catch {} }
-        }
+      } else if (clipText) {
+        try { document.execCommand('insertText', false, clipText); } catch {}
       }
     }
     setPopup(null);
@@ -470,7 +493,11 @@ export default function SelectionMenu() {
   if (!(popup.atomEl && !hasSelection)) {
     items.push(<MenuItem key="copy" label={t('common.copy')} onClick={handleCopy} disabled={!hasSelection} />);
   }
-  if (popup.isInput) {
+  // Paste needs clipboard read access: Electron IPC, or a secure browser
+  // context (HTTPS/localhost). On plain-HTTP LAN origins Chrome blocks
+  // navigator.clipboard.read, so we hide the item — Ctrl+V still works.
+  const canReadClipboard = !!window.liminal?.clipboardRead || window.isSecureContext;
+  if (popup.isInput && canReadClipboard) {
     items.push(<MenuItem key="paste" label={t('common.paste')} onClick={handlePaste} />);
   }
   items.push(<Separator key="sep-end" />);
@@ -480,6 +507,11 @@ export default function SelectionMenu() {
     <div
       ref={menuRef}
       onContextMenu={(e) => e.preventDefault()}
+      // Preserve the source selection/focus so Copy/Cut see the highlighted
+      // text and Paste keeps the correct caret in its input. Without this,
+      // the browser blurs the editor on mousedown and execCommand('copy')
+      // runs on an empty selection.
+      onMouseDown={(e) => e.preventDefault()}
       style={{
         position: 'fixed',
         left: x + 'px',

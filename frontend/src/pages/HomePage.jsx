@@ -1799,9 +1799,9 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>Recurring Themes</span>
-              <span style={s.themesPeriod}> ·  this month</span>
+              <span style={s.themesPeriod}> ·  last 90 days</span>
             </div>
-            {themes.length >= 3 ? (
+            {themes.length >= 1 ? (
               <div style={s.themesRow}>
                 {themes.map(({ tag, count }) => {
                   const maxCount = themes[0]?.count || 1;
@@ -2111,7 +2111,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                     const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
                     const custom = customArchetypesList.find(a => a.name === archetype);
                     if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={18} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
-                    if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={18} color={custom.color || 'var(--strong)'} />;
+                    if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={18} color={custom.color || 'var(--strong)'} />;
                     return <ArchetypeIcon />;
                   })()}
                 </button>
@@ -2144,7 +2144,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                         }}
                         onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
                       >
-                        <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+                        <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
                         <span style={{ marginLeft: '8px' }}>{c.name}</span>
                       </button>
                     ))}
@@ -2366,7 +2366,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                       const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
                       const custom = customArchetypesList.find(a => a.name === archetype);
                       if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
-                      if (custom) return <ArchetypeAvatar archetype={{ value: custom.name }} size={20} color={custom.color || 'var(--strong)'} />;
+                      if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={20} color={custom.color || 'var(--strong)'} />;
                       return <ArchetypeIcon />;
                     })()}
                   </button>
@@ -2403,7 +2403,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                           onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                          <ArchetypeAvatar archetype={{ value: c.name }} size={18} color={c.color || 'var(--muted)'} />
+                          <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
                           <span style={{ marginLeft: '8px' }}>{c.name}</span>
                         </button>
                       ))}
