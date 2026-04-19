@@ -800,6 +800,27 @@ app.on('before-quit', async (event) => {
   event.preventDefault();
   isQuitting = true;
 
+  // Incremental thread sweep: catches entries/notes/sessions the user saved
+  // but didn't Reflect on. Bounded to 20 items server-side so it can't stall
+  // quit. We poll for completion for up to 30s — longer backlogs simply carry
+  // over to the next quit.
+  try {
+    if (sessionPassword) {
+      await backendFetch('/api/threads/sweep', { method: 'POST', timeout: 5000 });
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        try {
+          const { buf } = await backendFetch('/api/threads/detect-status', { timeout: 3000 });
+          const status = JSON.parse(buf.toString('utf8'));
+          if (!status.running) break;
+        } catch { break; }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  } catch (err) {
+    console.error('[quit] thread sweep failed:', err.message);
+  }
+
   try {
     if (sessionPassword) {
       const settingsRes = await backendFetch('/api/settings', { timeout: 5000 });

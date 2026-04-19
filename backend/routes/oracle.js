@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const db = require('../database');
 const llm = require('../services/llmService');
 const memory = require('../services/memoryService');
+const threadService = require('../services/threadService');
 
 router.use(requireAuth);
 
@@ -250,6 +251,21 @@ router.post('/sessions/:id/messages', async (req, res) => {
     ).get(assistantResult.lastInsertRowid);
 
     res.json(assistantMsg);
+
+    // Rosary bead: thread this conversation into the graph. Throttled so a
+    // 30-turn chat doesn't fire 30 LLM match calls — thread on the 1st
+    // assistant reply, then every 5th (5, 10, 15…) to catch shape changes.
+    const assistantCount = db.prepare(
+      "SELECT COUNT(*) AS n FROM oracle_messages WHERE session_id = ? AND role = 'assistant'"
+    ).get(session.id).n;
+    if (assistantCount === 1 || (assistantCount > 0 && assistantCount % 5 === 0)) {
+      const userId = req.userId;
+      setImmediate(() => {
+        threadService.threadSingleItem('conversation', session.id, userId).catch((err) => {
+          console.error('[oracle] thread bead failed:', err.message);
+        });
+      });
+    }
   } catch (err) {
     // Roll back the user message on failure
     db.prepare('DELETE FROM oracle_messages WHERE id = ?').run(userMsgResult.lastInsertRowid);

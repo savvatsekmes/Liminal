@@ -4,6 +4,7 @@ const db = require('../database');
 const llm = require('../services/llmService');
 const memory = require('../services/memoryService');
 const { indexEntry, embed, querySimilar } = require('../services/embeddingService');
+const threadService = require('../services/threadService');
 const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
@@ -139,6 +140,17 @@ router.post('/', async (req, res) => {
               entryId,
               userId
             );
+          }
+        }
+
+        // Place a rosary bead on the Threads graph: match this entry against
+        // existing threads now that auto_tags have been written (auto_tags are
+        // a strong match signal). User already has their reflection on screen.
+        if (entryId) {
+          try {
+            await threadService.threadSingleItem('entry', entryId, userId);
+          } catch (err) {
+            console.error('[reflect] thread bead failed:', err.message);
           }
         }
       } catch (err) {

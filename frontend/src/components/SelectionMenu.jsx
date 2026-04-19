@@ -91,6 +91,14 @@ export default function SelectionMenu() {
       // Copy item that serializes the atom's HTML directly.
       const atomEl = target?.closest?.('[data-youtube-embed], [data-image-embed], [data-card-reading]') || null;
 
+      // Detect a thread list item so ThreadsPage actions (regenerate / edit /
+      // delete) can appear in this same popup rather than a second menu.
+      const threadEl = target?.closest?.('[data-thread-id]') || null;
+      const threadCtx = threadEl ? {
+        id: Number(threadEl.getAttribute('data-thread-id')),
+        kind: threadEl.getAttribute('data-thread-kind') || '',
+      } : null;
+
       // Detect a misspelled word at the click point. Only do this when there's
       // no selection (a selection means the user wants to act on the highlighted
       // text, not a single word under the cursor). The dictionary is lazy
@@ -116,6 +124,7 @@ export default function SelectionMenu() {
         suggestions,
         isInput,
         atomEl,
+        threadCtx,
       });
     }
     document.addEventListener('contextmenu', onContextMenu);
@@ -418,6 +427,59 @@ export default function SelectionMenu() {
   const y = adjustedPos?.y ?? (popup?.y ?? 0) + 2;
 
   const items = [];
+
+  // Thread-list context: right-click on a thread row in ThreadsPage. Show only
+  // thread actions (no clipboard / selection noise) and dispatch custom events
+  // that ThreadsPage listens for.
+  if (popup.threadCtx) {
+    const { id: threadId, kind: threadKind } = popup.threadCtx;
+    const fire = (type) => window.dispatchEvent(new CustomEvent(type, { detail: { threadId } }));
+    items.push(
+      <MenuItem
+        key="thr-regen"
+        label={t('threads.regenerate') || 'Regenerate items'}
+        onClick={() => { fire('liminal:thread-rematch'); dismiss(); }}
+      />
+    );
+    if (threadKind !== 'canonical') {
+      items.push(
+        <MenuItem
+          key="thr-edit"
+          label={t('common.edit') || 'Edit'}
+          onClick={() => { fire('liminal:thread-edit'); dismiss(); }}
+        />
+      );
+      items.push(
+        <MenuItem
+          key="thr-del"
+          label={t('common.delete') || 'Delete'}
+          onClick={() => { fire('liminal:thread-delete'); dismiss(); }}
+        />
+      );
+    }
+    return (
+      <div
+        ref={menuRef}
+        onContextMenu={(e) => e.preventDefault()}
+        onMouseDown={(e) => e.preventDefault()}
+        style={{
+          position: 'fixed',
+          left: (adjustedPos?.x ?? popup.x) + 'px',
+          top: (adjustedPos?.y ?? popup.y) + 'px',
+          minWidth: MENU_W + 'px',
+          background: 'var(--white)',
+          borderRadius: '10px',
+          padding: '6px',
+          boxShadow: '0 6px 24px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.06)',
+          zIndex: 10000,
+          fontFamily: 'var(--font)',
+          userSelect: 'none',
+        }}
+      >
+        {items}
+      </div>
+    );
+  }
 
   // Spell-check suggestions
   if (popup.misspelled) {

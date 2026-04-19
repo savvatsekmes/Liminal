@@ -19,7 +19,8 @@
   --body:       #555555;
   --strong:     #1A1A1A;
 
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+  --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+  --font-display: 'Cormorant Garamond', 'Georgia', 'Times New Roman', serif;
 
   --sidebar-width:    66px;
   --entrylist-width:  196px;
@@ -58,6 +59,21 @@ body {
   color: var(--body);
   background: var(--white);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Per-font legibility tweaks ─────────────────────────────────────────────
+   Cormorant Garamond has a small x-height + light default weight, which
+   makes it read smaller and thinner than the sans baseline at the same
+   px size. font-size-adjust normalises apparent size (sets x-height as
+   a fraction of em); the weight bump compensates for the thin strokes.
+   Inherits to descendants, so hand-set inline px values benefit too.
+*/
+html[data-font="cormorant"] {
+  font-size-adjust: 0.50;
+  font-weight: 500;
+}
+html[data-font="cormorant"] body {
+  font-weight: 500;
 }
 
 /* ── Typography ─────────────────────────────────────────────────────────── */

@@ -13,12 +13,14 @@ import PortraitPage from './pages/PortraitPage';
 import NotesPage from './pages/NotesPage';
 import OraclePage from './pages/OraclePage';
 import MemoryPage from './pages/MemoryPage';
+import ThreadsPage from './pages/ThreadsPage';
 import SettingsPage from './pages/SettingsPage';
 import { useEntries } from './hooks/useEntries';
 import { useReflect } from './hooks/useReflect';
 import { isAuthenticated, getStoredUsername, getStoredToken, clearStoredToken, apiFetch } from './utils/api';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { useTtsLoading } from './utils/ttsStatus';
+import { useFont } from './hooks/useFont';
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
 // Mounted only after auth is confirmed — ensures hooks fetch with valid token.
@@ -26,7 +28,7 @@ import { useTtsLoading } from './utils/ttsStatus';
 function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange, lockTimeoutMinutes }) {
   const [activeView, setActiveView] = useState(() => {
     const saved = sessionStorage.getItem('liminal_view');
-    if (saved && ['home','journal','notes','oracle','portrait','memory','settings'].includes(saved)) return saved;
+    if (saved && ['home','journal','notes','threads','oracle','portrait','memory','settings'].includes(saved)) return saved;
     return 'home';
   });
   const handleViewChange = useCallback((view) => {
@@ -35,6 +37,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   }, []);
   const [locked, setLocked] = useState(false);
   const lockTimerRef = useRef(null);
+  // Apply the saved body font on app boot (no-op if user is on the default).
+  useFont();
   // 0 (or any non-positive value) means "never lock" — the user opted out
   // of the inactivity gate via Settings → Auto-lock after.
   const lockTimeoutMs = lockTimeoutMinutes > 0 ? lockTimeoutMinutes * 60 * 1000 : null;
@@ -269,6 +273,13 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
           if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
           if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
           if (activeView === 'memory') return <MemoryPage onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }} />;
+          if (activeView === 'threads') return (
+            <ThreadsPage
+              onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
+              onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
+              onNavigateToOracle={(id) => { setPendingSessionId(id); handleViewChange('oracle'); }}
+            />
+          );
           if (activeView === 'settings') return <SettingsPage username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} onNavigate={handleViewChange} />;
 
           return (

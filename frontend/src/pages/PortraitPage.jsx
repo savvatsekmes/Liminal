@@ -20,10 +20,12 @@ const s = {
     minWidth: 0,
   },
   pageTitle: {
-    fontSize: '22px',
-    fontWeight: '700',
+    fontFamily: 'var(--font-display)',
+    fontSize: '32px',
+    fontWeight: 700,
     color: 'var(--strong)',
     marginBottom: '6px',
+    lineHeight: 1.1,
   },
   pageSubtitle: {
     fontSize: '12px',

@@ -24,6 +24,7 @@ app.use('/api/home',    extendTimeout);
 app.use('/api/portrait', extendTimeout);
 app.use('/api/ollama',   extendTimeout);
 app.use('/api/tags',     extendTimeout);
+app.use('/api/threads',  extendTimeout);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth',     require('./routes/auth'));
@@ -48,6 +49,7 @@ app.use('/api/home',     require('./routes/home'));
 app.use('/api/layouts',  require('./routes/layouts'));
 app.use('/api/version',  require('./routes/version'));
 app.use('/api/tags',     require('./routes/tags'));
+app.use('/api/threads',  require('./routes/threads'));
 app.use('/api/search',   require('./routes/search'));
 app.use('/api/media',    require('./routes/media'));
 app.use('/api/debuglog', require('./routes/debuglog'));

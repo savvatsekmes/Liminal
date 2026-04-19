@@ -50,6 +50,7 @@ import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import ResizeDivider from '../components/ResizeDivider';
 import TagContextMenu from '../components/TagContextMenu';
 import { useLockedTags } from '../hooks/useLockedTags';
+import { useCoreTags } from '../hooks/useCoreTags';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 
@@ -83,6 +84,7 @@ function formatDate(iso) {
 export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNote, onNavigateToChat }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
+  const { isCore, coreList } = useCoreTags();
   const [mobileView, setMobileView] = useState('editor'); // 'list' | 'editor' | 'reflect'
   const {
     notes,
@@ -305,7 +307,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
           borderBottom: 'var(--border-style)',
           flexShrink: 0,
         }}>
-          <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 700, color: 'var(--strong)', lineHeight: 1.1 }}>
             {t('notes.title')}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -413,17 +415,43 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
         ))}
 
         {(() => {
-          // Render manual tags first, then a divider, then LLM-applied auto
-          // tags. Built-in type pills already cover the canonical labels
-          // (idea/quote/etc.), so we strip them from both lists. Manual wins
-          // already happens upstream in useNotes, so we can render directly.
+          // Render core tags pinned at top, then manual tags, then a thin
+          // divider, then LLM-applied auto tags. Built-in type pills already
+          // cover the canonical labels (idea/quote/etc.), so we strip them
+          // from every list. Manual wins already happens upstream in useNotes.
           const builtInSet = new Set(BUILT_IN_TYPES.map(b => b.type));
-          const manualExtras = (allManualTags || allTags).filter(t => !builtInSet.has(t));
-          const autoExtras = (allAutoTags || []).filter(t => !builtInSet.has(t));
-          if (manualExtras.length === 0 && autoExtras.length === 0) return null;
+          const allManualExtras = (allManualTags || allTags).filter(t => !builtInSet.has(t));
+          const allAutoExtras = (allAutoTags || []).filter(t => !builtInSet.has(t));
+          // Core tags always render (even when no note currently carries them),
+          // but drop any that collide with a built-in TypePill since that pill
+          // already represents the filter higher up.
+          const coreTags = coreList.filter(t => !builtInSet.has(t));
+          const manualExtras = allManualExtras.filter((t) => !isCore(t));
+          const autoExtras = allAutoExtras.filter((t) => !isCore(t));
+          if (coreTags.length === 0 && manualExtras.length === 0 && autoExtras.length === 0) return null;
           return (
             <>
-              <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
+              {coreTags.length > 0 && (
+                <>
+                  <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
+                  {coreTags.map((tag) => (
+                    <CustomTagPill
+                      key={`c-${tag}`}
+                      label={tag}
+                      active={activeFilters.includes(tag)}
+                      onClick={() => toggleFilter(tag)}
+                      onDelete={() => openConfirm(
+                        t('notes.deleteTagConfirm', { tag }),
+                        () => handleDeleteTag(tag)
+                      )}
+                      auto={false}
+                    />
+                  ))}
+                </>
+              )}
+              {coreTags.length > 0 && (manualExtras.length > 0 || autoExtras.length > 0) && (
+                <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
+              )}
               {manualExtras.map((tag) => (
                 <CustomTagPill
                   key={`m-${tag}`}
@@ -436,16 +464,6 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
                   )}
                 />
               ))}
-              {autoExtras.length > 0 && (
-                <div style={{
-                  width: '50px',
-                  height: '1px',
-                  background: 'var(--border)',
-                  opacity: 0.6,
-                  margin: '4px 0',
-                  flexShrink: 0,
-                }} title="LLM-suggested tags" />
-              )}
               {autoExtras.map((tag) => (
                 <CustomTagPill
                   key={`a-${tag}`}
@@ -712,14 +730,12 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
   const [hover, setHover] = useState(false);
   const [menu, setMenu] = useState(null); // { x, y }
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
+  const { isCore, makeCore, removeCore } = useCoreTags();
   const locked = isLocked(label);
   const always = isAlwaysLocked(label);
+  const core = isCore(label);
 
-  // Auto (LLM-applied) tags get a dashed border + italic so they read as
-  // distinct from user-typed manual tags at a glance.
-  const borderStyle = auto
-    ? (active ? '1px solid var(--strong)' : '1px dashed var(--border)')
-    : (active ? '1px solid var(--strong)' : '1px solid var(--border)');
+  const borderStyle = active ? '1px solid var(--strong)' : '1px solid var(--border)';
 
   return (
     <div
@@ -794,6 +810,9 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
             locked
               ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
               : { label: 'Lock tag', onClick: () => lock(label) },
+            core
+              ? { label: 'Remove from core', onClick: () => removeCore(label) }
+              : { label: 'Make core', onClick: () => makeCore(label) },
           ]}
         />
       )}

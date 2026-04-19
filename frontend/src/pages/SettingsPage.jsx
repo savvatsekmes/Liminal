@@ -3,17 +3,20 @@ import { apiFetch } from '../utils/api';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
+import { useFont } from '../hooks/useFont';
+import { FONTS } from '../utils/fontCatalog';
 import TermsOfService from '../components/TermsOfService';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { waitForChatterbox } from '../utils/ttsStatus';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'general', labelKey: 'settings.tabGeneral' },
-  { id: 'account', labelKey: 'settings.tabAccount' },
-  { id: 'llm',     labelKey: 'settings.tabLLM' },
-  { id: 'tts',     labelKey: 'settings.tabVoice' },
-  { id: 'data',    labelKey: 'settings.tabData' },
+  { id: 'general',    labelKey: 'settings.tabGeneral' },
+  { id: 'appearance', labelKey: 'settings.tabAppearance' },
+  { id: 'account',    labelKey: 'settings.tabAccount' },
+  { id: 'llm',        labelKey: 'settings.tabLLM' },
+  { id: 'tts',        labelKey: 'settings.tabVoice' },
+  { id: 'data',       labelKey: 'settings.tabData' },
 ];
 
 const s = {
@@ -355,7 +358,8 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
         {activeTab === 'tts'     && <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} onNavigate={onNavigate} />}
         {activeTab === 'account' && <AccountSection cfg={cfg} set={set} save={save} showToast={showToast} username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />}
         {activeTab === 'data'    && <DataSection showToast={showToast} />}
-        {activeTab === 'general' && <GeneralSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
+        {activeTab === 'general'    && <GeneralSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
+        {activeTab === 'appearance' && <AppearanceSection />}
       </div>
 
       {toast && <div style={s.toast}>{toast}</div>}
@@ -1789,6 +1793,8 @@ function DataSection({ showToast }) {
 
 function AppearanceSection() {
   const { theme } = useTheme();
+  const { t } = useLanguage();
+  const { fontId, setFont, headingFontId, setHeadingFont } = useFont();
   return (
     <Section title="Appearance">
       <Field>
@@ -1798,6 +1804,20 @@ function AppearanceSection() {
             {theme === 'dark' ? 'Dark mode' : 'Light mode'}
           </span>
         </div>
+      </Field>
+      <Field label={t('settings.fontHeading') || 'Heading font'} hint={t('settings.fontHeadingHint') || 'Used on page titles. Cormorant Garamond is the default.'}>
+        <select style={s.input} value={headingFontId} onChange={(e) => setHeadingFont(e.target.value)}>
+          {FONTS.map((f) => (
+            <option key={f.id} value={f.id} style={{ fontFamily: f.family }}>{f.label}</option>
+          ))}
+        </select>
+      </Field>
+      <Field label={t('settings.font') || 'Body font'} hint={t('settings.fontHint') || 'Used for paragraphs, entries, and UI chrome. Segoe UI is the default.'}>
+        <select style={s.input} value={fontId} onChange={(e) => setFont(e.target.value)}>
+          {FONTS.map((f) => (
+            <option key={f.id} value={f.id} style={{ fontFamily: f.family }}>{f.label}</option>
+          ))}
+        </select>
       </Field>
     </Section>
   );
@@ -1869,9 +1889,6 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
 
   return (
     <>
-      {/* Appearance */}
-      <AppearanceSection />
-
       {/* Open on startup */}
       <Section title={t('settings.openOnStartup')}>
         <Field hint={t('settings.openOnStartupHint')}>

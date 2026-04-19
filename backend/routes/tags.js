@@ -29,6 +29,29 @@ router.delete('/locked/:tag', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Core tags ───────────────────────────────────────────────────────────────
+// A core tag is pinned to the top of the tag-filter column. Same per-user
+// scope as locked tags; the two are independent (a tag can be core, locked,
+// both, or neither).
+
+router.get('/core', (req, res) => {
+  const rows = db.prepare('SELECT tag FROM core_tags WHERE user_id = ?').all(req.userId);
+  res.json({ tags: rows.map(r => r.tag) });
+});
+
+router.post('/core', (req, res) => {
+  const raw = String(req.body?.tag || '').trim().toLowerCase();
+  if (!raw) return res.status(400).json({ error: 'tag required' });
+  db.prepare('INSERT OR IGNORE INTO core_tags (user_id, tag) VALUES (?, ?)').run(req.userId, raw);
+  res.json({ ok: true, tag: raw });
+});
+
+router.delete('/core/:tag', (req, res) => {
+  const raw = String(req.params.tag || '').trim().toLowerCase();
+  db.prepare('DELETE FROM core_tags WHERE user_id = ? AND tag = ?').run(req.userId, raw);
+  res.json({ ok: true });
+});
+
 // Same baseline categories as reflect.js autoTag — keeps the live-suggested
 // pills consistent with the post-reflect tags so users don't see two different
 // vocabularies for the same content.

@@ -4,6 +4,7 @@ import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 import Calendar from './Calendar';
 import TagContextMenu from './TagContextMenu';
 import { useLockedTags } from '../hooks/useLockedTags';
+import { useCoreTags } from '../hooks/useCoreTags';
 import { useListArrowNav } from '../hooks/useListArrowNav';
 
 const ALL_TAG = '__all__';
@@ -90,11 +91,11 @@ const s = {
     flexShrink: 0,
   },
   headerTitle: {
-    fontSize: '11px',
-    fontWeight: '600',
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: '22px',
+    fontWeight: 700,
+    color: 'var(--strong)',
+    lineHeight: 1.1,
   },
   headerRight: {
     display: 'flex',
@@ -211,9 +212,15 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
   // Manual tags above LLM-applied auto tags with a divider between them.
   // If the parent didn't pass the split arrays, fall back to treating allTags
   // as a single manual list — keeps the component backward-compatible.
-  const manualTags = allManualTags || allTags;
-  const autoTags = allAutoTags || [];
+  const allManual = allManualTags || allTags;
+  const allAuto = allAutoTags || [];
   const { t } = useLanguage();
+  const { isCore, coreList } = useCoreTags();
+  // Core tags always render (even if no entry currently carries them) so the
+  // user can keep pinned filters visible while navigating sparsely-tagged data.
+  const coreTags = coreList;
+  const manualTags = allManual.filter((tag) => !isCore(tag));
+  const autoTags = allAuto.filter((tag) => !isCore(tag));
   const [search, setSearch] = useState('');
   const [showCal, setShowCal] = useState(true);
 
@@ -328,6 +335,24 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
           onClick={() => setFilterTag(ALL_TAG)}
         />
 
+        {coreTags.length > 0 && (
+          <>
+            {coreTags.map((tag) => (
+              <TagCustomPill
+                key={`c-${tag}`}
+                label={tag}
+                active={filterTag === tag}
+                onClick={() => setFilterTag(tag)}
+                onDelete={() => handleDeleteTag(tag)}
+                auto={false}
+              />
+            ))}
+            {(manualTags.length > 0 || autoTags.length > 0) && (
+              <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
+            )}
+          </>
+        )}
+
         {manualTags.map((tag) => (
           <TagCustomPill
             key={`m-${tag}`}
@@ -337,20 +362,6 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
             onDelete={() => handleDeleteTag(tag)}
           />
         ))}
-
-        {autoTags.length > 0 && (
-          <div
-            style={{
-              width: '50px',
-              height: '1px',
-              background: 'var(--border)',
-              opacity: 0.6,
-              margin: '4px 0',
-              flexShrink: 0,
-            }}
-            title="LLM-suggested tags"
-          />
-        )}
 
         {autoTags.map((tag) => (
           <TagCustomPill
@@ -460,13 +471,11 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const [hover, setHover] = useState(false);
   const [menu, setMenu] = useState(null);
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
+  const { isCore, makeCore, removeCore } = useCoreTags();
   const locked = isLocked(label);
   const always = isAlwaysLocked(label);
-  // Auto (LLM-applied) tags get a dashed border + italic so they read as
-  // distinct from user-typed manual tags at a glance.
-  const borderStyle = auto
-    ? (active ? '1px solid var(--strong)' : '1px dashed var(--border)')
-    : (active ? '1px solid var(--strong)' : '1px solid var(--border)');
+  const core = isCore(label);
+  const borderStyle = active ? '1px solid var(--strong)' : '1px solid var(--border)';
   return (
     <div
       style={{
@@ -538,6 +547,9 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
             locked
               ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
               : { label: 'Lock tag', onClick: () => lock(label) },
+            core
+              ? { label: 'Remove from core', onClick: () => removeCore(label) }
+              : { label: 'Make core', onClick: () => makeCore(label) },
           ]}
         />
       )}

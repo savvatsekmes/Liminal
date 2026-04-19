@@ -5,6 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import TagContextMenu from '../components/TagContextMenu';
 import { useLockedTags } from '../hooks/useLockedTags';
+import { useCoreTags } from '../hooks/useCoreTags';
 import { apiFetch } from '../utils/api';
 import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 
@@ -53,11 +54,11 @@ const s = {
     flexShrink: 0,
   },
   sidebarTitle: {
-    fontSize: '11px',
-    fontWeight: '600',
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    color: 'var(--muted)',
+    fontFamily: 'var(--font-display)',
+    fontSize: '22px',
+    fontWeight: 700,
+    color: 'var(--strong)',
+    lineHeight: 1.1,
   },
   sidebarNew: {
     fontSize: '18px',
@@ -1354,8 +1355,13 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
 
   // Manual tags above LLM-applied auto tags. Falls back to a single list if
   // the parent didn't pass the split arrays.
-  const manual = manualTags || tags;
-  const auto = autoTags || [];
+  const allManual = manualTags || tags;
+  const allAuto = autoTags || [];
+  const { isCore, coreList } = useCoreTags();
+  // Core tags always render, even if no session currently carries them.
+  const coreTags = coreList;
+  const manual = allManual.filter((tag) => !isCore(tag));
+  const auto = allAuto.filter((tag) => !isCore(tag));
 
   return (
     <div style={s.tagStrip}>
@@ -1366,8 +1372,22 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
         onClick={onClear}
       />
 
-      {(manual.length > 0 || auto.length > 0) && (
-        <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
+      {coreTags.length > 0 && (
+        <>
+          {coreTags.map((tag) => (
+            <TagCustomPill
+              key={`c-${tag}`}
+              label={tag}
+              active={activeFilters.includes(tag)}
+              onClick={() => onToggle(tag)}
+              onDelete={() => onDeleteTag(tag)}
+              auto={false}
+            />
+          ))}
+          {(manual.length > 0 || auto.length > 0) && (
+            <div style={{ width: '100%', borderTop: 'var(--border-style)', margin: '6px 0' }} />
+          )}
+        </>
       )}
 
       {manual.map((tag) => (
@@ -1379,17 +1399,6 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
           onDelete={() => onDeleteTag(tag)}
         />
       ))}
-
-      {auto.length > 0 && (
-        <div style={{
-          width: '50px',
-          height: '1px',
-          background: 'var(--border)',
-          opacity: 0.6,
-          margin: '4px 0',
-          flexShrink: 0,
-        }} title="LLM-suggested tags" />
-      )}
 
       {auto.map((tag) => (
         <TagCustomPill
@@ -1481,13 +1490,11 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const [hover, setHover] = useState(false);
   const [menu, setMenu] = useState(null);
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
+  const { isCore, makeCore, removeCore } = useCoreTags();
   const locked = isLocked(label);
   const always = isAlwaysLocked(label);
-  // Auto (LLM-applied) tags get a dashed border + italic so they read as
-  // distinct from user-typed manual tags at a glance.
-  const borderStyle = auto
-    ? (active ? '1px solid var(--strong)' : '1px dashed var(--border)')
-    : (active ? '1px solid var(--strong)' : '1px solid var(--border)');
+  const core = isCore(label);
+  const borderStyle = active ? '1px solid var(--strong)' : '1px solid var(--border)';
   return (
     <div
       style={{
@@ -1556,6 +1563,9 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
             locked
               ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
               : { label: 'Lock tag', onClick: () => lock(label) },
+            core
+              ? { label: 'Remove from core', onClick: () => removeCore(label) }
+              : { label: 'Make core', onClick: () => makeCore(label) },
           ]}
         />
       )}

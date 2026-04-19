@@ -148,6 +148,35 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, tag)
   );
+
+  CREATE TABLE IF NOT EXISTS core_tags (
+    user_id    INTEGER NOT NULL DEFAULT 1,
+    tag        TEXT    NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, tag)
+  );
+
+  CREATE TABLE IF NOT EXISTS threads (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'active',
+    weight      TEXT NOT NULL DEFAULT 'medium',
+    insight     TEXT NOT NULL DEFAULT '',
+    detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_threads_user ON threads(user_id, updated_at DESC);
+
+  CREATE TABLE IF NOT EXISTS thread_nodes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id    INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL,
+    content_id   INTEGER NOT NULL,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_thread_nodes_thread ON thread_nodes(thread_id);
 `);
 
 // Add new columns if they don't exist yet (migration for existing databases)
@@ -218,6 +247,17 @@ addColumnSafe('entries',     'breakthrough_level', 'INTEGER');
 // Reflection provenance: 'generated' (Liminal Mirror) vs 'imported' (pasted from
 // a Notion archive). Lets the UI demote regenerate buttons on legacy blocks.
 addColumnSafe('reflections', 'source', "TEXT NOT NULL DEFAULT 'generated'");
+
+// Thread origin: 'canonical' (one of the 8 seeded life arcs), 'novel' (LLM-discovered
+// per-user theme), or 'custom' (user-created). Drives sort order and edit affordances.
+addColumnSafe('threads', 'kind', "TEXT NOT NULL DEFAULT 'novel'");
+
+// Incremental threading stamp. NULL = never threaded (will be picked up by the
+// next sweep or Re-thread). NOT NULL with no matching thread_nodes row = orphan,
+// eligible for novel-theme clustering once ≥3 peers accumulate.
+addColumnSafe('entries',         'threaded_at', 'TIMESTAMP');
+addColumnSafe('notes',           'threaded_at', 'TIMESTAMP');
+addColumnSafe('oracle_sessions', 'threaded_at', 'TIMESTAMP');
 
 // Link oracle sessions to their source entry or note (the "Let's talk about this" feature).
 // A session can be linked to at most one entry or one note. Bidirectional: entries/notes

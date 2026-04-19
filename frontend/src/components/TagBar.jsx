@@ -3,6 +3,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
 import TagContextMenu from './TagContextMenu';
 import { useLockedTags } from '../hooks/useLockedTags';
+import { useCoreTags } from '../hooks/useCoreTags';
 
 function TagLabel({ tag }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
@@ -49,6 +50,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
   const [newTag, setNewTag] = useState('');
   const [menu, setMenu] = useState(null); // { x, y, tag }
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
+  const { isCore, makeCore, removeCore } = useCoreTags();
 
   function removeTag(tag) {
     onTagsChange(tags.filter((t) => t !== tag));
@@ -98,6 +100,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
       {menu && (() => {
         const locked = isLocked(menu.tag);
         const always = isAlwaysLocked(menu.tag);
+        const core = isCore(menu.tag);
         return (
           <TagContextMenu
             x={menu.x}
@@ -107,6 +110,9 @@ export default function TagBar({ tags = [], onTagsChange }) {
               locked
                 ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(menu.tag) }
                 : { label: 'Lock tag', onClick: () => lock(menu.tag) },
+              core
+                ? { label: 'Remove from core', onClick: () => removeCore(menu.tag) }
+                : { label: 'Make core', onClick: () => makeCore(menu.tag) },
             ]}
           />
         );

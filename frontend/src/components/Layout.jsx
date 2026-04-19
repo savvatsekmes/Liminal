@@ -282,6 +282,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
       { id: 'journal', label: t('nav.journal'),  icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4c2-1 4-1.5 6-1.5S12 3.5 12 4.5c0-1 3.5-2 6-1.5s4 .5 4 1.5v14c0-.5-2-1-4-1s-4.5.5-6 1.5c-1.5-1-3.5-1.5-6-1.5s-3.5.5-4 1V4z"/><line x1="12" y1="4.5" x2="12" y2="19.5"/></svg> },
       { id: 'notes',   label: t('nav.notes'),   icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M16 2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="16 2 16 8 22 8"/><line x1="10" y1="13" x2="18" y2="13"/><line x1="10" y1="17" x2="15" y2="17"/></svg> },
       { id: 'oracle',  label: t('nav.oracle'),  icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="13" height="7" rx="3"/><rect x="8" y="13.5" width="13" height="7" rx="3" fill="currentColor"/></svg> },
+      { id: 'threads', label: t('nav.threads') || 'Threads', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="4.5" rx="7" ry="1.8"/><ellipse cx="12" cy="19.5" rx="7" ry="1.8"/><path d="M5 4.5v15"/><path d="M19 4.5v15"/><line x1="6.5" y1="7.5" x2="17.5" y2="7.5"/><line x1="6" y1="10" x2="18" y2="10"/><line x1="6.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="6" y1="15" x2="18" y2="15"/><line x1="6.5" y1="17.5" x2="17.5" y2="17.5"/><path d="M18 10c2 1 3 3 3 5"/></svg> },
       { id: 'portrait', label: t('nav.portrait'), icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg> },
     ];
 
@@ -432,6 +433,12 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
           icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="13" height="7" rx="3"/><rect x="8" y="13.5" width="13" height="7" rx="3" fill="currentColor"/></svg>}
           active={activeView === 'oracle'}
           onClick={() => onViewChange('oracle')}
+        />
+        <SidebarButton
+          label={t('nav.threads') || 'Threads'}
+          icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="4.5" rx="7" ry="1.8"/><ellipse cx="12" cy="19.5" rx="7" ry="1.8"/><path d="M5 4.5v15"/><path d="M19 4.5v15"/><line x1="6.5" y1="7.5" x2="17.5" y2="7.5"/><line x1="6" y1="10" x2="18" y2="10"/><line x1="6.5" y1="12.5" x2="17.5" y2="12.5"/><line x1="6" y1="15" x2="18" y2="15"/><line x1="6.5" y1="17.5" x2="17.5" y2="17.5"/><path d="M18 10c2 1 3 3 3 5"/></svg>}
+          active={activeView === 'threads'}
+          onClick={() => onViewChange('threads')}
         />
         <SidebarButton
           label={t('nav.portrait')}

@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
+const threadService = require('../services/threadService');
 
 router.use(requireAuth);
 
@@ -71,6 +72,19 @@ router.post('/', (req, res) => {
     )
     .run(type, body, attribution || null, target_date || null, custom_tag || null, JSON.stringify(normalised.tags), JSON.stringify(normalised.auto_tags), req.userId);
 
+  // Rosary bead: thread this note into the graph if it already has content.
+  // Empty shells (created before autosave fills them) are skipped — the
+  // subsequent PUT will thread them once their body materialises.
+  if ((body || '').trim()) {
+    const noteId = result.lastInsertRowid;
+    const userId = req.userId;
+    setImmediate(() => {
+      threadService.threadSingleItem('note', noteId, userId).catch((err) => {
+        console.error('[notes] thread bead failed:', err.message);
+      });
+    });
+  }
+
   res.status(201).json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(result.lastInsertRowid)));
 });
 
@@ -108,6 +122,24 @@ router.put('/:id', (req, res) => {
   params.push(req.params.id, req.userId);
 
   db.prepare(`UPDATE notes SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...params);
+
+  // Rosary bead: thread on first substantive save (threaded_at NULL + body
+  // non-empty). Subsequent edits don't re-thread to avoid 20+ LLM calls
+  // during autosave. The before-quit sweep / Re-thread handle significant
+  // rewrites. Tag-only updates still trigger threading since tags are strong
+  // match signals.
+  const tagsChanged = tags !== undefined || auto_tags !== undefined;
+  const current = db.prepare('SELECT body, threaded_at FROM notes WHERE id = ?').get(req.params.id);
+  if (current && (current.body || '').trim() && (!current.threaded_at || tagsChanged)) {
+    const noteId = Number(req.params.id);
+    const userId = req.userId;
+    setImmediate(() => {
+      threadService.threadSingleItem('note', noteId, userId).catch((err) => {
+        console.error('[notes] thread bead failed:', err.message);
+      });
+    });
+  }
+
   res.json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id)));
 });
 
