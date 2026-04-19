@@ -9,6 +9,27 @@ const spreads = require('../data/spreads');
 
 router.use(requireAuth);
 
+// Visible threads = canonical (always shown) + novel/custom with 3+ beads.
+// This mirrors the ThreadsPage visibility rule and gives the card prompt a
+// high-signal summary of what the user's life is currently about — much
+// cheaper and cleaner than re-deriving it from recent-entry excerpts.
+function getThreadContext(userId) {
+  const rows = db.prepare(`
+    SELECT t.name, t.description, t.kind, t.status,
+           COUNT(n.id) AS node_count
+      FROM threads t
+      LEFT JOIN thread_nodes n ON n.thread_id = t.id
+     WHERE t.user_id = ?
+     GROUP BY t.id
+     HAVING t.kind = 'canonical' OR node_count >= 3
+     ORDER BY (t.status = 'active') DESC, t.updated_at DESC
+  `).all(userId);
+  if (!rows.length) return '';
+  return rows
+    .map(t => `- ${t.name}${t.status === 'dormant' ? ' (dormant)' : ''}${t.description ? ' — ' + t.description : ''}`)
+    .join('\n');
+}
+
 // ── GET /api/cards/decks — return deck + spread data to frontend ─────────────
 router.get('/decks', (req, res) => {
   // Add image paths to tarot cards
@@ -86,10 +107,13 @@ router.get('/daily', async (req, res) => {
       .map(e => `${e.title || 'Untitled'}: ${(e.body_text || '').slice(0, 150)}`)
       .join('\n');
 
+    const threadContext = getThreadContext(req.userId);
+
     const systemPrompt = 'You are a warm, intuitive oracle reader. You give personalised daily card readings that connect the card\'s energy to the person\'s life. Do NOT repeat or paraphrase the card\'s textbook meaning — instead, weave it into specific, actionable guidance for their day. Be poetic but grounded. No greeting or sign-off. Plain text only, 3-4 sentences.';
     const userMessage = `Card: "${card.name}"${reversed ? ' (reversed)' : ''}. Meaning: "${card.meaning}".
 
 ${context ? `About the person: ${context}` : ''}
+${threadContext ? `Active life threads (what they're currently navigating):\n${threadContext}` : ''}
 ${journalContext ? `Recent journal entries:\n${journalContext}` : ''}
 
 Write a personalised daily reading for this person based on this card. Focus on what this card means for their day ahead — don't just restate the meaning.`;
@@ -137,6 +161,15 @@ router.post('/reading', async (req, res) => {
     if (lines.length) portraitContext = `\n\n## ABOUT THIS PERSON\n${lines.join('\n')}`;
   }
 
+  // Threads + memory summary — give the reader a real sense of what this
+  // person is currently navigating, not just their static portrait.
+  const threadContext = getThreadContext(req.userId);
+  let memorySummary = '';
+  try {
+    const memoryService = require('../services/memoryService');
+    memorySummary = await memoryService.synthesizeMemory(req.userId) || '';
+  } catch {}
+
   // Format the pulled cards
   const cardLines = cards.map((c, i) => {
     const pos = c.position ? `[${c.position}]` : '';
@@ -152,6 +185,8 @@ router.post('/reading', async (req, res) => {
   const systemPrompt = `You are a skilled ${deckLabel} reader within a personal journaling app called Liminal.
 You provide thoughtful, deeply personal readings that honour the cards and the person sitting before you.
 ${portraitContext}
+${memorySummary ? `\n\n## WHAT YOU KNOW ABOUT THEM\n${memorySummary}` : ''}
+${threadContext ? `\n\n## ACTIVE LIFE THREADS (what they're currently navigating)\n${threadContext}` : ''}
 
 The user has pulled the following cards in a "${spreadLabel}" spread:
 
@@ -231,6 +266,10 @@ router.post('/pull', async (req, res) => {
     skyCtx = getSkyContext();
   } catch {}
 
+  // Active threads — higher-signal than recent-entry excerpts for a "what's
+  // this person currently navigating" summary.
+  const threadContext = getThreadContext(req.userId);
+
   // Portrait context
   const profileLines = [];
   if (portrait) {
@@ -264,6 +303,8 @@ Your job is to select ${numCards} card(s) from the ${deck === 'tarot' ? 'Tarot' 
 ${profileLines.length ? profileLines.join('\n') : 'No profile available.'}
 
 ${memorySummary ? `## WHAT YOU KNOW ABOUT THEM\n${memorySummary}` : ''}
+
+${threadContext ? `## ACTIVE LIFE THREADS (what they're currently navigating)\n${threadContext}` : ''}
 
 ${entryContext ? `## RECENT JOURNAL ENTRIES\n${entryContext}` : ''}
 

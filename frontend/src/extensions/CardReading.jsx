@@ -206,6 +206,24 @@ const st = {
     overflow: 'hidden',
     transition: 'max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease',
   },
+  readAloudBtn: {
+    position: 'absolute',
+    right: '10px',
+    bottom: '6px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '20px',
+    height: '20px',
+    borderRadius: '10px',
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    color: 'var(--muted)',
+    transition: 'color 0.12s',
+    padding: 0,
+    zIndex: 2,
+  },
   /* Detail popup */
   popupOverlay: {
     position: 'fixed',
@@ -324,8 +342,22 @@ function CardReadingView({ node, deleteNode, editor, getPos }) {
   const [selectedCard, setSelectedCard] = useState(null);
   const [readingExpanded, setReadingExpanded] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const wrapperRef = useRef(null);
   const dragRef = useRef(null);
+  const audioRef = useRef(null);
+  const cancelRef = useRef(false);
+
+  const handleReadAloud = useCallback(async (e) => {
+    e.stopPropagation();
+    if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
+    const text = (reading || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    cancelRef.current = false;
+    setPlaying(true);
+    await streamSpeak(text, audioRef, cancelRef);
+    setPlaying(false);
+  }, [reading, playing]);
 
   // Manual dragstart — same pattern as DetailsBlock for reliable drag from rows
   useEffect(() => {
@@ -451,6 +483,18 @@ function CardReadingView({ node, deleteNode, editor, getPos }) {
               <div dangerouslySetInnerHTML={{ __html: reading }} />
             </div>
           </>
+        )}
+        {reading && (
+          <button
+            style={{ ...st.readAloudBtn, color: playing ? 'var(--strong)' : 'var(--muted)' }}
+            onClick={handleReadAloud}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--strong)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = playing ? 'var(--strong)' : 'var(--muted)'; }}
+            aria-label={playing ? 'Stop' : 'Listen'}
+            title={playing ? 'Stop' : 'Read aloud'}
+          >
+            <WaveformIcon playing={playing} />
+          </button>
         )}
       </div>
 
@@ -584,22 +628,18 @@ function CardDetailPopup({ card, deckType, onClose }) {
 
 function WaveformIcon({ playing }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
       <rect x="1" y={playing ? 2 : 4} width="2" height={playing ? 10 : 6} rx="1" fill="currentColor">
         {playing && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
-        {playing && <animate attributeName="y" values="2;5;2" dur="0.8s" repeatCount="indefinite" />}
       </rect>
       <rect x="4.5" y={playing ? 0 : 2} width="2" height={playing ? 14 : 10} rx="1" fill="currentColor">
         {playing && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
-        {playing && <animate attributeName="y" values="0;4;0" dur="0.6s" repeatCount="indefinite" />}
       </rect>
-      <rect x="8" y={playing ? 3 : 5} width="2" height={playing ? 8 : 4} rx="1" fill="currentColor">
-        {playing && <animate attributeName="height" values="8;3;8" dur="0.7s" repeatCount="indefinite" />}
-        {playing && <animate attributeName="y" values="3;5.5;3" dur="0.7s" repeatCount="indefinite" />}
+      <rect x="8" y={playing ? 3 : 4} width="2" height={playing ? 8 : 6} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="8;12;8" dur="0.9s" repeatCount="indefinite" />}
       </rect>
-      <rect x="11.5" y={playing ? 4 : 5} width="2" height={playing ? 6 : 4} rx="1" fill="currentColor">
-        {playing && <animate attributeName="height" values="6;2;6" dur="0.9s" repeatCount="indefinite" />}
-        {playing && <animate attributeName="y" values="4;6;4" dur="0.9s" repeatCount="indefinite" />}
+      <rect x="11.5" y={playing ? 1 : 3} width="2" height={playing ? 12 : 8} rx="1" fill="currentColor">
+        {playing && <animate attributeName="height" values="12;5;12" dur="0.7s" repeatCount="indefinite" />}
       </rect>
     </svg>
   );
