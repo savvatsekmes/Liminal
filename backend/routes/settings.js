@@ -519,21 +519,21 @@ router.post('/restore-backup', backupUpload.single('backup'), async (req, res) =
 function buildExportData(userId) {
   // ── User-scoped data ────────────────────────────────────────────────────────
   const entries = db.prepare(`
-    SELECT id, title, body, body_text, date, tags, auto_tags, created_at, updated_at
+    SELECT id, title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at
     FROM entries WHERE user_id = ? ORDER BY date DESC, created_at DESC
   `).all(userId).map(e => ({ ...e, tags: parseJSON(e.tags, []), auto_tags: parseJSON(e.auto_tags, []) }));
 
   const entryIds = new Set(entries.map(e => e.id));
 
   const notes = db.prepare(`
-    SELECT id, type, title, body, attribution, target_date, custom_tag, tags, auto_tags, created_at, updated_at
+    SELECT id, type, title, body, attribution, target_date, custom_tag, tags, auto_tags, threaded_at, created_at, updated_at
     FROM notes WHERE user_id = ? ORDER BY created_at DESC
   `).all(userId).map(n => ({ ...n, tags: parseJSON(n.tags, []), auto_tags: parseJSON(n.auto_tags, []) }));
 
   const noteIds = new Set(notes.map(n => n.id));
 
   const oracleSessions = db.prepare(`
-    SELECT id, archetype, title, created_at FROM oracle_sessions WHERE user_id = ? ORDER BY created_at DESC
+    SELECT id, archetype, title, threaded_at, created_at FROM oracle_sessions WHERE user_id = ? ORDER BY created_at DESC
   `).all(userId).map(session => ({
     ...session,
     messages: db.prepare(
@@ -569,6 +569,20 @@ function buildExportData(userId) {
   const homeLayouts = db.prepare(
     'SELECT name, widget_order, is_active, created_at FROM home_layouts WHERE user_id = ? ORDER BY created_at ASC'
   ).all(userId).map(r => ({ ...r, widget_order: parseJSON(r.widget_order, []), is_active: !!r.is_active }));
+
+  // Threads — rosary-bead graph of canonical / novel / custom themes with
+  // per-item nodes pointing at entries, notes, and oracle sessions. Nodes
+  // carry the source id so the import side can remap them through the
+  // entry/note/session id maps.
+  const threadRows = db.prepare(
+    'SELECT id, name, description, status, weight, kind, insight, detected_at, updated_at FROM threads WHERE user_id = ? ORDER BY detected_at ASC'
+  ).all(userId);
+  const threads = threadRows.map(t => ({
+    ...t,
+    nodes: db.prepare(
+      'SELECT content_type, content_id, created_at FROM thread_nodes WHERE thread_id = ? ORDER BY created_at ASC'
+    ).all(t.id),
+  }));
 
   const settingsRows = db.prepare('SELECT key, value FROM settings').all();
   const settingsObj = {};
@@ -617,6 +631,7 @@ function buildExportData(userId) {
     users,
     avatars,
     home_layouts: homeLayouts,
+    threads,
   };
 }
 
@@ -635,11 +650,13 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
   db.prepare('DELETE FROM notes WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(userId);
+  // Threads: ON DELETE CASCADE on thread_nodes.thread_id takes care of nodes.
+  db.prepare('DELETE FROM threads WHERE user_id = ?').run(userId);
 
   // 1. Entries
   const insertEntry = db.prepare(`
-    INSERT INTO entries (title, body, body_text, date, tags, auto_tags, created_at, updated_at, user_id)
-    VALUES (@title, @body, @body_text, @date, @tags, @auto_tags, @created_at, @updated_at, @user_id)
+    INSERT INTO entries (title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at, user_id)
+    VALUES (@title, @body, @body_text, @date, @tags, @auto_tags, @threaded_at, @created_at, @updated_at, @user_id)
   `);
   for (const e of entries) {
     try {
@@ -650,6 +667,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
         date: e.date || e.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
         tags: typeof e.tags === 'string' ? e.tags : JSON.stringify(e.tags || []),
         auto_tags: typeof e.auto_tags === 'string' ? e.auto_tags : JSON.stringify(e.auto_tags || []),
+        threaded_at: e.threaded_at || null,
         created_at: e.created_at || new Date().toISOString(),
         updated_at: e.updated_at || e.created_at || new Date().toISOString(),
         user_id: userId,
@@ -661,8 +679,8 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
 
   // 2. Notes
   const insertNote = db.prepare(`
-    INSERT INTO notes (type, title, body, attribution, target_date, custom_tag, tags, auto_tags, created_at, updated_at, user_id)
-    VALUES (@type, @title, @body, @attribution, @target_date, @custom_tag, @tags, @auto_tags, @created_at, @updated_at, @user_id)
+    INSERT INTO notes (type, title, body, attribution, target_date, custom_tag, tags, auto_tags, threaded_at, created_at, updated_at, user_id)
+    VALUES (@type, @title, @body, @attribution, @target_date, @custom_tag, @tags, @auto_tags, @threaded_at, @created_at, @updated_at, @user_id)
   `);
   for (const n of notes) {
     try {
@@ -675,6 +693,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
         custom_tag: n.custom_tag || null,
         tags: typeof n.tags === 'string' ? n.tags : JSON.stringify(n.tags || []),
         auto_tags: typeof n.auto_tags === 'string' ? n.auto_tags : JSON.stringify(n.auto_tags || []),
+        threaded_at: n.threaded_at || null,
         created_at: n.created_at || new Date().toISOString(),
         updated_at: n.updated_at || n.created_at || new Date().toISOString(),
         user_id: userId,
@@ -686,8 +705,8 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
 
   // 3. Oracle sessions + messages
   const insertSession = db.prepare(`
-    INSERT INTO oracle_sessions (archetype, title, created_at, user_id)
-    VALUES (@archetype, @title, @created_at, @user_id)
+    INSERT INTO oracle_sessions (archetype, title, threaded_at, created_at, user_id)
+    VALUES (@archetype, @title, @threaded_at, @created_at, @user_id)
   `);
   const insertMessage = db.prepare(`
     INSERT INTO oracle_messages (session_id, role, content, archetype, created_at)
@@ -698,6 +717,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
       const result = insertSession.run({
         archetype: sess.archetype || 'Auto',
         title: sess.title || '',
+        threaded_at: sess.threaded_at || null,
         created_at: sess.created_at || new Date().toISOString(),
         user_id: userId,
       });
@@ -860,6 +880,56 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
           layout.is_active ? 1 : 0,
           layout.created_at || new Date().toISOString(),
         );
+      } catch { counts.skipped++; }
+    }
+  }
+
+  // 11b. Threads — restore the rosary-bead graph. Inserts threads with new
+  // ids, then nodes with content_id remapped through the appropriate id map
+  // for its content_type ('entry' / 'note' / 'conversation'). Nodes whose
+  // source id isn't in the map are dropped silently — they'd be dangling
+  // anyway.
+  if (Array.isArray(data.threads) && data.threads.length > 0) {
+    const insertThread = db.prepare(`
+      INSERT INTO threads (user_id, name, description, status, weight, kind, insight, detected_at, updated_at)
+      VALUES (@user_id, @name, @description, @status, @weight, @kind, @insight, @detected_at, @updated_at)
+    `);
+    const insertNode = db.prepare(`
+      INSERT INTO thread_nodes (thread_id, content_type, content_id, created_at)
+      VALUES (@thread_id, @content_type, @content_id, @created_at)
+    `);
+    for (const th of data.threads) {
+      try {
+        const res = insertThread.run({
+          user_id: userId,
+          name: th.name || '',
+          description: th.description || '',
+          status: th.status || 'active',
+          weight: th.weight || 'medium',
+          kind: th.kind || 'novel',
+          insight: th.insight || '',
+          detected_at: th.detected_at || new Date().toISOString(),
+          updated_at: th.updated_at || th.detected_at || new Date().toISOString(),
+        });
+        const newThreadId = res.lastInsertRowid;
+        counts.threads = (counts.threads || 0) + 1;
+        for (const node of (th.nodes || [])) {
+          const map = node.content_type === 'entry' ? entryIdMap
+                    : node.content_type === 'note' ? noteIdMap
+                    : node.content_type === 'conversation' ? sessionIdMap
+                    : null;
+          const newContentId = map ? (map[node.content_id] || null) : null;
+          if (!newContentId) { counts.skipped++; continue; }
+          try {
+            insertNode.run({
+              thread_id: newThreadId,
+              content_type: node.content_type,
+              content_id: newContentId,
+              created_at: node.created_at || new Date().toISOString(),
+            });
+            counts.thread_nodes = (counts.thread_nodes || 0) + 1;
+          } catch { counts.skipped++; }
+        }
       } catch { counts.skipped++; }
     }
   }

@@ -158,8 +158,12 @@ function buildYoutubeContext(userId, htmlContent) {
 
   if (!rows.length) return '';
 
+  // Cap per-video transcript at 1500 chars. 4000+ was overwhelming reflect
+  // prompts — the model would mirror the video's language back as if it were
+  // the user's own content. 1500 is enough for the model to recognise what
+  // was watched without drowning out the journal entry itself.
   return rows
-    .map((r) => `VIDEO: "${r.title}"\nTRANSCRIPT (excerpt):\n${r.transcript.slice(0, 4000)}`)
+    .map((r) => `VIDEO: "${r.title}"\nTRANSCRIPT (excerpt):\n${r.transcript.slice(0, 1500)}`)
     .join('\n\n---\n\n');
 }
 

@@ -232,7 +232,7 @@ async function buildMemorySection(userId = 1) {
  * Retrieve 3-5 past entries most similar to the current entry body.
  * Returns full entry rows with their text.
  */
-async function retrieveSimilarEntries(currentEntryText, currentEntryId, k = 5) {
+async function retrieveSimilarEntries(currentEntryText, currentEntryId, k = 3) {
   try {
     const results = await embedding.querySimilar(currentEntryText, k, currentEntryId ? [currentEntryId] : []);
 
@@ -292,15 +292,21 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
 
-  // 4. Relevant past entries
+  // 4. Relevant past entries — short excerpts only, clearly marked as
+  // background. Full-body dumps of past entries used to drown out today's
+  // entry: the model would pull topics, phrasing, even specific nouns from
+  // them instead of responding to what was actually written today.
   if (similarEntries.length > 0) {
+    const EXCERPT_LEN = 350;
     const pastContext = similarEntries
       .map((e) => {
         const dateStr = e.date || e.created_at?.split('T')[0] || 'unknown date';
-        return `[${dateStr}] ${e.title}\n${e.body_text}`;
+        const body = String(e.body_text || '').trim();
+        const excerpt = body.length > EXCERPT_LEN ? body.slice(0, EXCERPT_LEN) + '…' : body;
+        return `[${dateStr}] ${e.title}\n${excerpt}`;
       })
       .join('\n\n---\n\n');
-    sections.push(`## RELEVANT PAST ENTRIES\nThese past entries are most relevant to what was just written:\n\n${pastContext}`);
+    sections.push(`## PAST ENTRY EXCERPTS (BACKGROUND ONLY)\nShort excerpts from past entries that share some language with today's entry. These are background context for continuity — do NOT use them to set the topic of your reflection. Only reference a past entry if today's entry explicitly picks up the same thread.\n\n${pastContext}`);
   }
 
   // 5. Sky context (respects sky weight)
@@ -633,6 +639,8 @@ function buildMirrorInstructions(portrait, username = null) {
     : `You don't know their name. Address them warmly but without a name.`;
 
   return `## MIRROR RESPONSE INSTRUCTIONS
+
+PRIMACY RULE — read this first: today's journal entry (the user message below) is your PRIMARY signal. Everything in the CONTEXT sections above — portrait, memory, past entry excerpts, notes, sky, weather, embedded videos — is BACKGROUND only. It describes who this person is and where they've been. Do not import topics, nouns, or specific imagery from those sections unless today's entry explicitly touches them. If the context mentions career, isolation, a specific place, a specific relationship, a specific video idea — and today's entry does NOT — then do not bring those into your reflection. Respond to what was actually written today.
 
 You are responding to a personal journal entry as an integrated, wise voice that draws on multiple wisdom traditions simultaneously. You are not one archetype — you are a blend of: ${activeArchetypes.join(', ')}.
 

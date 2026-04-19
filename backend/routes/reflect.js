@@ -42,10 +42,15 @@ router.post('/', async (req, res) => {
     const ytContext = buildYoutubeContext(req.userId, htmlBody);
     const imgContext = buildImageContext(req.userId, htmlBody);
     const cardContext = buildCardContext(htmlBody);
-    const userMessage = `Here is today's journal entry:\n\n${text}`
-      + (ytContext ? `\n\n---\nVIDEOS EMBEDDED IN THIS ENTRY:\n${ytContext}` : '')
-      + (imgContext ? `\n\n---\nIMAGES IN THIS ENTRY:\n${imgContext}` : '')
-      + (cardContext ? `\n\n---\nCARDS PULLED IN THIS ENTRY:\n${cardContext}` : '');
+    // The journal entry is the SUBJECT. Everything else the user embedded
+    // (videos, images, tarot pulls) is REFERENCE — material they linked
+    // alongside their writing, not the writing itself. The labels below
+    // make this distinction explicit so the model doesn't mirror the
+    // video's language back as the user's own voice.
+    const userMessage = `# TODAY'S JOURNAL ENTRY (primary subject of your reflection)\n\n${text}`
+      + (ytContext ? `\n\n---\n# REFERENCE: videos the user embedded (background only — do NOT treat these as the user's words or let them set the topic)\n\n${ytContext}` : '')
+      + (imgContext ? `\n\n---\n# REFERENCE: images in the entry (background only)\n\n${imgContext}` : '')
+      + (cardContext ? `\n\n---\n# REFERENCE: tarot cards pulled in the entry\n\n${cardContext}` : '');
     const rawResponse = await llm.call(systemPrompt, userMessage, { maxTokens: 2500 });
 
     // 3. Parse Mirror blocks from JSON response

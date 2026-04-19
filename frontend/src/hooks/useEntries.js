@@ -57,7 +57,7 @@ export function useEntries() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: today() + ' — Untitled',
+          title: 'Entry Title',
           body: '',
           body_text: '',
           date: today(),
