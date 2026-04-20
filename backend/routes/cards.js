@@ -14,6 +14,7 @@ router.use(requireAuth);
 // high-signal summary of what the user's life is currently about — much
 // cheaper and cleaner than re-deriving it from recent-entry excerpts.
 function getThreadContext(userId) {
+  const { safeDecrypt } = require('../services/rowCrypto');
   const rows = db.prepare(`
     SELECT t.name, t.description, t.kind, t.status,
            COUNT(n.id) AS node_count
@@ -26,6 +27,7 @@ function getThreadContext(userId) {
   `).all(userId);
   if (!rows.length) return '';
   return rows
+    .map(t => ({ ...t, name: safeDecrypt(userId, t.name), description: safeDecrypt(userId, t.description) }))
     .map(t => `- ${t.name}${t.status === 'dormant' ? ' (dormant)' : ''}${t.description ? ' — ' + t.description : ''}`)
     .join('\n');
 }

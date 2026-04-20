@@ -12,19 +12,20 @@
 const db = require('../database');
 const llm = require('./llmService');
 const embedding = require('./embeddingService');
+const { encryptField, safeDecrypt } = require('./rowCrypto');
 
 // ── Discrete Memory Items ───────────────────────────────────────────────────
 
 function getMemories(userId = 1, limit = 50) {
   return db.prepare(
     'SELECT id, content, pinned, created_at FROM memories WHERE user_id = ? ORDER BY pinned DESC, created_at DESC LIMIT ?'
-  ).all(userId, limit);
+  ).all(userId, limit).map((m) => ({ ...m, content: safeDecrypt(userId, m.content) }));
 }
 
 // Legacy — still used by Settings memory panel and old code paths
 function getSummary(userId = 1) {
   const row = db.prepare('SELECT summary FROM memory WHERE user_id = ?').get(userId);
-  return row ? row.summary : '';
+  return row ? safeDecrypt(userId, row.summary) : '';
 }
 
 /**
@@ -79,16 +80,22 @@ Extract any genuinely new facts about this person. Return only the JSON.`;
 
     if (newItems.length) {
       const ins = db.prepare('INSERT INTO memories (user_id, content, pinned, source_entry_id) VALUES (?, ?, 0, ?)');
-      const exists = db.prepare(
-        "SELECT 1 FROM memories WHERE user_id = ? AND LOWER(TRIM(REPLACE(REPLACE(content, CHAR(10), ' '), '  ', ' '))) = ?"
-      );
+      // Dedupe in-memory: content is stored encrypted so the SQL LOWER(...) = ?
+      // trick can't compare ciphertexts. Load this user's decrypted memories
+      // once and check against that set.
       const normalize = (s) => s.toLowerCase().trim().replace(/\n/g, ' ').replace(/  /g, ' ');
+      const existingNormalized = new Set(
+        db.prepare('SELECT content FROM memories WHERE user_id = ?').all(userId)
+          .map((r) => normalize(safeDecrypt(userId, r.content) || ''))
+      );
       let inserted = 0;
       for (const item of newItems) {
         if (typeof item === 'string' && item.trim()) {
           const content = item.trim();
-          if (!exists.get(userId, normalize(content))) {
-            ins.run(userId, content, entryId || null);
+          const key = normalize(content);
+          if (!existingNormalized.has(key)) {
+            ins.run(userId, encryptField(userId, content), entryId || null);
+            existingNormalized.add(key);
             inserted++;
           }
         }
@@ -115,7 +122,8 @@ Extract any genuinely new facts about this person. Return only the JSON.`;
  */
 async function synthesizeMemory(userId = 1) {
   // Check cache — use the old memory table as cache store
-  const cached = db.prepare('SELECT summary, updated_at FROM memory WHERE user_id = ?').get(userId);
+  const cachedRow = db.prepare('SELECT summary, updated_at FROM memory WHERE user_id = ?').get(userId);
+  const cached = cachedRow ? { ...cachedRow, summary: safeDecrypt(userId, cachedRow.summary) } : null;
   const cacheFlag = db.prepare("SELECT value FROM settings WHERE key = ?").get(`memory_dirty_${userId}`);
 
   // If cache exists and isn't dirty, return it
@@ -137,7 +145,7 @@ async function synthesizeMemory(userId = 1) {
      ORDER BY m.is_core DESC, m.pinned DESC,
               COALESCE(e.date, e.created_at, m.created_at) DESC
      LIMIT 50
-  `).all(userId);
+  `).all(userId).map((m) => ({ ...m, content: safeDecrypt(userId, m.content) }));
   if (!items.length) return '';
 
   const now = Date.now();
@@ -195,10 +203,11 @@ Rules:
 
     // Cache in old memory table
     const existingRow = db.prepare('SELECT id FROM memory WHERE user_id = ?').get(userId);
+    const encryptedSummary = encryptField(userId, trimmed);
     if (existingRow) {
-      db.prepare('UPDATE memory SET summary = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(trimmed, userId);
+      db.prepare('UPDATE memory SET summary = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(encryptedSummary, userId);
     } else {
-      db.prepare('INSERT INTO memory (user_id, summary) VALUES (?, ?)').run(userId, trimmed);
+      db.prepare('INSERT INTO memory (user_id, summary) VALUES (?, ?)').run(userId, encryptedSummary);
     }
 
     // Clear dirty flag

@@ -3,6 +3,15 @@ const router = express.Router();
 const db = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const threadService = require('../services/threadService');
+const { encryptField, safeDecrypt } = require('../services/rowCrypto');
+
+function decryptThread(userId, row) {
+  if (!row) return row;
+  if (row.name !== undefined) row.name = safeDecrypt(userId, row.name);
+  if (row.description !== undefined) row.description = safeDecrypt(userId, row.description);
+  if (row.insight !== undefined) row.insight = safeDecrypt(userId, row.insight);
+  return row;
+}
 
 router.use(requireAuth);
 
@@ -27,7 +36,7 @@ router.get('/', (req, res) => {
        CASE t.kind WHEN 'canonical' THEN 0 WHEN 'custom' THEN 1 ELSE 2 END,
        (t.status = 'active') DESC,
        t.updated_at DESC
-  `).all(req.userId);
+  `).all(req.userId).map((r) => decryptThread(req.userId, r));
   res.json(rows);
 });
 
@@ -128,7 +137,9 @@ router.post('/detect', (req, res) => {
 
 // ── GET /api/threads/:id ─────────────────────────────────────────────────────
 router.get('/:id', (req, res) => {
-  const thread = db.prepare('SELECT * FROM threads WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const thread = decryptThread(req.userId,
+    db.prepare('SELECT * FROM threads WHERE id = ? AND user_id = ?').get(req.params.id, req.userId)
+  );
   if (!thread) return res.status(404).json({ error: 'Thread not found' });
   const nodes = threadService.getHydratedNodes(thread.id, req.userId);
   res.json({ ...thread, nodes });
@@ -143,22 +154,22 @@ router.put('/:id', (req, res) => {
   const fields = [];
   const params = [];
 
-  if (name !== undefined) { fields.push('name = ?'); params.push(String(name).trim().slice(0, 120)); }
-  if (description !== undefined) { fields.push('description = ?'); params.push(String(description).trim().slice(0, 400)); }
+  if (name !== undefined) { fields.push('name = ?'); params.push(encryptField(req.userId, String(name).trim().slice(0, 120))); }
+  if (description !== undefined) { fields.push('description = ?'); params.push(encryptField(req.userId, String(description).trim().slice(0, 400))); }
   if (status !== undefined && ['active', 'resolving', 'complete'].includes(status)) {
     fields.push('status = ?'); params.push(status);
   }
   if (weight !== undefined && ['light', 'medium', 'heavy'].includes(weight)) {
     fields.push('weight = ?'); params.push(weight);
   }
-  if (insight !== undefined) { fields.push('insight = ?'); params.push(String(insight)); }
+  if (insight !== undefined) { fields.push('insight = ?'); params.push(encryptField(req.userId, String(insight))); }
 
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 
   fields.push('updated_at = CURRENT_TIMESTAMP');
   params.push(req.params.id, req.userId);
   db.prepare(`UPDATE threads SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...params);
-  res.json(db.prepare('SELECT * FROM threads WHERE id = ?').get(req.params.id));
+  res.json(decryptThread(req.userId, db.prepare('SELECT * FROM threads WHERE id = ?').get(req.params.id)));
 });
 
 // ── DELETE /api/threads/:id ──────────────────────────────────────────────────
@@ -178,7 +189,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Thread name required' });
     }
     const threadId = await threadService.createCustomThread(req.userId, name, description);
-    const thread = db.prepare('SELECT * FROM threads WHERE id = ?').get(threadId);
+    const thread = decryptThread(req.userId, db.prepare('SELECT * FROM threads WHERE id = ?').get(threadId));
     res.json(thread);
   } catch (err) {
     console.error('[threads/create] failed:', err.message);

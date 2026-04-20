@@ -5,6 +5,7 @@ const db = require('../database');
 const llm = require('../services/llmService');
 const memory = require('../services/memoryService');
 const threadService = require('../services/threadService');
+const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
 router.use(requireAuth);
 
@@ -53,7 +54,10 @@ router.get('/sessions', (req, res) => {
     ORDER BY s.created_at DESC
     LIMIT 50
   `).all(req.userId);
-  res.json(sessions.map(sessionRow));
+  res.json(sessions.map((s) => ({
+    ...sessionRow(s),
+    first_message: safeDecrypt(req.userId, s.first_message),
+  })));
 });
 
 // ── GET /api/oracle/tags ───────────────────────────────────────────────────
@@ -114,11 +118,11 @@ router.post('/sessions/import', (req, res) => {
 
   db.prepare(
     'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
-  ).run(sessionId, 'user', question.trim(), archetype);
+  ).run(sessionId, 'user', encryptField(req.userId, question.trim()), archetype);
 
   db.prepare(
     'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
-  ).run(sessionId, 'assistant', answer.trim(), archetype);
+  ).run(sessionId, 'assistant', encryptField(req.userId, answer.trim()), archetype);
 
   const session = db.prepare('SELECT * FROM oracle_sessions WHERE id = ?').get(sessionId);
   res.json(session);
@@ -178,7 +182,7 @@ router.get('/sessions/:id', (req, res) => {
 
   const messages = db.prepare(
     'SELECT * FROM oracle_messages WHERE session_id = ? ORDER BY created_at ASC'
-  ).all(session.id);
+  ).all(session.id).map((m) => ({ ...m, content: safeDecrypt(req.userId, m.content) }));
 
   res.json({ ...sessionRow(session), messages });
 });
@@ -220,7 +224,7 @@ router.post('/sessions/:id/messages', async (req, res) => {
   // Save the user message
   const userMsgResult = db.prepare(
     'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
-  ).run(session.id, 'user', content.trim(), activeArchetype);
+  ).run(session.id, 'user', encryptField(req.userId, content.trim()), activeArchetype);
 
   // Auto-generate title from first user message
   const msgCount = db.prepare(
@@ -231,10 +235,11 @@ router.post('/sessions/:id/messages', async (req, res) => {
     db.prepare('UPDATE oracle_sessions SET title = ? WHERE id = ?').run(title, session.id);
   }
 
-  // Load full conversation history, filtering out empty responses
+  // Load full conversation history, filtering out empty responses. Messages on
+  // disk are encrypted per-user, so we decrypt before handing them to the LLM.
   const history = db.prepare(
     "SELECT role, content FROM oracle_messages WHERE session_id = ? AND content != '' ORDER BY created_at ASC LIMIT 30"
-  ).all(session.id);
+  ).all(session.id).map((m) => ({ ...m, content: safeDecrypt(req.userId, m.content) }));
 
   try {
     const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session);
@@ -249,13 +254,13 @@ router.post('/sessions/:id/messages', async (req, res) => {
 
     const assistantResult = db.prepare(
       'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
-    ).run(session.id, 'assistant', trimmed, activeArchetype);
+    ).run(session.id, 'assistant', encryptField(req.userId, trimmed), activeArchetype);
 
     const assistantMsg = db.prepare(
       'SELECT * FROM oracle_messages WHERE id = ?'
     ).get(assistantResult.lastInsertRowid);
 
-    res.json(assistantMsg);
+    res.json({ ...assistantMsg, content: safeDecrypt(req.userId, assistantMsg.content) });
 
     // Rosary bead: thread this conversation into the graph. Throttled so a
     // 30-turn chat doesn't fire 30 LLM match calls — thread on the 1st

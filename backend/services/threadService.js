@@ -10,7 +10,16 @@
 
 const db = require('../database');
 const llm = require('./llmService');
-const { safeDecrypt } = require('./rowCrypto');
+const { encryptField, safeDecrypt } = require('./rowCrypto');
+
+// Decrypt the sensitive text columns of a threads row. Null-safe.
+function decryptThreadRow(userId, row) {
+  if (!row) return row;
+  if (row.name !== undefined) row.name = safeDecrypt(userId, row.name);
+  if (row.description !== undefined) row.description = safeDecrypt(userId, row.description);
+  if (row.insight !== undefined) row.insight = safeDecrypt(userId, row.insight);
+  return row;
+}
 
 const CORPUS_LIMIT = 200;
 
@@ -114,7 +123,7 @@ function collectCorpus(userId) {
     type: 'conversation',
     id: r.id,
     title: r.title || 'Conversation',
-    excerpt: excerpt(r.first_message, 200),
+    excerpt: excerpt(safeDecrypt(userId, r.first_message), 200),
     date: r.created_at,
     tags: parseTags(r.tags, r.auto_tags, r.tag ? [r.tag] : null),
   }));
@@ -435,7 +444,14 @@ function persistThreads(userId, detectedThreads) {
   const tx = db.transaction(() => {
     for (const t of detectedThreads) {
       const kind = t.kind || 'novel';
-      const res = insertThread.run(userId, t.name, t.description, t.status, t.weight, kind);
+      const res = insertThread.run(
+        userId,
+        encryptField(userId, t.name),
+        encryptField(userId, t.description),
+        t.status,
+        t.weight,
+        kind,
+      );
       const threadId = res.lastInsertRowid;
       createdIds.push(threadId);
       for (const node of t.nodes) {
@@ -453,7 +469,9 @@ function persistThreads(userId, detectedThreads) {
  * insight.
  */
 async function rematchThread(threadId, userId) {
-  const thread = db.prepare('SELECT id, name, description FROM threads WHERE id = ? AND user_id = ?').get(threadId, userId);
+  const thread = decryptThreadRow(userId,
+    db.prepare('SELECT id, name, description FROM threads WHERE id = ? AND user_id = ?').get(threadId, userId)
+  );
   if (!thread) return null;
 
   const corpus = collectCorpus(userId);
@@ -490,7 +508,7 @@ async function createCustomThread(userId, name, description) {
     INSERT INTO threads (user_id, name, description, status, weight, insight, kind)
     VALUES (?, ?, ?, 'active', 'medium', '', 'custom')
   `);
-  const res = insert.run(userId, cleanName, cleanDesc);
+  const res = insert.run(userId, encryptField(userId, cleanName), encryptField(userId, cleanDesc));
   const threadId = res.lastInsertRowid;
 
   await rematchThread(threadId, userId);
@@ -570,7 +588,7 @@ function getHydratedNodes(threadId, userId) {
         type: 'conversation',
         id: s.id,
         title: s.title || 'Conversation',
-        excerpt: excerpt(s.first_message, 200),
+        excerpt: excerpt(safeDecrypt(userId, s.first_message), 200),
         date: s.created_at,
       };
     }
@@ -670,7 +688,7 @@ function hydrateItem(type, id, userId) {
       type: 'conversation',
       id: r.id,
       title: r.title || 'Conversation',
-      excerpt: excerpt(r.first_message, 200),
+      excerpt: excerpt(safeDecrypt(userId, r.first_message), 200),
       date: r.created_at,
       tags: parseTags(r.tags, r.auto_tags, r.tag ? [r.tag] : null),
     };
@@ -705,7 +723,9 @@ function ensureCanonicalThreadsExist(userId) {
   const existingRows = db.prepare(
     "SELECT name FROM threads WHERE user_id = ? AND kind = 'canonical'"
   ).all(userId);
-  const have = new Set(existingRows.map((r) => normaliseThemeKey(r.name)));
+  // Canonical thread names are encrypted on disk; decrypt before keying so we
+  // don't insert duplicates on every launch.
+  const have = new Set(existingRows.map((r) => normaliseThemeKey(safeDecrypt(userId, r.name) || '')));
   const missing = CANONICAL_THEMES.filter((c) => !have.has(normaliseThemeKey(c.name)));
   if (!missing.length) return 0;
   const insert = db.prepare(`
@@ -713,7 +733,7 @@ function ensureCanonicalThreadsExist(userId) {
     VALUES (?, ?, ?, 'active', 'medium', '', 'canonical')
   `);
   const tx = db.transaction(() => {
-    for (const c of missing) insert.run(userId, c.name, c.description);
+    for (const c of missing) insert.run(userId, encryptField(userId, c.name), encryptField(userId, c.description));
   });
   tx();
   return missing.length;
@@ -727,7 +747,7 @@ async function threadSingleItem(type, id, userId) {
 
   const threads = db.prepare(
     'SELECT id, name, description, kind FROM threads WHERE user_id = ? ORDER BY id ASC'
-  ).all(userId);
+  ).all(userId).map((r) => decryptThreadRow(userId, r));
 
   // No threads at all (shouldn't happen after ensureCanonical, but be safe).
   if (!threads.length) {
@@ -848,7 +868,7 @@ function collectOrphans(userId, limit = 80) {
     type: 'conversation',
     id: r.id,
     title: r.title || 'Conversation',
-    excerpt: excerpt(r.first_message, 200),
+    excerpt: excerpt(safeDecrypt(userId, r.first_message), 200),
     date: r.created_at,
     tags: parseTags(r.tags, r.auto_tags, r.tag ? [r.tag] : null),
   }));
@@ -873,7 +893,7 @@ async function sweepOrphans(userId) {
   // Skip themes whose name collides with an existing thread for this user.
   const existingKeys = new Set(
     db.prepare('SELECT name FROM threads WHERE user_id = ?').all(userId)
-      .map((r) => normaliseThemeKey(r.name))
+      .map((r) => normaliseThemeKey(safeDecrypt(userId, r.name) || ''))
   );
   const candidates = novelThemes.filter((t) => {
     const k = normaliseThemeKey(t.name);
@@ -967,12 +987,14 @@ function stampAllThreaded(userId) {
 }
 
 async function regenerateInsightForThread(threadId, userId) {
-  const thread = db.prepare('SELECT id, name, description FROM threads WHERE id = ? AND user_id = ?').get(threadId, userId);
+  const thread = decryptThreadRow(userId,
+    db.prepare('SELECT id, name, description FROM threads WHERE id = ? AND user_id = ?').get(threadId, userId)
+  );
   if (!thread) return null;
   const nodes = getHydratedNodes(threadId, userId);
   const insight = await generateInsight(thread, nodes);
   db.prepare('UPDATE threads SET insight = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?')
-    .run(insight, threadId, userId);
+    .run(encryptField(userId, insight), threadId, userId);
   return insight;
 }
 

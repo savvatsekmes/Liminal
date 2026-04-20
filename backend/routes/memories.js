@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../database');
 const { requireAuth } = require('../middleware/auth');
 const { invalidateSynthesisCache, extractAndStoreMemories } = require('../services/memoryService');
+const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
 router.use(requireAuth);
 
@@ -26,7 +27,7 @@ router.get('/', (req, res) => {
      WHERE m.user_id = ?
      ORDER BY m.is_core DESC,
               COALESCE(e.date, e.created_at, m.created_at) DESC
-  `).all(req.userId);
+  `).all(req.userId).map((m) => ({ ...m, content: safeDecrypt(req.userId, m.content) }));
   res.json(rows);
 });
 
@@ -36,20 +37,22 @@ router.post('/', (req, res) => {
   if (!content || !content.trim()) return res.status(400).json({ error: 'content is required' });
 
   const trimmed = content.trim();
-  const normalized = trimmed.toLowerCase().replace(/\n/g, ' ').replace(/  /g, ' ');
+  const normalize = (s) => s.toLowerCase().trim().replace(/\n/g, ' ').replace(/  /g, ' ');
+  const normalized = normalize(trimmed);
 
-  // Dedupe: if a memory with this content already exists for the user, return it
-  const existing = db.prepare(
-    "SELECT * FROM memories WHERE user_id = ? AND LOWER(TRIM(REPLACE(REPLACE(content, CHAR(10), ' '), '  ', ' '))) = ?"
-  ).get(req.userId, normalized);
-  if (existing) return res.status(200).json(existing);
+  // Dedupe in-memory: content is stored encrypted so we can't compare
+  // ciphertexts in SQL. Scan this user's rows, decrypt, and compare.
+  const candidates = db.prepare('SELECT * FROM memories WHERE user_id = ?').all(req.userId);
+  const existing = candidates.find((r) => normalize(safeDecrypt(req.userId, r.content) || '') === normalized);
+  if (existing) return res.status(200).json({ ...existing, content: safeDecrypt(req.userId, existing.content) });
 
   const result = db.prepare(
     'INSERT INTO memories (user_id, content, pinned) VALUES (?, ?, 1)'
-  ).run(req.userId, trimmed);
+  ).run(req.userId, encryptField(req.userId, trimmed));
 
   invalidateSynthesisCache(req.userId);
-  res.status(201).json(db.prepare('SELECT * FROM memories WHERE id = ?').get(result.lastInsertRowid));
+  const created = db.prepare('SELECT * FROM memories WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json({ ...created, content: safeDecrypt(req.userId, created.content) });
 });
 
 // ── PUT /api/memories/:id ────────────────────────────────────────────────────
@@ -61,7 +64,7 @@ router.put('/:id', (req, res) => {
   const fields = [];
   const params = [];
 
-  if (content !== undefined) { fields.push('content = ?'); params.push(content.trim()); }
+  if (content !== undefined) { fields.push('content = ?'); params.push(encryptField(req.userId, content.trim())); }
   if (pinned !== undefined)  { fields.push('pinned = ?');  params.push(pinned ? 1 : 0); }
   if (is_core !== undefined) { fields.push('is_core = ?'); params.push(is_core ? 1 : 0); }
 
@@ -70,7 +73,8 @@ router.put('/:id', (req, res) => {
   params.push(req.params.id, req.userId);
   db.prepare(`UPDATE memories SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...params);
   invalidateSynthesisCache(req.userId);
-  res.json(db.prepare('SELECT * FROM memories WHERE id = ?').get(req.params.id));
+  const updated = db.prepare('SELECT * FROM memories WHERE id = ?').get(req.params.id);
+  res.json({ ...updated, content: safeDecrypt(req.userId, updated.content) });
 });
 
 // ── DELETE /api/memories/:id ─────────────────────────────────────────────────

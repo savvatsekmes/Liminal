@@ -409,6 +409,7 @@ router.get('/lookback', (req, res) => {
 // threads always included; novel/custom only if they have 3+ beads.
 router.get('/threads', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 5, 20);
+  const { safeDecrypt } = require('../services/rowCrypto');
   const rows = db.prepare(`
     SELECT t.id, t.name, t.description, t.kind, t.status,
            COUNT(n.id) AS node_count,
@@ -421,7 +422,11 @@ router.get('/threads', (req, res) => {
      ORDER BY (t.status = 'active') DESC,
               (last_node_at IS NULL), last_node_at DESC
      LIMIT ?
-  `).all(req.userId, limit);
+  `).all(req.userId, limit).map((r) => ({
+    ...r,
+    name: safeDecrypt(req.userId, r.name),
+    description: safeDecrypt(req.userId, r.description),
+  }));
 
   res.json({ threads: rows });
 });
