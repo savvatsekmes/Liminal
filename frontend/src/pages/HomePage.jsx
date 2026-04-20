@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from 'react';
 import { apiFetch } from '../utils/api';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MicButton from '../components/MicButton';
@@ -1766,7 +1766,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 <span style={s.moonArrowLink} onClick={(e) => { e.stopPropagation(); onNavigateToPortrait?.(); }}>›</span>
               </div>
               <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '14px' : '20px', flex: 1 }}>
-                <div style={{ display: 'flex', gap: isMobile ? '14px' : '20px', flex: isMobile ? 'none' : 1 }}>
+                <div style={{ display: 'flex', gap: isMobile ? '14px' : '20px', flex: isMobile ? 'none' : '0 0 auto' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0, flex: isMobile ? 1 : 'none' }}>
                     {portrait.sun_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☉ {portrait.sun_sign}</span><span style={s.portraitItemLabel}>{t('portrait.sunSign')}</span></div>}
                     {portrait.moon_sign && <div style={s.portraitItem}><span style={s.portraitItemValue}>☽ {portrait.moon_sign}</span><span style={s.portraitItemLabel}>{t('portrait.moonSign')}</span></div>}
@@ -1976,23 +1976,80 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                   return (
                     <div
                       key={th.id}
-                      onClick={() => onNavigateToThreads?.(th.id)}
                       style={{
-                        padding: '8px 10px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'background 0.12s',
+                        display: 'flex',
+                        alignItems: 'stretch',
+                        gap: '8px',
                         opacity: th.status === 'dormant' ? 0.6 : 1,
                       }}
-                      onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
-                      onMouseLeave={(ev) => { ev.currentTarget.style.background = 'transparent'; }}
-                      title={th.description || th.name}
                     >
-                      <div style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {th.name}
+                      <div
+                        onClick={() => onNavigateToThreads?.(th.id)}
+                        title={th.description || th.name}
+                        style={{
+                          flex: '0 0 28%',
+                          minWidth: 0,
+                          padding: '8px 12px',
+                          borderRadius: '19px',
+                          background: 'var(--near-white)',
+                          border: '1px solid var(--border)',
+                          cursor: 'pointer',
+                          transition: 'background 0.12s',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                        }}
+                        onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--bg-hover, #ececec)'; }}
+                        onMouseLeave={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
+                      >
+                        <div style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {th.name}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {meta}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {meta}
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+                        {(th.beads || []).slice(0, 4).map((b, i) => (
+                          <Fragment key={`${b.type}-${b.id}`}>
+                            {i > 0 && (
+                              <span style={{
+                                flex: '0 0 8px',
+                                height: '1px',
+                                background: 'var(--border)',
+                                alignSelf: 'center',
+                              }} />
+                            )}
+                            <div
+                              onClick={() => {
+                                if (b.type === 'entry') onNavigateToEntry?.(b.id);
+                                else if (b.type === 'note') onNavigateToNote?.(b.id);
+                              }}
+                              title={b.title}
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                padding: '8px 10px',
+                                borderRadius: '19px',
+                                background: 'var(--bg, #fafafa)',
+                                border: '1px solid var(--border)',
+                                cursor: 'pointer',
+                                fontSize: '10px',
+                                color: 'var(--strong)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                display: 'flex',
+                                alignItems: 'center',
+                                transition: 'background 0.12s',
+                              }}
+                              onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
+                              onMouseLeave={(ev) => { ev.currentTarget.style.background = 'var(--bg, #fafafa)'; }}
+                            >
+                              {b.title}
+                            </div>
+                          </Fragment>
+                        ))}
                       </div>
                     </div>
                   );
@@ -2176,7 +2233,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 <ThemeToggle size="sm" />
                 <button
                   onClick={() => layout.setEditMode(true)}
-                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
                   title="Edit layout"
                 >
                   <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M2 11.5V14h2.5l7.37-7.37-2.5-2.5L2 11.5zm11.81-6.81a.664.664 0 0 0 0-.94l-1.56-1.56a.664.664 0 0 0-.94 0l-1.22 1.22 2.5 2.5 1.22-1.22z" fill="currentColor"/></svg>
@@ -2185,7 +2242,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 <button
                   onClick={() => setSearchOpen(true)}
                   title="Search"
-                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                   Search
@@ -2299,7 +2356,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
           {/* ── Answer panel (full-width below ask) ── */}
           {(loading || answer) && (
-            <div style={{ border: 'var(--border-style)', borderRadius: '14px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '14px 14px', marginBottom: '16px', overflow: 'hidden' }}>
+            <div style={{ border: 'var(--border-style)', borderRadius: '19px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '14px 14px', marginBottom: '16px', overflow: 'hidden' }}>
               {loading ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px 0' }}>
                   <div style={{ ...s.dot, animation: 'pulse 1s ease-in-out 0s infinite' }} />
@@ -2427,7 +2484,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 <ThemeToggle size="sm" />
                 <button
                   onClick={() => layout.setEditMode(true)}
-                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
                 >
@@ -2437,7 +2494,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 <button
                   onClick={() => setSearchOpen(true)}
                   title="Search"
-                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '14px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
+                  style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted)'; }}
                 >

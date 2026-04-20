@@ -249,6 +249,7 @@ export default {
   'cards.chooseSpread': 'Choose a spread',
   'cards.pull': 'Pull Cards',
   'cards.pulling': 'Shuffling\u2026',
+  'cards.drawing': 'Drawing Cards\u2026',
   'cards.generateReading': '\u2726 Generate Reading',
   'cards.generating': 'Generating reading\u2026',
   'cards.insertReading': 'Insert into entry',

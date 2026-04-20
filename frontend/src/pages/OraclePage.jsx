@@ -723,9 +723,6 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
   }
 
   async function handleNewConversation() {
-    if (messages.length > 0) {
-      if (!window.confirm(t('oracle.newConversationConfirm'))) return;
-    }
     stopSpeak(audioRef, cancelRef);
     try {
       const r = await apiFetch('/api/oracle/sessions', {

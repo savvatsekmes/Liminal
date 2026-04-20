@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const llm = require('../services/llmService');
 const settingsService = require('../services/settingsService');
 const db = require('../database');
+const { safeDecrypt } = require('../services/rowCrypto');
 
 router.use(requireAuth);
 
@@ -46,7 +47,7 @@ router.get('/pulse', async (req, res) => {
 
   try {
     const systemPrompt = `Based on this person's most recent journal entry and what you know about them, write 2-3 sentences describing where they seem to be right now emotionally and psychologically. Warm, honest, second person. Under 60 words. Not falsely positive. Do not mention the journal or the app. Just speak to where they are.`;
-    const userMessage = `${context}\n\nMost recent entry (${daysLabel}):\nTitle: ${latest.title || 'Untitled'}\n${(latest.body_text || '').slice(0, 800)}`;
+    const userMessage = `${context}\n\nMost recent entry (${daysLabel}):\nTitle: ${latest.title || 'Untitled'}\n${(safeDecrypt(req.userId, latest.body_text) || '').slice(0, 800)}`;
     const text = await llm.call(systemPrompt, userMessage, { maxTokens: 150 });
 
     const result = {
@@ -104,7 +105,7 @@ router.get('/insight', async (req, res) => {
     'SELECT title, body_text, created_at FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 10'
   ).all(req.userId);
   const entryContext = entries
-    .map(e => `[${e.created_at}] ${e.title || 'Untitled'}: ${(e.body_text || '').slice(0, 300)}`)
+    .map(e => `[${e.created_at}] ${e.title || 'Untitled'}: ${(safeDecrypt(req.userId, e.body_text) || '').slice(0, 300)}`)
     .join('\n\n');
 
   // Also pull memory synthesis if available
@@ -216,7 +217,7 @@ router.get('/goals', (req, res) => {
   }
 
   const goals = rows.map(r => {
-    const plain = stripHtml(r.body);
+    const plain = stripHtml(safeDecrypt(req.userId, r.body));
     const title = r.title && r.title.trim() ? r.title.trim() : plain.slice(0, 80);
     const preview = plain.slice(0, 140);
     return {
@@ -264,7 +265,9 @@ router.get('/tagged', (req, res) => {
   }
 
   const items = rows.map(r => {
-    const plain = source === 'entries' ? (r.body_text || '') : stripHtml(r.body);
+    const plain = source === 'entries'
+      ? (safeDecrypt(req.userId, r.body_text) || '')
+      : stripHtml(safeDecrypt(req.userId, r.body));
     const title = r.title && r.title.trim() ? r.title.trim() : plain.slice(0, 80);
     const preview = plain.slice(0, 140);
     return {
@@ -375,6 +378,7 @@ router.get('/portrait-snippet', async (req, res) => {
 // Prefer entries older than 30 days (nostalgia/resurface is the point); fall
 // back to any entries if the corpus is too small to satisfy that cutoff.
 router.get('/lookback', (req, res) => {
+  const { safeDecrypt } = require('../services/rowCrypto');
   const limit = Math.min(Number(req.query.limit) || 3, 10);
   const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
 
@@ -398,7 +402,7 @@ router.get('/lookback', (req, res) => {
     title: r.title || '',
     date: r.date || null,
     created_at: r.created_at,
-    excerpt: (r.body_text || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+    excerpt: (safeDecrypt(req.userId, r.body_text) || '').replace(/\s+/g, ' ').trim().slice(0, 160),
   }));
 
   res.json({ items });
@@ -409,7 +413,6 @@ router.get('/lookback', (req, res) => {
 // threads always included; novel/custom only if they have 3+ beads.
 router.get('/threads', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 5, 20);
-  const { safeDecrypt } = require('../services/rowCrypto');
   const rows = db.prepare(`
     SELECT t.id, t.name, t.description, t.kind, t.status,
            COUNT(n.id) AS node_count,
@@ -427,6 +430,29 @@ router.get('/threads', (req, res) => {
     name: safeDecrypt(req.userId, r.name),
     description: safeDecrypt(req.userId, r.description),
   }));
+
+  // Attach up to 4 most recent beads (entry/note title + id + type) per thread.
+  // Titles are plaintext; no decrypt needed.
+  const beadStmt = db.prepare(`
+    SELECT n.content_type AS type, n.content_id AS id, n.created_at,
+           CASE n.content_type
+             WHEN 'entry' THEN (SELECT title FROM entries WHERE id = n.content_id)
+             WHEN 'note'  THEN (SELECT title FROM notes   WHERE id = n.content_id)
+             ELSE NULL
+           END AS title
+      FROM thread_nodes n
+     WHERE n.thread_id = ?
+     ORDER BY n.created_at DESC
+     LIMIT 4
+  `);
+  for (const r of rows) {
+    r.beads = beadStmt.all(r.id).map((b) => ({
+      id: b.id,
+      type: b.type,
+      title: (b.title && String(b.title).trim()) || 'Untitled',
+      created_at: b.created_at,
+    }));
+  }
 
   res.json({ threads: rows });
 });

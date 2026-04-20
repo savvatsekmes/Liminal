@@ -447,8 +447,52 @@ function extractJsonObject(raw) {
 
   for (const c of candidates) {
     try { return JSON.parse(c); } catch {}
+    // Repair pass: LLMs sometimes omit the comma between top-level pairs,
+    // producing e.g. `"opening": "..." "blocks": [...]`. Insert commas where
+    // a closing " or } or ] is followed by whitespace then `"key":` without
+    // a separator. Only runs outside of string literals.
+    try { return JSON.parse(repairLlmJson(c)); } catch {}
   }
+  if (raw) console.warn('[reflect] JSON parse failed; raw head:', raw.slice(0, 200));
   return null;
+}
+
+function repairLlmJson(s) {
+  let out = '';
+  let inStr = false;
+  let escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    out += ch;
+    let justClosedStructural = false;
+    if (inStr) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inStr = false; justClosedStructural = true; }
+      else continue;
+    } else {
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === '}' || ch === ']') justClosedStructural = true;
+    }
+    if (!justClosedStructural) continue;
+    // Look ahead past whitespace for a `"<key>":` with no separator.
+    let j = i + 1;
+    while (j < s.length && /\s/.test(s[j])) j++;
+    if (s[j] !== '"') continue;
+    let k = j + 1;
+    let esc = false;
+    while (k < s.length) {
+      const c2 = s[k];
+      if (esc) { esc = false; k++; continue; }
+      if (c2 === '\\') { esc = true; k++; continue; }
+      if (c2 === '"') break;
+      k++;
+    }
+    let m = k + 1;
+    while (m < s.length && /\s/.test(s[m])) m++;
+    if (s[m] === ':') out += ',';
+  }
+  return out;
 }
 
 // Build a single-archetype reflect prompt: same multi-block JSON shape that
