@@ -145,23 +145,28 @@ router.post('/sessions', (req, res) => {
     }
   }
 
-  const result = db.prepare(
-    'INSERT INTO oracle_sessions (user_id, archetype, source_entry_id, source_note_id, title) VALUES (?, ?, ?, ?, ?)'
-  ).run(req.userId, archetype, sourceEntryId || null, sourceNoteId || null, title);
-  const sessionId = result.lastInsertRowid;
+  try {
+    const result = db.prepare(
+      'INSERT INTO oracle_sessions (user_id, archetype, source_entry_id, source_note_id, title) VALUES (?, ?, ?, ?, ?)'
+    ).run(req.userId, archetype, sourceEntryId || null, sourceNoteId || null, title);
+    const sessionId = result.lastInsertRowid;
 
-  // Bidirectional link: update the source entry/note with the new session id
-  if (sourceEntryId) {
-    db.prepare('UPDATE entries SET linked_session_id = ? WHERE id = ? AND user_id = ?')
-      .run(sessionId, sourceEntryId, req.userId);
-  }
-  if (sourceNoteId) {
-    db.prepare('UPDATE notes SET linked_session_id = ? WHERE id = ? AND user_id = ?')
-      .run(sessionId, sourceNoteId, req.userId);
-  }
+    // Bidirectional link: update the source entry/note with the new session id
+    if (sourceEntryId) {
+      db.prepare('UPDATE entries SET linked_session_id = ? WHERE id = ? AND user_id = ?')
+        .run(sessionId, sourceEntryId, req.userId);
+    }
+    if (sourceNoteId) {
+      db.prepare('UPDATE notes SET linked_session_id = ? WHERE id = ? AND user_id = ?')
+        .run(sessionId, sourceNoteId, req.userId);
+    }
 
-  const session = db.prepare('SELECT * FROM oracle_sessions WHERE id = ?').get(sessionId);
-  res.json(sessionRow(session));
+    const session = db.prepare('SELECT * FROM oracle_sessions WHERE id = ?').get(sessionId);
+    res.json(sessionRow(session));
+  } catch (err) {
+    console.error('[oracle] POST /sessions insert failed:', err && err.message, err && err.code);
+    res.status(500).json({ error: err && err.message });
+  }
 });
 
 // ── GET /api/oracle/sessions/:id ──────────────────────────────────────────

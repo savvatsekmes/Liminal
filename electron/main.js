@@ -57,6 +57,18 @@ const TTS_DIR      = isDev ? REPO_ROOT                              : path.join(
 //   Win:   %APPDATA%\Liminal\
 //   macOS: ~/Library/Application Support/Liminal/
 //   Linux: ~/.config/Liminal/
+// Dev override: keep the per-user-encryption test run fully isolated from the
+// real installed app's data dir so test registrations never touch the
+// production journal. Must happen before anything else reads getPath('userData').
+if (isDev) {
+  const appDataRoot = process.env.APPDATA
+    || (process.platform === 'darwin'
+          ? path.join(os.homedir(), 'Library', 'Application Support')
+          : path.join(os.homedir(), '.config'));
+  const devUserData = path.join(appDataRoot, 'Liminal Dev PerUser');
+  fs.mkdirSync(devUserData, { recursive: true });
+  app.setPath('userData', devUserData);
+}
 const USER_DATA = app.getPath('userData');
 fs.mkdirSync(USER_DATA, { recursive: true });
 

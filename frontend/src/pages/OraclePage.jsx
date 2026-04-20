@@ -726,7 +726,7 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
     if (messages.length > 0) {
       if (!window.confirm(t('oracle.newConversationConfirm'))) return;
     }
-    stopAudio();
+    stopSpeak(audioRef, cancelRef);
     try {
       const r = await apiFetch('/api/oracle/sessions', {
         method: 'POST',

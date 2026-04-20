@@ -10,6 +10,7 @@
 
 const db = require('../database');
 const llm = require('./llmService');
+const { safeDecrypt } = require('./rowCrypto');
 
 const CORPUS_LIMIT = 200;
 
@@ -78,7 +79,7 @@ function collectCorpus(userId) {
     type: 'entry',
     id: r.id,
     title: r.title || 'Untitled',
-    excerpt: excerpt(r.body_text, 200),
+    excerpt: excerpt(safeDecrypt(userId, r.body_text), 200),
     date: r.item_date,
     tags: parseTags(r.tags, r.auto_tags),
     breakthrough: Number.isInteger(r.breakthrough_level) && r.breakthrough_level > 0,
@@ -94,7 +95,7 @@ function collectCorpus(userId) {
     type: 'note',
     id: r.id,
     title: r.title || r.type || 'Note',
-    excerpt: excerpt(r.body, 200),
+    excerpt: excerpt(safeDecrypt(userId, r.body), 200),
     date: r.created_at,
     tags: parseTags(r.tags, r.auto_tags),
   }));
@@ -545,7 +546,7 @@ function getHydratedNodes(threadId, userId) {
         type: 'entry',
         id: e.id,
         title: e.title || 'Untitled',
-        excerpt: excerpt(e.body_text, 200),
+        excerpt: excerpt(safeDecrypt(userId, e.body_text), 200),
         date: e.item_date,
       };
     }
@@ -557,7 +558,7 @@ function getHydratedNodes(threadId, userId) {
         type: 'note',
         id: n.id,
         title: n.title || n.type || 'Note',
-        excerpt: excerpt(n.body, 200),
+        excerpt: excerpt(safeDecrypt(userId, n.body), 200),
         date: n.created_at,
       };
     }
@@ -632,7 +633,7 @@ function hydrateItem(type, id, userId) {
       type: 'entry',
       id: r.id,
       title: r.title || 'Untitled',
-      excerpt: excerpt(r.body_text, 200),
+      excerpt: excerpt(safeDecrypt(userId, r.body_text), 200),
       date: r.item_date,
       tags: parseTags(r.tags, r.auto_tags),
       breakthrough: Number.isInteger(r.breakthrough_level) && r.breakthrough_level > 0,
@@ -649,7 +650,7 @@ function hydrateItem(type, id, userId) {
       type: 'note',
       id: r.id,
       title: r.title || r.type || 'Note',
-      excerpt: excerpt(r.body, 200),
+      excerpt: excerpt(safeDecrypt(userId, r.body), 200),
       date: r.created_at,
       tags: parseTags(r.tags, r.auto_tags),
     };
@@ -802,7 +803,7 @@ function collectOrphans(userId, limit = 80) {
     type: 'entry',
     id: r.id,
     title: r.title || 'Untitled',
-    excerpt: excerpt(r.body_text, 200),
+    excerpt: excerpt(safeDecrypt(userId, r.body_text), 200),
     date: r.item_date,
     tags: parseTags(r.tags, r.auto_tags),
     breakthrough: Number.isInteger(r.breakthrough_level) && r.breakthrough_level > 0,
@@ -823,7 +824,7 @@ function collectOrphans(userId, limit = 80) {
     type: 'note',
     id: r.id,
     title: r.title || r.type || 'Note',
-    excerpt: excerpt(r.body, 200),
+    excerpt: excerpt(safeDecrypt(userId, r.body), 200),
     date: r.created_at,
     tags: parseTags(r.tags, r.auto_tags),
   }));

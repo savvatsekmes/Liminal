@@ -27,13 +27,15 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS memory (
-    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER DEFAULT 1,
     summary    TEXT NOT NULL DEFAULT '',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS portrait (
-    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER DEFAULT 1,
     mbti         TEXT DEFAULT '',
     enneagram    TEXT DEFAULT '',
     human_design TEXT DEFAULT '',
@@ -481,11 +483,17 @@ db.exec(`
 // Oracle tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS oracle_sessions (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    INTEGER NOT NULL DEFAULT 1,
-    archetype  TEXT    NOT NULL DEFAULT 'Zen',
-    title      TEXT    DEFAULT 'New conversation',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id          INTEGER NOT NULL DEFAULT 1,
+    archetype        TEXT    NOT NULL DEFAULT 'Zen',
+    title            TEXT    DEFAULT 'New conversation',
+    tag              TEXT,
+    tags             TEXT    NOT NULL DEFAULT '[]',
+    auto_tags        TEXT    NOT NULL DEFAULT '[]',
+    threaded_at      TIMESTAMP,
+    source_entry_id  INTEGER,
+    source_note_id   INTEGER,
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS oracle_messages (
