@@ -150,7 +150,7 @@ const s = {
 };
 
 export default function PasswordGate({ onSuccess }) {
-  const [view, setView] = useState('login'); // 'login' | 'register' | 'recovery-reveal'
+  const [view, setView] = useState('login'); // 'login' | 'register' | 'recover' | 'recovery-reveal'
   // Pending context held while we pause on the recovery-key reveal screen
   // between a successful auth call and handing off to the app. The token is
   // already stored; we just delay calling onSuccess until the user confirms
@@ -186,7 +186,17 @@ export default function PasswordGate({ onSuccess }) {
     return <RegisterForm onSuccess={finishAuth} onBack={() => setView('login')} />;
   }
 
-  return <LoginForm onSuccess={finishAuth} onRegister={() => setView('register')} />;
+  if (view === 'recover') {
+    return <RecoverForm onSuccess={finishAuth} onBack={() => setView('login')} />;
+  }
+
+  return (
+    <LoginForm
+      onSuccess={finishAuth}
+      onRegister={() => setView('register')}
+      onForgot={() => setView('recover')}
+    />
+  );
 }
 
 // ── Recovery Key Reveal ──────────────────────────────────────────────────────
@@ -281,7 +291,7 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 
-function LoginForm({ onSuccess, onRegister }) {
+function LoginForm({ onSuccess, onRegister, onForgot }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
   const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
@@ -361,6 +371,142 @@ function LoginForm({ onSuccess, onRegister }) {
 
           <button type="button" style={s.btnSecondary} onClick={onRegister}>
             {t('auth.register')}
+          </button>
+
+          <button
+            type="button"
+            onClick={onForgot}
+            style={{
+              display: 'block',
+              margin: '14px auto 0',
+              background: 'none',
+              border: 'none',
+              color: 'var(--muted)',
+              fontSize: '12px',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontFamily: 'var(--font)',
+            }}
+          >
+            Forgot password?
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Recover (forgot password) ────────────────────────────────────────────────
+// Unlock via the recovery key that was shown once at register time, then set
+// a new password. The recovery key itself is unchanged — the user may still
+// have the slip of paper they wrote it on.
+
+function RecoverForm({ onSuccess, onBack }) {
+  const { theme } = useTheme();
+  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
+  const [username, setUsername] = useState('');
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    if (!username.trim()) { setError('Username is required.'); return; }
+    if (!recoveryKey.trim()) { setError('Recovery key is required.'); return; }
+    if (newPassword.length < 4) { setError('Password must be at least 4 characters.'); return; }
+    if (newPassword !== confirm) { setError('Passwords do not match.'); return; }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: username.trim(),
+          recovery_key: recoveryKey.trim(),
+          newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Recovery failed.');
+      } else {
+        // Straight into the app — recovery key is unchanged, no reveal needed.
+        onSuccess(data.token, data.username, false, newPassword, null, false);
+      }
+    } catch {
+      setError('Could not reach the backend.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={s.overlay}>
+      <style>{mobileCSS}</style>
+      <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
+        <div className="auth-brand-col" style={s.brandCol}>
+          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+        </div>
+        <div style={s.formCol}>
+          <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: 1.6, marginBottom: '20px' }}>
+            Enter the recovery key you saved when you created your account, then choose a new password.
+          </div>
+
+          <label style={s.label} htmlFor="rec-username">Username</label>
+          <input
+            id="rec-username"
+            style={s.input}
+            type="text"
+            autoFocus
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+
+          <label style={s.label} htmlFor="rec-key">Recovery key</label>
+          <input
+            id="rec-key"
+            style={{ ...s.input, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: '0.05em' }}
+            type="text"
+            autoComplete="off"
+            value={recoveryKey}
+            onChange={(e) => setRecoveryKey(e.target.value)}
+            placeholder="xxxx-xxxx-xxxx-xxxx"
+          />
+
+          <label style={s.label} htmlFor="rec-newpass">New password</label>
+          <input
+            id="rec-newpass"
+            style={s.input}
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+
+          <label style={s.label} htmlFor="rec-confirm">Confirm new password</label>
+          <input
+            id="rec-confirm"
+            style={{ ...s.input, marginBottom: error ? '0' : '20px' }}
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+
+          {error && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
+
+          <button style={{ ...s.btn, opacity: loading ? 0.5 : 1, marginTop: '8px' }} type="submit" disabled={loading}>
+            {loading ? '…' : 'Recover account'}
+          </button>
+
+          <button type="button" style={s.btnSecondary} onClick={onBack}>
+            ← Back to login
           </button>
         </div>
       </form>

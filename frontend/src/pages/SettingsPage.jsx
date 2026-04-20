@@ -1208,6 +1208,37 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
   const [showTerms, setShowTerms] = useState(false);
   const avatarInputRef = useRef(null);
 
+  // Recovery-key section state
+  const [rkMode, setRkMode] = useState(null); // null | 'view' | 'regenerate'
+  const [rkPassword, setRkPassword] = useState('');
+  const [rkError, setRkError] = useState('');
+  const [rkBusy, setRkBusy] = useState(false);
+  const [rkRevealed, setRkRevealed] = useState(null); // string when shown
+
+  async function submitRecoveryKey() {
+    setRkError('');
+    if (!rkPassword) { setRkError(t('settings.passwordRequired') || 'Password required'); return; }
+    setRkBusy(true);
+    try {
+      const path = rkMode === 'regenerate' ? '/api/auth/recovery-key/regenerate' : '/api/auth/recovery-key/view';
+      const res = await apiFetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: rkPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRkError(data.error || 'Failed.'); return; }
+      setRkRevealed(data.recovery_key);
+      setRkPassword('');
+    } catch {
+      setRkError(t('settings.requestFailed'));
+    } finally { setRkBusy(false); }
+  }
+
+  function closeRk() {
+    setRkMode(null); setRkPassword(''); setRkError(''); setRkRevealed(null);
+  }
+
   async function changePassword() {
     setPwError('');
     if (!currentPw || !newPw) { setPwError(t('settings.allFieldsRequired')); return; }
@@ -1320,6 +1351,76 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
       <Btn primary onClick={changePassword} disabled={savingPw}>
         {savingPw ? t('settings.updatingPassword') : t('settings.updatePassword')}
       </Btn>
+
+      <div style={s.divider} />
+
+      {/* Recovery key */}
+      <div style={{ ...s.label, marginBottom: '14px' }}>Recovery key</div>
+      <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.6, marginBottom: '12px' }}>
+        The recovery key unlocks your journal if you forget your password. View it to write it down again, or regenerate it if you think the old one has been seen by someone else.
+      </div>
+
+      {!rkMode && (
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Btn onClick={() => { setRkMode('view'); setRkError(''); setRkRevealed(null); }}>View key</Btn>
+          <Btn onClick={() => { setRkMode('regenerate'); setRkError(''); setRkRevealed(null); }}>Regenerate</Btn>
+        </div>
+      )}
+
+      {rkMode && !rkRevealed && (
+        <div style={{ padding: '14px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--panel-bg)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--body)', marginBottom: '10px' }}>
+            {rkMode === 'regenerate'
+              ? 'Regenerating replaces your existing recovery key. The old key will stop working — save the new one immediately.'
+              : 'Enter your password to view your recovery key.'}
+          </div>
+          <input
+            style={{ ...s.input, marginBottom: '10px' }}
+            type="password"
+            placeholder={t('settings.password') || 'Password'}
+            value={rkPassword}
+            onChange={(e) => setRkPassword(e.target.value)}
+            autoComplete="current-password"
+            onKeyDown={(e) => e.key === 'Enter' && submitRecoveryKey()}
+          />
+          {rkError && <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px' }}>{rkError}</div>}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Btn primary onClick={submitRecoveryKey} disabled={rkBusy || !rkPassword}>
+              {rkBusy ? '…' : rkMode === 'regenerate' ? 'Regenerate' : 'Show key'}
+            </Btn>
+            <Btn onClick={closeRk}>{t('common.cancel')}</Btn>
+          </div>
+        </div>
+      )}
+
+      {rkRevealed && (
+        <div style={{ padding: '14px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--panel-bg)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--body)', marginBottom: '10px' }}>
+            {rkMode === 'regenerate' ? 'Your new recovery key:' : 'Your recovery key:'}
+          </div>
+          <div style={{
+            padding: '14px',
+            background: 'var(--white)',
+            border: 'var(--border-style)',
+            borderRadius: '10px',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: '15px',
+            letterSpacing: '0.1em',
+            color: 'var(--strong)',
+            textAlign: 'center',
+            userSelect: 'all',
+            marginBottom: '10px',
+          }}>
+            {rkRevealed}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Btn onClick={async () => {
+              try { await navigator.clipboard.writeText(rkRevealed); showToast('Copied'); } catch {}
+            }}>Copy</Btn>
+            <Btn primary onClick={closeRk}>Done</Btn>
+          </div>
+        </div>
+      )}
 
       <div style={s.divider} />
 
