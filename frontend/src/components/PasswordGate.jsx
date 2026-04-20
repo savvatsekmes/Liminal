@@ -150,18 +150,133 @@ const s = {
 };
 
 export default function PasswordGate({ onSuccess }) {
-  const [view, setView] = useState('login'); // 'login' | 'register'
+  const [view, setView] = useState('login'); // 'login' | 'register' | 'recovery-reveal'
+  // Pending context held while we pause on the recovery-key reveal screen
+  // between a successful auth call and handing off to the app. The token is
+  // already stored; we just delay calling onSuccess until the user confirms
+  // they've saved the key.
+  const [pending, setPending] = useState(null); // { username, onboardingComplete, password, recoveryKey, isNewAccount }
 
-  function handleAuthSuccess(token, username, onboardingComplete, password) {
+  function finishAuth(token, username, onboardingComplete, password, recoveryKey, isNewAccount = false) {
     setStoredToken(token);
+    if (recoveryKey) {
+      setPending({ username, onboardingComplete, password, recoveryKey, isNewAccount });
+      setView('recovery-reveal');
+    } else {
+      onSuccess(username, onboardingComplete, password);
+    }
+  }
+
+  function confirmRecoveryReveal() {
+    if (!pending) return;
+    const { username, onboardingComplete, password } = pending;
+    setPending(null);
     onSuccess(username, onboardingComplete, password);
   }
 
-  if (view === 'register') {
-    return <RegisterForm onSuccess={handleAuthSuccess} onBack={() => setView('login')} />;
+  if (view === 'recovery-reveal' && pending) {
+    return <RecoveryKeyReveal
+      recoveryKey={pending.recoveryKey}
+      isNewAccount={pending.isNewAccount}
+      onConfirm={confirmRecoveryReveal}
+    />;
   }
 
-  return <LoginForm onSuccess={handleAuthSuccess} onRegister={() => setView('register')} />;
+  if (view === 'register') {
+    return <RegisterForm onSuccess={finishAuth} onBack={() => setView('login')} />;
+  }
+
+  return <LoginForm onSuccess={finishAuth} onRegister={() => setView('register')} />;
+}
+
+// ── Recovery Key Reveal ──────────────────────────────────────────────────────
+// Shown once after registration, and once for legacy users who just got
+// upgraded on their first post-encryption login. Blocks entry into the app
+// until the user confirms they've written the key down.
+
+function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
+  const { theme } = useTheme();
+  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(recoveryKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // LAN / non-secure origins block the clipboard API — surface a hint
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div style={s.overlay}>
+      <style>{mobileCSS}</style>
+      <div className="auth-card" style={{ ...s.card, flexDirection: 'column', gap: '24px', textAlign: 'left', maxWidth: '540px' }}>
+        <div className="auth-brand-col" style={{ ...s.brandCol, alignSelf: 'center' }}>
+          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+        </div>
+
+        <div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--strong)', marginBottom: '8px' }}>
+            {isNewAccount ? 'Save your recovery key' : 'Your journal is now encrypted'}
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: 1.6 }}>
+            {isNewAccount
+              ? 'This recovery key is the only way to get back into your account if you forget your password. Write it down somewhere safe — Liminal cannot show it to you again without your password.'
+              : 'Your entries are now encrypted with your password. If you forget your password, this recovery key is the only way to get your journal back. Save it somewhere safe now.'}
+          </div>
+        </div>
+
+        <div style={{
+          padding: '18px',
+          background: 'var(--panel-bg)',
+          border: 'var(--border-style)',
+          borderRadius: '10px',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontSize: '15px',
+          letterSpacing: '0.1em',
+          color: 'var(--strong)',
+          textAlign: 'center',
+          userSelect: 'all',
+        }}>
+          {recoveryKey}
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button type="button" style={{ ...s.btnSecondary, marginBottom: 0 }} onClick={copy}>
+            {copied ? 'Copied' : 'Copy to clipboard'}
+          </button>
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: 'var(--body)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+            style={{ width: '14px', height: '14px', accentColor: 'var(--strong)', cursor: 'pointer' }}
+          />
+          I've saved this recovery key somewhere I trust.
+        </label>
+
+        <button
+          type="button"
+          style={{ ...s.btn, marginBottom: 0, opacity: confirmed ? 1 : 0.5 }}
+          disabled={!confirmed}
+          onClick={onConfirm}
+        >
+          Continue
+        </button>
+
+        <div style={{ ...s.hint, textAlign: 'left', marginTop: 0 }}>
+          You can view or regenerate this key later from Settings, but only after entering your password.
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -193,7 +308,10 @@ function LoginForm({ onSuccess, onRegister }) {
         setError(data.error || t('auth.errorLoginFailed'));
         setPassword('');
       } else {
-        onSuccess(data.token, data.username, data.onboarding_complete, password);
+        // Legacy-user migrations return a recovery_key on their first
+        // post-encryption login; finishAuth will route us through the
+        // reveal screen instead of handing straight to the app.
+        onSuccess(data.token, data.username, data.onboarding_complete, password, data.recovery_key || null, false);
       }
     } catch {
       setError(t('auth.errorBackend'));
@@ -283,7 +401,9 @@ function RegisterForm({ onSuccess, onBack }) {
       if (!res.ok) {
         setError(data.error || t('auth.errorRegisterFailed'));
       } else {
-        onSuccess(data.token, data.username, data.onboarding_complete, password);
+        // New accounts always get a recovery key; the parent component
+        // shows the reveal screen before entering the app.
+        onSuccess(data.token, data.username, data.onboarding_complete, password, data.recovery_key || null, true);
       }
     } catch {
       setError(t('auth.errorBackend'));
