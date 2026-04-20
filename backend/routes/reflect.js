@@ -9,6 +9,7 @@ const { requireAuth } = require('../middleware/auth');
 const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
+const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
 router.use(requireAuth);
 
@@ -38,7 +39,7 @@ router.post('/', async (req, res) => {
 
     // 2. LLM call — read HTML body from DB to avoid sending huge base64 over HTTP
     const entryRow = entryId ? db.prepare('SELECT body FROM entries WHERE id = ? AND user_id = ?').get(entryId, req.userId) : null;
-    const htmlBody = entryRow?.body || entryBody || '';
+    const htmlBody = safeDecrypt(req.userId, entryRow?.body) || entryBody || '';
     const ytContext = buildYoutubeContext(req.userId, htmlBody);
     const imgContext = buildImageContext(req.userId, htmlBody);
     const cardContext = buildCardContext(htmlBody);
@@ -97,7 +98,7 @@ router.post('/', async (req, res) => {
         db.prepare(
           `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
            VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-        ).run(entryId, req.userId, JSON.stringify(savedData));
+        ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify(savedData)));
         console.log(`[reflect] Saved OK`);
       } catch (e) {
         console.error('[reflect] Failed to save reflections:', e.message);
@@ -176,7 +177,7 @@ router.get('/:entryId', (req, res) => {
   ).get(req.params.entryId, req.userId);
   console.log(`[reflect] GET entryId=${req.params.entryId} userId=${req.userId} found=${!!row}`);
   if (!row) return res.json({ opening: null, blocks: [] });
-  const saved = JSON.parse(row.blocks);
+  const saved = JSON.parse(safeDecrypt(req.userId, row.blocks));
   // Support old format (plain array) and new format ({ opening, blocks })
   if (Array.isArray(saved)) {
     console.log(`[reflect] GET archetypes=${saved.map(b => b.archetype).join(',')}`);
@@ -204,7 +205,7 @@ router.put('/:entryId/blocks', (req, res) => {
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(entryId, req.userId, JSON.stringify({ opening, blocks }));
+    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify({ opening, blocks })));
     res.json({ opening, blocks });
   } catch (err) {
     console.error('[reflect] PUT blocks failed:', err.message);
@@ -232,7 +233,7 @@ router.patch('/:entryId/blocks/:index', (req, res) => {
   if (!row) return res.status(404).json({ error: 'reflection not found' });
 
   try {
-    const saved = JSON.parse(row.blocks);
+    const saved = JSON.parse(safeDecrypt(req.userId, row.blocks));
     const opening = Array.isArray(saved) ? null : (saved.opening || null);
     const blocks = Array.isArray(saved) ? saved : (saved.blocks || []);
     if (index < 0 || index >= blocks.length) return res.status(400).json({ error: 'index out of range' });
@@ -240,7 +241,7 @@ router.patch('/:entryId/blocks/:index', (req, res) => {
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(entryId, req.userId, JSON.stringify({ opening, blocks }));
+    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify({ opening, blocks })));
     res.json({ opening, blocks });
   } catch (err) {
     console.error('[reflect] PATCH block failed:', err.message);
@@ -582,6 +583,8 @@ async function attachEcho(blocks, currentText, currentEntryId, userId) {
     'SELECT id, title, body_text, created_at FROM entries WHERE id = ? AND user_id = ?'
   ).get(top.entryId, userId);
   if (!source || !source.body_text) return;
+  source.body_text = safeDecrypt(userId, source.body_text);
+  if (!source.body_text) return;
 
   // Pick the sentence in the source most similar to the current entry text.
   const sentences = splitSentences(source.body_text)

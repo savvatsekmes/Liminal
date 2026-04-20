@@ -6,14 +6,16 @@ const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
 const threadService = require('../services/threadService');
+const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
 router.use(requireAuth);
 
 function parseTags(raw) {
   try { return JSON.parse(raw || '[]'); } catch { return []; }
 }
-function noteRow(row) {
+function noteRow(userId, row) {
   if (!row) return null;
+  if (row.body !== undefined) row.body = safeDecrypt(userId, row.body);
   return { ...row, tags: parseTags(row.tags), auto_tags: parseTags(row.auto_tags) };
 }
 
@@ -40,7 +42,7 @@ function normaliseTagPair(tags, autoTags) {
 // ── GET /api/notes ────────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
-  res.json(rows.map(noteRow));
+  res.json(rows.map((r) => noteRow(req.userId, r)));
 });
 
 // ── GET /api/notes/custom-tags ────────────────────────────────────────────────
@@ -70,7 +72,7 @@ router.post('/', (req, res) => {
       `INSERT INTO notes (type, body, attribution, target_date, custom_tag, tags, auto_tags, user_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(type, body, attribution || null, target_date || null, custom_tag || null, JSON.stringify(normalised.tags), JSON.stringify(normalised.auto_tags), req.userId);
+    .run(type, encryptField(req.userId, body), attribution || null, target_date || null, custom_tag || null, JSON.stringify(normalised.tags), JSON.stringify(normalised.auto_tags), req.userId);
 
   // Rosary bead: thread this note into the graph if it already has content.
   // Empty shells (created before autosave fills them) are skipped — the
@@ -85,7 +87,7 @@ router.post('/', (req, res) => {
     });
   }
 
-  res.status(201).json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(result.lastInsertRowid)));
+  res.status(201).json(noteRow(req.userId, db.prepare('SELECT * FROM notes WHERE id = ?').get(result.lastInsertRowid)));
 });
 
 // ── PUT /api/notes/:id ────────────────────────────────────────────────────────
@@ -99,7 +101,7 @@ router.put('/:id', (req, res) => {
   const params = [];
 
   if (type !== undefined)        { fields.push('type = ?');        params.push(type); }
-  if (body !== undefined)        { fields.push('body = ?');        params.push(body); }
+  if (body !== undefined)        { fields.push('body = ?');        params.push(encryptField(req.userId, body)); }
   if (attribution !== undefined) { fields.push('attribution = ?'); params.push(attribution || null); }
   if (target_date !== undefined) { fields.push('target_date = ?'); params.push(target_date || null); }
   if (custom_tag !== undefined)  { fields.push('custom_tag = ?');  params.push(custom_tag || null); }
@@ -140,7 +142,7 @@ router.put('/:id', (req, res) => {
     });
   }
 
-  res.json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id)));
+  res.json(noteRow(req.userId, db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id)));
 });
 
 // ── DELETE /api/notes/:id ─────────────────────────────────────────────────────
@@ -163,15 +165,17 @@ router.post('/:id/snapshot', (req, res) => {
   const existing = db.prepare('SELECT * FROM notes WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!existing?.body) return res.json({ skipped: true });
 
-  // Skip if the latest version already has identical content — avoids
-  // duplicate snapshots when autosave fires with no real change.
+  // Ciphertexts differ on every write (random IV), so the dedupe comparison
+  // has to happen on plaintext.
   const latest = db.prepare(
     'SELECT body FROM note_versions WHERE note_id = ? ORDER BY saved_at DESC LIMIT 1'
   ).get(req.params.id);
-  if (latest && latest.body === existing.body) {
+  if (latest && safeDecrypt(req.userId, latest.body) === safeDecrypt(req.userId, existing.body)) {
     return res.json({ skipped: true });
   }
 
+  // Copy ciphertext straight into the version row — already encrypted with
+  // the per-user key so no re-encryption needed.
   db.prepare(
     'INSERT INTO note_versions (note_id, user_id, body) VALUES (?, ?, ?)'
   ).run(req.params.id, req.userId, existing.body);
@@ -193,12 +197,16 @@ router.get('/:id/versions', (req, res) => {
     'SELECT id, saved_at, body FROM note_versions WHERE note_id = ? ORDER BY saved_at DESC LIMIT 10'
   ).all(req.params.id);
 
-  res.json(versions.map(v => ({
-    id: v.id,
-    saved_at: v.saved_at,
-    body_text: (v.body || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
-    preview: (v.body || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100),
-  })));
+  res.json(versions.map(v => {
+    const body = safeDecrypt(req.userId, v.body) || '';
+    const text = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return {
+      id: v.id,
+      saved_at: v.saved_at,
+      body_text: text,
+      preview: text.slice(0, 100),
+    };
+  }));
 });
 
 // ── POST /api/notes/:id/versions/:versionId/restore ───────────────────────────
@@ -229,7 +237,7 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
     'UPDATE notes SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?'
   ).run(version.body, req.params.id, req.userId);
 
-  res.json(noteRow(db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id)));
+  res.json(noteRow(req.userId, db.prepare('SELECT * FROM notes WHERE id = ?').get(req.params.id)));
 });
 
 // ── POST /api/notes/:id/reflect ───────────────────────────────────────────────
@@ -237,6 +245,8 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
 router.post('/:id/reflect', async (req, res) => {
   const note = db.prepare('SELECT * FROM notes WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!note) return res.status(404).json({ error: 'Note not found' });
+  // Decrypt body in-place so downstream prompt-building code sees plaintext.
+  note.body = safeDecrypt(req.userId, note.body);
   if (!note.body?.trim()) return res.status(400).json({ error: 'Note has no content to reflect on' });
 
   const { archetype } = req.body || {};
@@ -351,7 +361,7 @@ Rules:
       INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-    `).run(note.id, req.userId, JSON.stringify(blocks));
+    `).run(note.id, req.userId, encryptField(req.userId, JSON.stringify(blocks)));
 
     res.json({ blocks });
   } catch (err) {
@@ -376,7 +386,7 @@ router.put('/:id/reflect/blocks', (req, res) => {
       INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-    `).run(noteId, req.userId, JSON.stringify(blocks));
+    `).run(noteId, req.userId, encryptField(req.userId, JSON.stringify(blocks)));
     res.json({ blocks });
   } catch (err) {
     console.error('[notes] PUT reflect/blocks failed:', err.message);
@@ -400,7 +410,7 @@ router.patch('/:id/reflect/blocks/:index', (req, res) => {
   if (!row) return res.status(404).json({ error: 'reflection not found' });
 
   try {
-    const blocks = JSON.parse(row.blocks);
+    const blocks = JSON.parse(safeDecrypt(req.userId, row.blocks));
     if (!Array.isArray(blocks) || index < 0 || index >= blocks.length) {
       return res.status(400).json({ error: 'index out of range' });
     }
@@ -409,7 +419,7 @@ router.patch('/:id/reflect/blocks/:index', (req, res) => {
       INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-    `).run(noteId, req.userId, JSON.stringify(blocks));
+    `).run(noteId, req.userId, encryptField(req.userId, JSON.stringify(blocks)));
     res.json({ blocks });
   } catch (err) {
     console.error('[notes] PATCH reflect block failed:', err.message);
@@ -424,7 +434,7 @@ router.get('/:id/reflect', (req, res) => {
     .get(req.params.id, req.userId);
   if (!row) return res.json({ blocks: [] });
   try {
-    res.json({ blocks: JSON.parse(row.blocks) });
+    res.json({ blocks: JSON.parse(safeDecrypt(req.userId, row.blocks)) });
   } catch {
     res.json({ blocks: [] });
   }

@@ -4,6 +4,7 @@ const db = require('../database');
 const { indexEntry } = require('../services/embeddingService');
 const { requireAuth } = require('../middleware/auth');
 const { getMoonPhase, getSkyNotes } = require('../services/skyService');
+const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
 router.use(requireAuth);
 
@@ -17,8 +18,17 @@ function parseTags(raw) {
   }
 }
 
-function entryRow(row) {
+// Decrypt the encrypted columns on an entries row in-place and return it.
+function decryptEntryRow(userId, row) {
+  if (!row) return row;
+  if (row.body !== undefined)      row.body      = safeDecrypt(userId, row.body);
+  if (row.body_text !== undefined) row.body_text = safeDecrypt(userId, row.body_text);
+  return row;
+}
+
+function entryRow(userId, row) {
   if (!row) return null;
+  decryptEntryRow(userId, row);
   return {
     ...row,
     tags: parseTags(row.tags),
@@ -48,28 +58,26 @@ function normaliseTagPair(tags, autoTags) {
 }
 
 // ── GET /api/entries ─────────────────────────────────────────────────────────
+// Search happens in JS after decryption because body_text is now ciphertext
+// with random IVs — server-side LIKE cannot match a plaintext substring.
 router.get('/', (req, res) => {
   const { tag, search, limit = 5000, offset = 0 } = req.query;
 
-  let query = `SELECT id, title, body_text, date, tags, auto_tags, linked_session_id, created_at, updated_at
-               FROM entries`;
-  const params = [];
-  const conditions = [`user_id = ?`];
-  params.push(req.userId);
+  const rows = db.prepare(
+    `SELECT id, title, body_text, date, tags, auto_tags, linked_session_id, created_at, updated_at
+     FROM entries WHERE user_id = ?
+     ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  ).all(req.userId, Number(limit), Number(offset));
+
+  let entries = rows.map((r) => entryRow(req.userId, r));
 
   if (search) {
-    conditions.push(`(title LIKE ? OR body_text LIKE ?)`);
-    params.push(`%${search}%`, `%${search}%`);
+    const needle = String(search).toLowerCase();
+    entries = entries.filter((e) =>
+      (e.title || '').toLowerCase().includes(needle) ||
+      (e.body_text || '').toLowerCase().includes(needle),
+    );
   }
-
-  query += ` WHERE ${conditions.join(' AND ')}`;
-  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-  params.push(Number(limit), Number(offset));
-
-  const rows = db.prepare(query).all(...params);
-  let entries = rows.map(entryRow);
-
-  // Filter by tag in JS (tags stored as JSON array)
   if (tag) {
     entries = entries.filter((e) => e.tags.includes(tag));
   }
@@ -81,7 +89,7 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!row) return res.status(404).json({ error: 'Entry not found' });
-  res.json(entryRow(row));
+  res.json(entryRow(req.userId, row));
 });
 
 // ── POST /api/entries ────────────────────────────────────────────────────────
@@ -93,16 +101,20 @@ router.post('/', (req, res) => {
   const moon = getMoonPhase(now);
   const skyNotes = getSkyNotes(now);
 
+  const encBody = encryptField(req.userId, body);
+  const encBodyText = encryptField(req.userId, body_text);
+
   const result = db
     .prepare(
       `INSERT INTO entries (title, body, body_text, date, tags, user_id, moon_phase, moon_sign, sky_notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(title, body, body_text, date || now.toISOString().split('T')[0], JSON.stringify(tags), req.userId, moon.phase, moon.moonSign, skyNotes || null);
+    .run(title, encBody, encBodyText, date || now.toISOString().split('T')[0], JSON.stringify(tags), req.userId, moon.phase, moon.moonSign, skyNotes || null);
 
-  const entry = entryRow(db.prepare('SELECT * FROM entries WHERE id = ?').get(result.lastInsertRowid));
+  const entry = entryRow(req.userId, db.prepare('SELECT * FROM entries WHERE id = ?').get(result.lastInsertRowid));
 
-  // Index in background — don't block the response
+  // Index in background — don't block the response. Pass the plaintext so the
+  // embedding captures semantics, not ciphertext.
   if (body_text) {
     indexEntry(entry.id, body_text).catch(() => {});
   }
@@ -122,8 +134,8 @@ router.put('/:id', (req, res) => {
   const params = [];
 
   if (title !== undefined) { fields.push('title = ?'); params.push(title); }
-  if (body !== undefined) { fields.push('body = ?'); params.push(body); }
-  if (body_text !== undefined) { fields.push('body_text = ?'); params.push(body_text); }
+  if (body !== undefined) { fields.push('body = ?'); params.push(encryptField(req.userId, body)); }
+  if (body_text !== undefined) { fields.push('body_text = ?'); params.push(encryptField(req.userId, body_text)); }
   if (date !== undefined) { fields.push('date = ?'); params.push(date); }
   if (linked_session_id !== undefined) { fields.push('linked_session_id = ?'); params.push(linked_session_id); }
   if (locked !== undefined) { fields.push('locked = ?'); params.push(locked ? 1 : 0); }
@@ -147,7 +159,7 @@ router.put('/:id', (req, res) => {
 
   db.prepare(`UPDATE entries SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...params);
 
-  const updated = entryRow(db.prepare('SELECT * FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId));
+  const updated = entryRow(req.userId, db.prepare('SELECT * FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId));
 
   // Re-index in background if text changed
   if (body_text !== undefined && body_text) {
@@ -185,27 +197,30 @@ router.post('/:id/snapshot', (req, res) => {
   const existing = db.prepare('SELECT * FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!existing?.body) return res.json({ skipped: true });
 
-  // Skip empty Tiptap docs ("<p></p>", whitespace-only). An empty editor
-  // still serialises to "<p></p>" which is truthy, so we need to check for
-  // actual content. Accept the snapshot if there's either typed text OR a
-  // non-text node (card pull, image, youtube embed, etc.) — so a card-only
-  // or image-only entry still gets versioned.
-  const hasText = !!(existing.body_text && existing.body_text.trim());
-  const hasNonTextContent = hasNonTextNode(existing.body);
+  // Decrypt to inspect content — ciphertext comparisons are meaningless
+  // because each write uses a random IV, so "same plaintext" produces
+  // different ciphertexts.
+  const plainBody     = safeDecrypt(req.userId, existing.body);
+  const plainBodyText = safeDecrypt(req.userId, existing.body_text);
+
+  const hasText = !!(plainBodyText && plainBodyText.trim());
+  const hasNonTextContent = hasNonTextNode(plainBody);
   if (!hasText && !hasNonTextContent) {
     return res.json({ skipped: true });
   }
 
-  // Skip if the latest version already has identical content — avoids
-  // duplicate snapshots when the autosave fires repeatedly without changes
-  // (e.g. cursor moves, formatting toggles that produce no text diff).
+  // Skip if the latest version already has identical content (plaintext
+  // comparison).
   const latest = db.prepare(
     'SELECT body FROM entry_versions WHERE entry_id = ? ORDER BY saved_at DESC LIMIT 1'
   ).get(req.params.id);
-  if (latest && latest.body === existing.body) {
+  if (latest && safeDecrypt(req.userId, latest.body) === plainBody) {
     return res.json({ skipped: true });
   }
 
+  // Store the already-encrypted ciphertext straight into the version row.
+  // Saves re-encryption cost and preserves the exact on-disk bytes that
+  // matched the entry at snapshot time.
   db.prepare(
     'INSERT INTO entry_versions (entry_id, user_id, title, body, body_text) VALUES (?, ?, ?, ?, ?)'
   ).run(req.params.id, req.userId, existing.title || '', existing.body, existing.body_text || '');
@@ -226,22 +241,26 @@ router.delete('/:id/versions/blank', (req, res) => {
   const existing = db.prepare('SELECT id FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
-  // Delete versions with no typed text AND no non-text content (cards,
-  // images, embeds, drawings). The body LIKE checks mirror hasNonTextNode().
-  const result = db.prepare(
-    `DELETE FROM entry_versions
-     WHERE entry_id = ? AND user_id = ?
-       AND (body_text IS NULL OR TRIM(body_text) = '')
-       AND (body IS NULL OR (
-            body NOT LIKE '%data-card-reading%'
-        AND body NOT LIKE '%data-image-embed%'
-        AND body NOT LIKE '%data-youtube-embed%'
-        AND body NOT LIKE '%data-drawing%'
-        AND body NOT LIKE '%<img %'
-        AND body NOT LIKE '%<canvas%'
-       ))`
-  ).run(req.params.id, req.userId);
+  // We can't LIKE against encrypted body_text anymore — fetch candidates and
+  // decide in JS. Limit to this entry's versions so we never scan the whole
+  // table.
+  const rows = db.prepare(
+    'SELECT id, body, body_text FROM entry_versions WHERE entry_id = ? AND user_id = ?'
+  ).all(req.params.id, req.userId);
 
+  const blankIds = rows
+    .filter((r) => {
+      const txt  = safeDecrypt(req.userId, r.body_text);
+      const body = safeDecrypt(req.userId, r.body);
+      const noText = !txt || !txt.trim();
+      return noText && !hasNonTextNode(body);
+    })
+    .map((r) => r.id);
+
+  if (!blankIds.length) return res.json({ deleted: 0 });
+  const result = db.prepare(
+    `DELETE FROM entry_versions WHERE id IN (${blankIds.map(() => '?').join(',')})`
+  ).run(...blankIds);
   res.json({ deleted: result.changes });
 });
 
@@ -254,13 +273,16 @@ router.get('/:id/versions', (req, res) => {
     'SELECT id, saved_at, title, body_text FROM entry_versions WHERE entry_id = ? ORDER BY saved_at DESC LIMIT 10'
   ).all(req.params.id);
 
-  res.json(versions.map(v => ({
-    id: v.id,
-    saved_at: v.saved_at,
-    title: v.title,
-    body_text: v.body_text || '',
-    preview: (v.body_text || '').replace(/\s+/g, ' ').trim().slice(0, 100),
-  })));
+  res.json(versions.map(v => {
+    const bt = safeDecrypt(req.userId, v.body_text) || '';
+    return {
+      id: v.id,
+      saved_at: v.saved_at,
+      title: v.title,
+      body_text: bt,
+      preview: bt.replace(/\s+/g, ' ').trim().slice(0, 100),
+    };
+  }));
 });
 
 // ── POST /api/entries/:id/versions/:versionId/restore ─────────────────────────
@@ -271,7 +293,8 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
   const version = db.prepare('SELECT * FROM entry_versions WHERE id = ? AND entry_id = ?').get(req.params.versionId, req.params.id);
   if (!version) return res.status(404).json({ error: 'Version not found' });
 
-  // Save current state as a new version before restoring (so restore is undoable)
+  // Save current state as a new version before restoring (so restore is undoable).
+  // Both existing.body and the new version row live as ciphertext — copy as-is.
   if (existing.body) {
     db.prepare(
       'INSERT INTO entry_versions (entry_id, user_id, title, body, body_text) VALUES (?, ?, ?, ?, ?)'
@@ -286,12 +309,13 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
     }
   }
 
-  // Restore the version
+  // Restore the version. Ciphertext → ciphertext copy; both encrypted with the
+  // same per-user key so the target row remains readable.
   db.prepare(
     'UPDATE entries SET title = ?, body = ?, body_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?'
   ).run(version.title, version.body, version.body_text, req.params.id, req.userId);
 
-  const updated = entryRow(db.prepare('SELECT * FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId));
+  const updated = entryRow(req.userId, db.prepare('SELECT * FROM entries WHERE id = ? AND user_id = ?').get(req.params.id, req.userId));
   res.json(updated);
 });
 

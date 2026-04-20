@@ -212,6 +212,14 @@ addColumnSafe('portrait', 'weather_lng', 'REAL');
 addColumnSafe('users', 'onboarding_complete', 'INTEGER DEFAULT 0');
 addColumnSafe('users', 'avatar_path', 'TEXT');
 addColumnSafe('users', 'terms_accepted_at', 'DATETIME');
+// Per-user encryption (see backend/services/userCrypto.js).
+// BLOB columns. encryption_version: 0 = legacy plaintext, 1 = row-encrypted.
+addColumnSafe('users', 'password_salt',             'BLOB');
+addColumnSafe('users', 'recovery_salt',             'BLOB');
+addColumnSafe('users', 'user_key_by_password',      'BLOB');
+addColumnSafe('users', 'user_key_by_recovery',      'BLOB');
+addColumnSafe('users', 'recovery_key_by_password',  'BLOB');
+addColumnSafe('users', 'encryption_version',        'INTEGER DEFAULT 0');
 // Mark pre-existing users as onboarded
 db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete = 0 AND last_login IS NOT NULL').run();
 
