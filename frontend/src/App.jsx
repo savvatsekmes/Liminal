@@ -61,6 +61,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   }, [locked, resetLockTimer, lockTimeoutMs]);
   const [previewVersion, setPreviewVersion] = useState(null);
   const [pendingNoteId, setPendingNoteId] = useState(null);
+  const [pendingThreadId, setPendingThreadId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
   const [pendingPortraitTab, setPendingPortraitTab] = useState(null);
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -251,6 +252,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
               onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
               onNavigateToOracle={(id) => { setPendingSessionId(id); handleViewChange('oracle'); }}
+              onNavigateToThreads={(threadId) => { if (threadId) setPendingThreadId(threadId); handleViewChange('threads'); }}
               onNavigateToSky={() => { setPendingPortraitTab('sky'); handleViewChange('portrait'); }}
               onNavigateToCards={() => { setPendingPortraitTab('cards'); handleViewChange('portrait'); }}
               onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }}
@@ -275,6 +277,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
           if (activeView === 'memory') return <MemoryPage onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }} />;
           if (activeView === 'threads') return (
             <ThreadsPage
+              initialThreadId={pendingThreadId}
+              onThreadSelected={() => setPendingThreadId(null)}
               onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
               onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
               onNavigateToOracle={(id) => { setPendingSessionId(id); handleViewChange('oracle'); }}

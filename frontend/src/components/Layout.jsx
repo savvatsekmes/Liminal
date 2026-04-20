@@ -3,6 +3,7 @@ import { useResizable } from '../hooks/useResizable';
 import ResizeDivider from './ResizeDivider';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useSwipeNav } from '../hooks/useSwipeNav';
 import { useTheme } from '../hooks/useTheme';
 
 const styles = {
@@ -305,6 +306,20 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
     }, []);
 
     const isJournal = activeView === 'journal';
+    const journalViewOrder = ['list', 'editor', 'mirror'];
+    const swipe = useSwipeNav({
+      enabled: isJournal,
+      onLeft: () => {
+        const i = journalViewOrder.indexOf(journalView);
+        if (i < 0 || i >= journalViewOrder.length - 1) return;
+        setJournalView(journalViewOrder[i + 1]);
+      },
+      onRight: () => {
+        const i = journalViewOrder.indexOf(journalView);
+        if (i <= 0) return;
+        setJournalView(journalViewOrder[i - 1]);
+      },
+    });
     const headerBtn = {
       background: 'none', border: 'none', fontSize: '13px',
       color: 'var(--muted)', cursor: 'pointer',
@@ -312,7 +327,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
     };
 
     return (
-      <div style={mobileStyles.root}>
+      <div style={mobileStyles.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
         <div style={mobileStyles.content}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
             {isJournal && journalView !== 'list' && (

@@ -787,14 +787,16 @@ export default function MemoryPage({ onNavigateToPortrait }) {
           <div style={s.sectionTitle}>Built-in</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '32px' }}>
             {BUILT_IN_ARCHETYPES.filter(a => a.value !== 'Auto').map((arch) => (
-              <div key={arch.value} style={s.archCard}>
-                <ArchetypeAvatar archetype={arch} size={36} color={arch.color} />
-                <div style={s.archInfo}>
-                  <div style={s.archName}>{arch.value}</div>
-                  <div style={s.archDesc}>{arch.description}</div>
+              <div key={arch.value} style={{ ...s.archCard, ...(isMobile ? { flexDirection: 'column', alignItems: 'stretch', gap: '10px' } : {}) }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                  <ArchetypeAvatar archetype={arch} size={36} color={arch.color} />
+                  <div style={s.archInfo}>
+                    <div style={s.archName}>{arch.value}</div>
+                    <div style={s.archDesc}>{arch.description}</div>
+                  </div>
                 </div>
                 <select
-                  style={s.voiceSelect}
+                  style={{ ...s.voiceSelect, ...(isMobile ? { maxWidth: 'none' } : {}) }}
                   value={archetypeVoices[arch.value] || ''}
                   onChange={(e) => setArchetypeVoice(arch.value, e.target.value)}
                   title="Voice for this archetype"
@@ -819,24 +821,26 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
             {customArchetypes.map((arch) => (
-              <div key={arch.name} style={s.archCard}>
-                <ArchetypeAvatar archetype={{ value: arch.name, color: arch.color, image: arch.image }} size={36} color={arch.color} />
-                <div style={s.archInfo}>
-                  <div style={s.archName}>{arch.name}</div>
-                  <div style={s.archDesc}>{arch.prompt || 'No custom prompt'}</div>
+              <div key={arch.name} style={{ ...s.archCard, ...(isMobile ? { flexDirection: 'column', alignItems: 'stretch', gap: '10px' } : {}) }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                  <ArchetypeAvatar archetype={{ value: arch.name, color: arch.color, image: arch.image }} size={36} color={arch.color} />
+                  <div style={s.archInfo}>
+                    <div style={s.archName}>{arch.name}</div>
+                    <div style={s.archDesc}>{arch.prompt || 'No custom prompt'}</div>
+                  </div>
                 </div>
-                <select
-                  style={s.voiceSelect}
-                  value={archetypeVoices[arch.name] || ''}
-                  onChange={(e) => setArchetypeVoice(arch.name, e.target.value)}
-                  title="Voice for this archetype"
-                >
-                  <option value="">System default</option>
-                  {availableVoices.map((v) => (
-                    <option key={v.filename} value={v.filename}>{v.name}</option>
-                  ))}
-                </select>
-                <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, ...(isMobile ? { justifyContent: 'flex-end', flexWrap: 'wrap' } : {}) }}>
+                  <select
+                    style={{ ...s.voiceSelect, ...(isMobile ? { flex: 1, maxWidth: 'none' } : {}) }}
+                    value={archetypeVoices[arch.name] || ''}
+                    onChange={(e) => setArchetypeVoice(arch.name, e.target.value)}
+                    title="Voice for this archetype"
+                  >
+                    <option value="">System default</option>
+                    {availableVoices.map((v) => (
+                      <option key={v.filename} value={v.filename}>{v.name}</option>
+                    ))}
+                  </select>
                   <button
                     style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'var(--border-style)', borderRadius: '12px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'var(--font)' }}
                     onClick={() => setEditingArch({ ...arch, originalName: arch.name, isNew: false })}

@@ -21,6 +21,8 @@ export const WIDGETS = {
   BUCKET:       'bucket',
   AFFIRMATIONS: 'affirmations',
   QUESTIONS:    'questions',
+  LOOKBACK:     'lookback',
+  THREADS:      'threads',
 };
 
 export const ALL_WIDGET_IDS = Object.values(WIDGETS);
@@ -44,6 +46,8 @@ export const WIDGET_LABELS = {
   bucket:       'Bucket List',
   affirmations: 'Affirmations',
   questions:    'Open Questions',
+  lookback:     'Look Back',
+  threads:      'Threads',
 };
 
 // Width options as percentages (mapped to grid column spans out of 10)
@@ -69,6 +73,8 @@ export const WIDGET_WIDTHS = {
   bucket:       { default: 50 },
   affirmations: { default: 50 },
   questions:    { default: 50 },
+  lookback:     { default: 50 },
+  threads:      { default: 50 },
 };
 
 // Default Liminal layout — hardcoded, never stored in DB

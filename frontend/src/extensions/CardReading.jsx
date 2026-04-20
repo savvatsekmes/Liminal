@@ -414,7 +414,7 @@ function CardReadingView({ node, deleteNode, editor, getPos }) {
             ⠿
           </div>
           <div style={st.headerLeft}>
-            <span style={st.diamond} />
+            <svg width="10" height="12" viewBox="0 0 12 15" fill="none" stroke="currentColor" strokeWidth="1" style={{ flexShrink: 0, color: 'var(--strong)' }}><rect x="0.5" y="0.5" width="11" height="14" rx="1.5"/><rect x="1.5" y="1.5" width="9" height="12" rx="1" strokeWidth="0.6"/><polygon points="6,3.5 8,7.5 6,11 4,7.5" fill="currentColor" stroke="none"/></svg>
             {deckLabel} Reading — {spreadName}
           </div>
           <button

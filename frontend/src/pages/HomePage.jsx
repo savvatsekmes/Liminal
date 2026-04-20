@@ -928,7 +928,7 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNewEntry, onNewNote, onNewConversation, onLogout, onLock, onNavigateToSettings }) {
+export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNavigateToThreads, onNewEntry, onNewNote, onNewConversation, onLogout, onLock, onNavigateToSettings }) {
   const { t, lang } = useLanguage();
   const isMobile = useIsMobile();
   const layout = useLayout(isMobile);
@@ -1062,6 +1062,9 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   ) : null;
   const [sky, setSky] = useState(null);
   const [tagged, setTagged] = useState({});
+  const [lookbackEntries, setLookbackEntries] = useState([]);
+  const [lookbackShuffleKey, setLookbackShuffleKey] = useState(0);
+  const [threadsList, setThreadsList] = useState([]);
   const [insightPlaying, setInsightPlaying] = useState(false);
   const insightAudioRef = useRef(null);
   const insightCancelRef = useRef(false);
@@ -1238,6 +1241,27 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         .then(data => setTagged(prev => ({ ...prev, [id]: data.items || [] })))
         .catch(() => {});
     });
+  }, [layout.currentLayout]);
+
+  // Lookback widget — random past entries. Refetches when lookbackShuffleKey
+  // bumps so the Shuffle action cycles through different selections.
+  useEffect(() => {
+    const has = layout.currentLayout.some(w => w.id === 'lookback');
+    if (!has) return;
+    apiFetch('/api/home/lookback?limit=3')
+      .then(r => r.json())
+      .then(data => setLookbackEntries(data.items || []))
+      .catch(() => {});
+  }, [layout.currentLayout, lookbackShuffleKey]);
+
+  // Threads widget — top active threads (canonical + novel-with-≥3-beads).
+  useEffect(() => {
+    const has = layout.currentLayout.some(w => w.id === 'threads');
+    if (!has || threadsList.length) return;
+    apiFetch('/api/home/threads?limit=5')
+      .then(r => r.json())
+      .then(data => setThreadsList(data.threads || []))
+      .catch(() => {});
   }, [layout.currentLayout]);
 
   // Auto-grow textarea
@@ -1873,6 +1897,112 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               <span style={s.rhythmLabel}>Your Rhythm</span>
             </div>
             <RhythmGrid rhythm={rhythm} />
+          </div>
+        );
+      }
+      case 'lookback': {
+        return (
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
+            <div style={s.themesHeader}>
+              <span style={s.themesLabel}>Look Back</span>
+              <span style={s.themesPeriod}> ·  echoes from your journal</span>
+              <button
+                onClick={() => setLookbackShuffleKey(k => k + 1)}
+                style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontFamily: 'var(--font)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--strong)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--muted)'; }}
+                title="Shuffle"
+              >
+                ↻ Shuffle
+              </button>
+            </div>
+            {lookbackEntries.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                {lookbackEntries.map((e) => (
+                  <div
+                    key={e.id}
+                    onClick={() => onNavigateToEntry?.(e.id)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'background 0.12s',
+                    }}
+                    onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
+                    onMouseLeave={(ev) => { ev.currentTarget.style.background = 'transparent'; }}
+                    title={e.excerpt || e.title}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                        {e.title || 'Untitled'}
+                      </div>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)', flexShrink: 0 }}>
+                        {formatRelativeDate(e.date || e.created_at, t)}
+                      </span>
+                    </div>
+                    {e.excerpt && (
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+                        {e.excerpt}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ ...s.themesRow, opacity: 0.55, fontSize: '12px', fontStyle: 'italic' }}>
+                No past entries yet — write a few and they'll start surfacing here.
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'threads': {
+        return (
+          <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
+            <div style={s.themesHeader}>
+              <span style={s.themesLabel}>Threads</span>
+              <span style={s.themesPeriod}> ·  what you're navigating</span>
+            </div>
+            {threadsList.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                {threadsList.map((th) => {
+                  const beads = th.node_count || 0;
+                  const last = th.last_node_at ? formatRelativeDate(th.last_node_at, t) : null;
+                  const meta = [
+                    th.kind || 'thread',
+                    `${beads} bead${beads === 1 ? '' : 's'}`,
+                    last ? `last ${last}` : null,
+                  ].filter(Boolean).join(' · ');
+                  return (
+                    <div
+                      key={th.id}
+                      onClick={() => onNavigateToThreads?.(th.id)}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'background 0.12s',
+                        opacity: th.status === 'dormant' ? 0.6 : 1,
+                      }}
+                      onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
+                      onMouseLeave={(ev) => { ev.currentTarget.style.background = 'transparent'; }}
+                      title={th.description || th.name}
+                    >
+                      <div style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {th.name}
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {meta}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ ...s.themesRow, opacity: 0.55, fontSize: '12px', fontStyle: 'italic' }}>
+                No threads yet — open Threads and run Re-thread the Needle, or keep journalling and they'll appear.
+              </div>
+            )}
           </div>
         );
       }

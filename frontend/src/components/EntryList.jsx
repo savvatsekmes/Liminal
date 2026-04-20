@@ -472,9 +472,11 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const [menu, setMenu] = useState(null);
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
   const { isCore, makeCore, removeCore } = useCoreTags();
-  const locked = isLocked(label);
-  const always = isAlwaysLocked(label);
   const core = isCore(label);
+  const userLocked = isLocked(label);
+  // Core tags are auto-locked — × never shows on them, across all surfaces.
+  const locked = userLocked || core;
+  const always = isAlwaysLocked(label);
   const borderStyle = active ? '1px solid var(--strong)' : '1px solid var(--border)';
   return (
     <div
@@ -518,7 +520,6 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         {IMG_EMOJI[label.toLowerCase()]
           ? <><img src={IMG_EMOJI[label.toLowerCase()]} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {label}</>
           : tagLabel(label)}
-        {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
       </button>
       {hover && !locked && (
         <button
@@ -544,9 +545,9 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            locked
+            userLocked
               ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
-              : { label: 'Lock tag', onClick: () => lock(label) },
+              : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
             core
               ? { label: 'Remove from core', onClick: () => removeCore(label) }
               : { label: 'Make core', onClick: () => makeCore(label) },

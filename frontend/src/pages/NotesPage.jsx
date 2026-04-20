@@ -53,6 +53,7 @@ import { useLockedTags } from '../hooks/useLockedTags';
 import { useCoreTags } from '../hooks/useCoreTags';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useSwipeNav } from '../hooks/useSwipeNav';
 
 const BUILT_IN_TYPES = [
   { type: 'all',        labelKey: 'notes.typeAll' },
@@ -284,8 +285,24 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
 
   useListArrowNav(filteredNotes, (n) => n.id, activeNote?.id, selectNote);
 
+  const mobileViewOrder = ['list', 'editor', 'reflect'];
+  const swipe = useSwipeNav({
+    enabled: isMobile,
+    onLeft: () => {
+      const i = mobileViewOrder.indexOf(mobileView);
+      if (i < 0 || i >= mobileViewOrder.length - 1) return;
+      if (mobileView === 'list' && !activeNote) return;
+      setMobileView(mobileViewOrder[i + 1]);
+    },
+    onRight: () => {
+      const i = mobileViewOrder.indexOf(mobileView);
+      if (i <= 0) return;
+      setMobileView(mobileViewOrder[i - 1]);
+    },
+  });
+
   return (
-    <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', minWidth: 0 }}>
+    <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', minWidth: 0 }} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
       {/* Note list — fills available space on mobile (minus tag strip) */}
       <div style={{
         width: isMobile ? 'auto' : noteListWidth + 'px',
@@ -731,9 +748,11 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
   const [menu, setMenu] = useState(null); // { x, y }
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
   const { isCore, makeCore, removeCore } = useCoreTags();
-  const locked = isLocked(label);
-  const always = isAlwaysLocked(label);
   const core = isCore(label);
+  const userLocked = isLocked(label);
+  // Core tags are auto-locked — × never shows on them, across all surfaces.
+  const locked = userLocked || core;
+  const always = isAlwaysLocked(label);
 
   const borderStyle = active ? '1px solid var(--strong)' : '1px solid var(--border)';
 
@@ -781,7 +800,7 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={locked ? `${label} (locked)` : label}
       >
-        <TagLabel tag={label} />{locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
+        <TagLabel tag={label} />
       </button>
       {hover && !locked && (
         <button
@@ -807,9 +826,9 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            locked
+            userLocked
               ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
-              : { label: 'Lock tag', onClick: () => lock(label) },
+              : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
             core
               ? { label: 'Remove from core', onClick: () => removeCore(label) }
               : { label: 'Make core', onClick: () => makeCore(label) },

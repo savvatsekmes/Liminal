@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { useSwipeNav } from '../hooks/useSwipeNav';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
 const s = {
@@ -414,8 +416,10 @@ function NodeBadge({ type, t }) {
   return <span style={{ ...s.badge, ...s.badgeOracle }}>{t('threads.nodeBadge.oracle') || 'oracle'}</span>;
 }
 
-export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNavigateToOracle }) {
+export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNavigateToOracle, initialThreadId, onThreadSelected }) {
   const { t } = useLanguage();
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState('list'); // 'list' | 'detail'
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeThreadId, setActiveThreadId] = useState(null);
@@ -435,6 +439,17 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
   const [savingEdit, setSavingEdit] = useState(false);
   const audioRef = useRef(null);
   const cancelRef = useRef(false);
+
+  const mobileOpenThread = useCallback((id) => {
+    setActiveThreadId(id);
+    if (isMobile) setMobileView('detail');
+  }, [isMobile]);
+
+  const swipe = useSwipeNav({
+    enabled: isMobile,
+    onLeft: () => { if (mobileView === 'list' && activeThreadId) setMobileView('detail'); },
+    onRight: () => { if (mobileView === 'detail') setMobileView('list'); },
+  });
 
   // Wall-clock ticker during a running detect job. The theme stage is a
   // single ~30-90s LLM call with no natural counter, so without this the UI
@@ -486,6 +501,20 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
     loadThreads();
     loadTotals();
   }, [loadThreads, loadTotals]);
+
+  // Honour an incoming preselect (e.g. from the Home page Threads widget).
+  // Waits for the threads list to be loaded, then sets activeThreadId if the
+  // target exists. Clears the pending flag via onThreadSelected so reopening
+  // the page doesn't keep re-selecting the same thread.
+  useEffect(() => {
+    if (!initialThreadId || !threads.length) return;
+    const target = threads.find((t) => t.id === initialThreadId);
+    if (target) {
+      setActiveThreadId(target.id);
+      if (isMobile) setMobileView('detail');
+    }
+    onThreadSelected?.();
+  }, [initialThreadId, threads]);
 
   // Keep the list live while the page is visible. Beads land 5-15s after
   // Reflect / chat / note save as the background threading call completes,
@@ -623,7 +652,7 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
       setCustomName('');
       setCustomDesc('');
       await loadThreads();
-      if (created?.id) setActiveThreadId(created.id);
+      if (created?.id) { setActiveThreadId(created.id); if (isMobile) setMobileView('detail'); }
     } catch {}
     finally { setCreatingCustom(false); }
   }
@@ -737,8 +766,8 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
   }, [detectJob, t]);
 
   return (
-    <div style={s.root}>
-      <aside style={s.sidebar}>
+    <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
+      <aside style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, borderRight: 'none', display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
         <div style={s.sidebarHeader}>
           <div style={s.sidebarTitle}>{t('threads.title') || 'Threads'}</div>
           <div style={s.sidebarTagline}>{t('threads.tagline') || 'The arcs weaving through your life'}</div>
@@ -780,7 +809,7 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
                       thread={thread}
                       active={thread.id === activeThreadId}
                       busy={rematchingId === thread.id}
-                      onClick={() => setActiveThreadId(thread.id)}
+                      onClick={() => mobileOpenThread(thread.id)}
                     />
                   ))}
                 </>
@@ -855,7 +884,17 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
         </div>
       </aside>
 
-      <section style={s.detail}>
+      <section style={{ ...s.detail, ...(isMobile && mobileView === 'list' ? { display: 'none' } : {}) }}>
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: 'var(--border-style)', flexShrink: 0 }}>
+            <button
+              onClick={() => setMobileView('list')}
+              style={{ background: 'none', border: 'none', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'var(--font)', padding: '4px 0' }}
+            >
+              ‹ {t('threads.title') || 'Threads'}
+            </button>
+          </div>
+        )}
         {!activeThread ? (
           <div style={s.detailEmpty}>
             {threads.length === 0
@@ -865,7 +904,7 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
               : (t('common.loading') || 'Loading…')}
           </div>
         ) : (
-          <div style={s.detailScroll}>
+          <div style={{ ...s.detailScroll, ...(isMobile ? { padding: '16px 16px 60px' } : {}) }}>
             <div style={s.detailHeader}>
               <div style={s.detailName}>{activeThread.name}</div>
               {activeThread.description && (

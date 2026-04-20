@@ -75,7 +75,10 @@ export default function TagBar({ tags = [], onTagsChange }) {
       <span style={s.label}>{t('tags.label')}</span>
 
       {tags.map((tag) => {
-        const locked = isLocked(tag);
+        // Core tags are auto-locked across journal/notes/oracle — no × shown.
+        const userLocked = isLocked(tag);
+        const core = isCore(tag);
+        const locked = userLocked || core;
         return (
           <span
             key={tag}
@@ -83,7 +86,6 @@ export default function TagBar({ tags = [], onTagsChange }) {
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, tag }); }}
           >
             <TagLabel tag={tag} />
-            {locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
             {!locked && (
               <button
                 className="tag-remove"
@@ -98,7 +100,7 @@ export default function TagBar({ tags = [], onTagsChange }) {
       })}
 
       {menu && (() => {
-        const locked = isLocked(menu.tag);
+        const userLocked = isLocked(menu.tag);
         const always = isAlwaysLocked(menu.tag);
         const core = isCore(menu.tag);
         return (
@@ -107,9 +109,9 @@ export default function TagBar({ tags = [], onTagsChange }) {
             y={menu.y}
             onClose={() => setMenu(null)}
             items={[
-              locked
+              userLocked
                 ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(menu.tag) }
-                : { label: 'Lock tag', onClick: () => lock(menu.tag) },
+                : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(menu.tag) },
               core
                 ? { label: 'Remove from core', onClick: () => removeCore(menu.tag) }
                 : { label: 'Make core', onClick: () => makeCore(menu.tag) },

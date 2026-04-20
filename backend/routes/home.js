@@ -371,4 +371,59 @@ router.get('/portrait-snippet', async (req, res) => {
   }
 });
 
+// ── GET /api/home/lookback — random past entries to resurface ───────────────
+// Prefer entries older than 30 days (nostalgia/resurface is the point); fall
+// back to any entries if the corpus is too small to satisfy that cutoff.
+router.get('/lookback', (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 3, 10);
+  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+
+  let rows = db.prepare(
+    `SELECT id, title, body_text, date, created_at
+       FROM entries
+      WHERE user_id = ? AND created_at < ?
+      ORDER BY RANDOM() LIMIT ?`
+  ).all(req.userId, cutoff, limit);
+
+  if (rows.length < limit) {
+    rows = db.prepare(
+      `SELECT id, title, body_text, date, created_at
+         FROM entries WHERE user_id = ?
+         ORDER BY RANDOM() LIMIT ?`
+    ).all(req.userId, limit);
+  }
+
+  const items = rows.map(r => ({
+    id: r.id,
+    title: r.title || '',
+    date: r.date || null,
+    created_at: r.created_at,
+    excerpt: (r.body_text || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+  }));
+
+  res.json({ items });
+});
+
+// ── GET /api/home/threads — top active threads for the Threads widget ───────
+// Same visibility rule as ThreadsPage + cards.js getThreadContext: canonical
+// threads always included; novel/custom only if they have 3+ beads.
+router.get('/threads', (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 5, 20);
+  const rows = db.prepare(`
+    SELECT t.id, t.name, t.description, t.kind, t.status,
+           COUNT(n.id) AS node_count,
+           MAX(n.created_at) AS last_node_at
+      FROM threads t
+      LEFT JOIN thread_nodes n ON n.thread_id = t.id
+     WHERE t.user_id = ?
+     GROUP BY t.id
+     HAVING t.kind = 'canonical' OR node_count >= 3
+     ORDER BY (t.status = 'active') DESC,
+              (last_node_at IS NULL), last_node_at DESC
+     LIMIT ?
+  `).all(req.userId, limit);
+
+  res.json({ threads: rows });
+});
+
 module.exports = router;

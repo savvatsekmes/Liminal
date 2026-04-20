@@ -586,6 +586,13 @@ function createTray() {
     },
     { type: 'separator' },
     {
+      label: 'Restart',
+      click: () => {
+        app.relaunch();
+        app.exit(0);
+      },
+    },
+    {
       label: 'Quit',
       click: () => {
         app.quit();

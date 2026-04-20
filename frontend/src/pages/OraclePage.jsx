@@ -19,6 +19,7 @@ import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/arche
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import Calendar from '../components/Calendar';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useSwipeNav } from '../hooks/useSwipeNav';
 import { useListArrowNav } from '../hooks/useListArrowNav';
 
 const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.map(a => a.value);
@@ -954,8 +955,14 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
 
   useListArrowNav(searchedSessions, (sess) => sess.id, currentSession?.id, (sess) => loadSession(sess.id));
 
+  const swipe = useSwipeNav({
+    enabled: isMobile,
+    onLeft: () => { if (mobileView === 'list' && currentSession) setMobileView('chat'); },
+    onRight: () => { if (mobileView === 'chat') setMobileView('list'); },
+  });
+
   return (
-    <div style={s.root}>
+    <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
       {/* History sidebar — hidden on mobile when viewing chat */}
       <div style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
         <div style={s.sidebarHeader}>
@@ -1491,9 +1498,11 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const [menu, setMenu] = useState(null);
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
   const { isCore, makeCore, removeCore } = useCoreTags();
-  const locked = isLocked(label);
-  const always = isAlwaysLocked(label);
   const core = isCore(label);
+  const userLocked = isLocked(label);
+  // Core tags are auto-locked — × never shows on them, across all surfaces.
+  const locked = userLocked || core;
+  const always = isAlwaysLocked(label);
   const borderStyle = active ? '1px solid var(--strong)' : '1px solid var(--border)';
   return (
     <div
@@ -1534,7 +1543,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={locked ? `${label} (locked)` : label}
       >
-        <TagLabel tag={label} />{locked && <span style={{ marginLeft: 3, opacity: 0.6 }}>🔒</span>}
+        <TagLabel tag={label} />
       </button>
       {hover && !locked && (
         <button
@@ -1560,9 +1569,9 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            locked
+            userLocked
               ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
-              : { label: 'Lock tag', onClick: () => lock(label) },
+              : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
             core
               ? { label: 'Remove from core', onClick: () => removeCore(label) }
               : { label: 'Make core', onClick: () => makeCore(label) },
