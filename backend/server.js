@@ -91,4 +91,12 @@ app.listen(PORT, () => {
   // call doesn't stall while the model loads.
   const { warmup } = require('./services/embeddingService');
   warmup();
+
+  // If the user has pinned Ollama to a specific GPU via Settings, restart
+  // Ollama with that pin in its process env. Scoped to Ollama only — no
+  // user-wide CUDA_VISIBLE_DEVICES so Blender/other tools see all GPUs.
+  const ollamaRouter = require('./routes/ollama');
+  if (typeof ollamaRouter.ensureOllamaPinnedOnStartup === 'function') {
+    ollamaRouter.ensureOllamaPinnedOnStartup();
+  }
 });

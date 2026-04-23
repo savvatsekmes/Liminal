@@ -3,6 +3,7 @@ const router = express.Router();
 const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
+const { spawnSync } = require('child_process');
 const { DATA_DIR } = require('../paths');
 
 function getChatterboxUrl() {
@@ -221,5 +222,40 @@ function preprocessText(text) {
     (_, h, m, period) => `${h} ${m} ${period.toUpperCase()}`
   );
 }
+
+// POST /api/tts/pin-gpu { gpuName: 'NVIDIA GeForce RTX 4090' | 'auto' | 'cpu' | 'mps' }
+// Saves the tts_device setting and restarts the TTS server so it picks up
+// the new device on its next load. TTS reads tts_device from SQLite at spawn,
+// so a simple kill + respawn via Electron's control server is enough.
+router.post('/pin-gpu', async (req, res) => {
+  if (process.platform !== 'win32') {
+    return res.status(501).json({ error: 'pin-gpu currently supports Windows only' });
+  }
+  const { gpuName } = req.body || {};
+  if (!gpuName) return res.status(400).json({ error: 'gpuName is required' });
+  try {
+    const s = require('../services/settingsService');
+    s.set('tts_device', gpuName);
+
+    // Kill the TTS server; Electron's child-exit handler nulls ttsProc so the
+    // next /tts/ensure respawns with the new tts_device value read from SQLite.
+    spawnSync('taskkill', ['/f', '/t', '/im', 'tts_server.exe'], { stdio: 'ignore', windowsHide: true });
+
+    await new Promise(r => setTimeout(r, 500));
+
+    // Ask Electron to respawn TTS immediately rather than waiting for the next speak call.
+    const ok = await ensureTtsViaControl();
+    res.json({
+      ok: true,
+      gpu: gpuName,
+      respawned: ok,
+      message: ok
+        ? `TTS restarted on ${gpuName === 'auto' ? 'auto' : gpuName}.`
+        : `Setting saved. TTS will use ${gpuName} on next speak.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;

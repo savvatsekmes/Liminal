@@ -546,6 +546,8 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
   const [openaiKey, setOpenaiKey] = useState('');
   const [ollamaData, setOllamaData] = useState(null); // { online, models }
   const [gpus, setGpus] = useState(null);
+  const [pendingGpu, setPendingGpu] = useState(null); // dropdown local state (unsaved)
+  const [pinStatus, setPinStatus] = useState(null);   // { ok, message } | 'applying' | null
 
   useEffect(() => {
     apiFetch('/api/settings/gpus').then(r => r.json()).then(setGpus).catch(() => {});
@@ -818,22 +820,52 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
           />
 
           {gpus?.cuda && (
-            <Field label={t('settings.gpuForOllama')} hint="Restart Ollama after changing. Uses CUDA_VISIBLE_DEVICES.">
-              <select
-                style={s.select}
-                value={cfg.llm_device || 'auto'}
-                onChange={e => { set('llm_device', e.target.value); save({ llm_device: e.target.value }); }}
-              >
-                <option value="auto">Auto (Ollama manages its own GPU)</option>
-                {gpus.gpus?.map(g => (
-                  <option key={g.id} value={g.name}>
-                    {g.name} ({g.vram_gb} GB)
-                  </option>
-                ))}
-              </select>
-              {cfg.llm_device && cfg.llm_device !== 'auto' && (
-                <div style={s.sublabel}>
-                  Set CUDA_VISIBLE_DEVICES for the matching GPU when starting Ollama.
+            <Field label={t('settings.gpuForOllama')} hint="Click Set to apply. Pins Ollama via CUDA_VISIBLE_DEVICES and restarts it.">
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select
+                  style={{ ...s.select, flex: 1 }}
+                  value={pendingGpu ?? (cfg.llm_device || 'auto')}
+                  onChange={e => setPendingGpu(e.target.value)}
+                  disabled={pinStatus === 'applying'}
+                >
+                  <option value="auto">Auto (Ollama manages its own GPU)</option>
+                  {gpus.gpus?.map(g => (
+                    <option key={g.id} value={g.name}>
+                      {g.name} ({g.vram_gb} GB)
+                    </option>
+                  ))}
+                </select>
+                <Btn
+                  disabled={pinStatus === 'applying'}
+                  onClick={async () => {
+                    const chosen = pendingGpu ?? (cfg.llm_device || 'auto');
+                    setPinStatus('applying');
+                    try {
+                      const r = await apiFetch('/api/ollama/pin-gpu', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ gpuName: chosen }),
+                      });
+                      const data = await r.json();
+                      if (!r.ok) {
+                        setPinStatus({ ok: false, message: data.error || `HTTP ${r.status}` });
+                        return;
+                      }
+                      set('llm_device', chosen);
+                      await save({ llm_device: chosen });
+                      setPinStatus({ ok: true, message: data.message || 'Applied.' });
+                      setPendingGpu(null);
+                    } catch (err) {
+                      setPinStatus({ ok: false, message: err.message });
+                    }
+                  }}
+                >
+                  {pinStatus === 'applying' ? 'Applying…' : 'Set'}
+                </Btn>
+              </div>
+              {pinStatus && pinStatus !== 'applying' && (
+                <div style={{ ...s.sublabel, color: pinStatus.ok ? 'var(--muted)' : '#c54' }}>
+                  {pinStatus.message}
                 </div>
               )}
             </Field>
@@ -919,6 +951,8 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
   const [testing, setTesting] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null);
   const [gpus, setGpus] = useState(null);
+  const [pendingTtsGpu, setPendingTtsGpu] = useState(null);
+  const [ttsPinStatus, setTtsPinStatus] = useState(null);
   const audioRef = useRef(null);
 
   useEffect(() => {
@@ -1008,26 +1042,59 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
           {gpus && (
             <Field
               label={t('settings.gpuForTts')}
-              hint={gpus.mps
-                ? (t('settings.ttsRestartHint') || 'Restart TTS server after changing.')
-                : (t('settings.ttsRestartHintGpuName') || 'Restart TTS server after changing. Use GPU name to survive index changes.')}
+              hint="Click Set to apply. Restarts the TTS server on the chosen device."
             >
-              <select
-                style={s.select}
-                value={cfg.tts_device || 'auto'}
-                onChange={e => { set('tts_device', e.target.value); save({ tts_device: e.target.value }); }}
-              >
-                <option value="auto">{t('settings.gpuAuto') || 'Auto (first available GPU)'}</option>
-                <option value="cpu">{t('settings.gpuCpu') || 'CPU (slow)'}</option>
-                {gpus.mps && (
-                  <option value="mps">{t('settings.gpuMetal') || 'Apple Silicon GPU (Metal)'}</option>
-                )}
-                {gpus.gpus?.map(g => (
-                  <option key={g.id} value={g.name}>
-                    {g.name}{typeof g.vram_gb === 'number' ? ` (${g.vram_gb} GB)` : ''}
-                  </option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select
+                  style={{ ...s.select, flex: 1 }}
+                  value={pendingTtsGpu ?? (cfg.tts_device || 'auto')}
+                  onChange={e => setPendingTtsGpu(e.target.value)}
+                  disabled={ttsPinStatus === 'applying'}
+                >
+                  <option value="auto">{t('settings.gpuAuto') || 'Auto (first available GPU)'}</option>
+                  <option value="cpu">{t('settings.gpuCpu') || 'CPU (slow)'}</option>
+                  {gpus.mps && (
+                    <option value="mps">{t('settings.gpuMetal') || 'Apple Silicon GPU (Metal)'}</option>
+                  )}
+                  {gpus.gpus?.map(g => (
+                    <option key={g.id} value={g.name}>
+                      {g.name}{typeof g.vram_gb === 'number' ? ` (${g.vram_gb} GB)` : ''}
+                    </option>
+                  ))}
+                </select>
+                <Btn
+                  disabled={ttsPinStatus === 'applying'}
+                  onClick={async () => {
+                    const chosen = pendingTtsGpu ?? (cfg.tts_device || 'auto');
+                    setTtsPinStatus('applying');
+                    try {
+                      const r = await apiFetch('/api/tts/pin-gpu', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ gpuName: chosen }),
+                      });
+                      const data = await r.json();
+                      if (!r.ok) {
+                        setTtsPinStatus({ ok: false, message: data.error || `HTTP ${r.status}` });
+                        return;
+                      }
+                      set('tts_device', chosen);
+                      await save({ tts_device: chosen });
+                      setTtsPinStatus({ ok: true, message: data.message || 'Applied.' });
+                      setPendingTtsGpu(null);
+                    } catch (err) {
+                      setTtsPinStatus({ ok: false, message: err.message });
+                    }
+                  }}
+                >
+                  {ttsPinStatus === 'applying' ? 'Applying…' : 'Set'}
+                </Btn>
+              </div>
+              {ttsPinStatus && ttsPinStatus !== 'applying' && (
+                <div style={{ ...s.sublabel, color: ttsPinStatus.ok ? 'var(--muted)' : '#c54' }}>
+                  {ttsPinStatus.message}
+                </div>
+              )}
               {ttsStatus?.compat_mode && (
                 <div style={{ marginTop: '6px', padding: '6px 10px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', fontSize: '11px', color: '#856404', lineHeight: '1.4' }}>
                   ⚠ Compatibility mode active — {ttsStatus.gpu_name || 'this GPU'} (compute {ttsStatus.compute_capability}) lacks fast attention kernels (requires 8.0+). TTS will work but generation is slower.

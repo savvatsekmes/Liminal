@@ -1078,19 +1078,6 @@ app.on('before-quit', async (event) => {
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); } catch {}
   try { if (tray) { tray.destroy(); tray = null; } } catch {}
 
-  // Native notification so the user knows the process is still alive
-  // during cleanup. Tray + window vanish instantly; without this, relaunch
-  // attempts during the cleanup window feel broken.
-  try {
-    const { Notification } = require('electron');
-    if (Notification.isSupported()) {
-      new Notification({
-        title: 'Liminal is closing',
-        body: 'Finishing backup — will close in a few seconds.',
-        silent: true,
-      }).show();
-    }
-  } catch {}
 
   // Hard ceiling on cleanup. If backend is stuck (or auto-backup is huge)
   // we still want the process to die so the single-instance lock releases
