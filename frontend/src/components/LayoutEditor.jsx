@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { WIDGET_LABELS } from '../hooks/useLayout';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
   panel: {
@@ -134,6 +135,7 @@ export default function LayoutEditor({
   onDiscard,
   onDone,
 }) {
+  const { t } = useLanguage();
   const [showSave, setShowSave] = useState(false);
   const [saveName, setSaveName] = useState('');
 
@@ -187,7 +189,7 @@ export default function LayoutEditor({
           >
             <option value="">{availableWidgets.length === 0 ? 'All sections added' : 'Choose a section...'}</option>
             {availableWidgets.map(id => (
-              <option key={id} value={id}>{WIDGET_LABELS[id] || id}</option>
+              <option key={id} value={id}>{t(WIDGET_LABELS[id] || id)}</option>
             ))}
           </select>
         </div>

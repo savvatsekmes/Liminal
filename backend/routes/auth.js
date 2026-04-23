@@ -302,20 +302,13 @@ router.post('/complete-onboarding', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-// ── DELETE /api/auth/account ─────────────────────────────────────────────────
-// Permanently delete the user's account and ALL associated data.
-router.delete('/account', requireAuth, async (req, res) => {
-  const { password } = req.body || {};
-  if (!password) return res.status(400).json({ error: 'Password required' });
+// Wipe all data for a user. Shared between password-authenticated delete and
+// recovery-key-authenticated wipe (the latter exists so a user who forgets
+// their password can still satisfy Apple 5.1.1(v) / Google account-deletion
+// requirements).
+function wipeUserData(uid) {
+  const avatarRow = db.prepare('SELECT avatar_path FROM users WHERE id = ?').get(uid);
 
-  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Incorrect password' });
-
-  // Delete all user data — child tables first
-  const uid = req.userId;
   db.prepare('DELETE FROM reflections WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
   db.prepare('DELETE FROM entry_embeddings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
   db.prepare('DELETE FROM entry_versions WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
@@ -328,17 +321,67 @@ router.delete('/account', requireAuth, async (req, res) => {
   db.prepare('DELETE FROM memories WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM memory WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM portrait WHERE user_id = ?').run(uid);
-  db.prepare('DELETE FROM settings WHERE key LIKE ?').run(`%_${uid}`);
+  db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(uid);
+  // thread_nodes is ON DELETE CASCADE on thread_id
+  db.prepare('DELETE FROM threads WHERE user_id = ?').run(uid);
+  // Per-user scoped settings live as `key::userId` (see settingsService).
+  db.prepare("DELETE FROM settings WHERE key LIKE ?").run(`%::${uid}`);
   db.prepare('DELETE FROM users WHERE id = ?').run(uid);
 
   rowCrypto.clearUserKey(uid);
 
-  // Clean vectra index
+  if (avatarRow?.avatar_path) {
+    try {
+      const avatarFile = path.join(DATA_DIR, avatarRow.avatar_path);
+      if (fs.existsSync(avatarFile)) fs.unlinkSync(avatarFile);
+    } catch (err) {
+      console.warn('[delete-account] avatar unlink failed:', err.message);
+    }
+  }
+
+  // Clean vectra index (single-user app — index belongs to the deleted user)
   const vectraDir = path.join(DATA_DIR, 'vectra');
   if (fs.existsSync(vectraDir)) {
     fs.rmSync(vectraDir, { recursive: true, force: true });
   }
+}
 
+// ── DELETE /api/auth/account ─────────────────────────────────────────────────
+// Password-authenticated deletion.
+router.delete('/account', requireAuth, async (req, res) => {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'Password required' });
+
+  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+
+  wipeUserData(req.userId);
+  res.json({ success: true });
+});
+
+// ── POST /api/auth/wipe-with-recovery-key ────────────────────────────────────
+// Recovery-key-authenticated deletion. For users who forgot their password
+// and want to wipe everything rather than recover. Required by Apple 5.1.1(v)
+// and Google account-deletion guidance: a forgotten-password user must still
+// be able to delete their data.
+router.post('/wipe-with-recovery-key', (req, res) => {
+  const { username, recovery_key } = req.body || {};
+  if (!username || !recovery_key) {
+    return res.status(400).json({ error: 'username and recovery_key required' });
+  }
+
+  const user = db.prepare(`SELECT id, ${KEY_FIELDS} FROM users WHERE username = ?`).get(username.trim());
+  if (!user || user.encryption_version !== 1) {
+    return res.status(401).json({ error: 'Account not found or not recoverable' });
+  }
+
+  const userKey = userCrypto.unlockWithRecovery(recovery_key, user);
+  if (!userKey) return res.status(401).json({ error: 'Recovery key did not match' });
+
+  wipeUserData(user.id);
   res.json({ success: true });
 });
 

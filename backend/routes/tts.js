@@ -3,7 +3,6 @@ const router = express.Router();
 const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
-const multer = require('multer');
 const { DATA_DIR } = require('../paths');
 
 function getChatterboxUrl() {
@@ -31,6 +30,17 @@ async function ensureTtsViaControl() {
   }
 }
 
+// Fire-and-forget ping so main.js can keep TTS resident while remote browser
+// users are active (window in tray wouldn't otherwise know about them).
+function pingTtsKeepalive() {
+  const controlUrl = process.env.LIMINAL_CONTROL_URL;
+  if (!controlUrl) return;
+  fetch(`${controlUrl}/tts/keepalive`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(2000),
+  }).catch(() => {});
+}
+
 async function isChatterboxOnline() {
   try {
     const r = await fetch(`${getChatterboxUrl()}/v1/models`, {
@@ -52,29 +62,10 @@ function getTtsDefaults() {
   };
 }
 
-// Voice upload storage — writes to the configured voices_path
-const voiceStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const s = require('../services/settingsService');
-    let voicesDir = s.get('voices_path');
-    if (!voicesDir) {
-      voicesDir = path.join(DATA_DIR, 'voices');
-    }
-    fs.mkdirSync(voicesDir, { recursive: true });
-    cb(null, voicesDir);
-  },
-  filename: (req, file, cb) => cb(null, file.originalname),
-});
-
-const voiceUpload = multer({
-  storage: voiceStorage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-  fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (['.wav', '.mp3'].includes(ext)) cb(null, true);
-    else cb(new Error('Only .wav and .mp3 files are accepted'));
-  },
-});
+// User voice uploads have been removed. Liminal ships with a curated set of
+// voice references licensed from the CSTR VCTK Corpus (CC BY 4.0); allowing
+// arbitrary user uploads creates right-of-publicity / deepfake exposure that
+// is not appropriate for a journalling app.
 
 // ── GET /api/tts/status ───────────────────────────────────────────────────────
 router.get('/status', async (req, res) => {
@@ -110,31 +101,6 @@ router.get('/voices', async (req, res) => {
   res.json(voices);
 });
 
-// ── POST /api/tts/voices ──────────────────────────────────────────────────────
-// Upload a voice file to the configured voices directory
-router.post('/voices', voiceUpload.single('voice'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  res.json({
-    success: true,
-    filename: req.file.filename,
-    path: req.file.path,
-    message: `Voice "${req.file.filename}" uploaded. Restart Chatterbox or it will be available on next server start.`,
-  });
-});
-
-// ── DELETE /api/tts/voices/:filename ─────────────────────────────────────────
-router.delete('/voices/:filename', (req, res) => {
-  const s = require('../services/settingsService');
-  const voicesDir = s.get('voices_path') || path.join(DATA_DIR, 'voices');
-  const filename = path.basename(req.params.filename); // prevent path traversal
-  const filePath = path.join(voicesDir, filename);
-
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Voice not found' });
-
-  fs.unlinkSync(filePath);
-  res.json({ success: true });
-});
-
 // ── POST /api/tts/speak ───────────────────────────────────────────────────────
 router.post('/speak', async (req, res) => {
   if (!req.body.text) return res.status(400).json({ error: 'text is required' });
@@ -152,6 +118,9 @@ router.post('/speak', async (req, res) => {
   if (!(await isChatterboxOnline())) {
     await ensureTtsViaControl();
   }
+  // Cheap fire-and-forget so main.js knows someone's actively using TTS
+  // (keeps the model resident when the window is in the tray).
+  pingTtsKeepalive();
 
   return speakChatterbox(req, res, s);
 });

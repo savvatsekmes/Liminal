@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
+import AILabel from './AILabel';
 
 const CARD_W = 120;
 const CARD_H = 205;
@@ -477,6 +478,8 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
           <span style={s.headerTitle}>{t('cards.title')}</span>
           <button style={s.closeBtn} onClick={onClose}>{t('cards.close')}</button>
         </div>
+
+        <div style={{ padding: '0 20px' }}><AILabel compact /></div>
 
         {/* Body */}
         <div style={s.body}>

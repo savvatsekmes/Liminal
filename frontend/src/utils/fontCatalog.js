@@ -73,16 +73,50 @@ export function getFont(id) {
   return FONTS.find((f) => f.id === id) || FONTS.find((f) => f.id === DEFAULT_FONT_ID);
 }
 
+// Consent gate for fonts.googleapis.com fetches. ePrivacy Art. 5(3) +
+// post-Schrems II case law on Google Fonts requires explicit consent before
+// the user's IP is sent to Google's servers. Cormorant is self-hosted and
+// `system` / Segoe UI need no fetch — those bypass the gate entirely.
+const CONSENT_KEY = 'liminal:googleFontsConsent';
+
+export function getGoogleFontsConsent() {
+  try {
+    const v = localStorage.getItem(CONSENT_KEY);
+    return v === 'granted' || v === 'denied' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setGoogleFontsConsent(value) {
+  try {
+    if (value === 'granted' || value === 'denied') {
+      localStorage.setItem(CONSENT_KEY, value);
+    }
+  } catch { /* */ }
+}
+
+// Returns true if selecting `id` would trigger a Google Fonts fetch and the
+// user has not yet granted (or denied) consent. The picker uses this to
+// decide whether to show the consent modal before applying the choice.
+export function needsGoogleFontsConsent(id) {
+  const font = getFont(id);
+  if (!font || !font.googleParam) return false;
+  if (font.id === 'cormorant') return false; // self-hosted
+  return getGoogleFontsConsent() !== 'granted';
+}
+
 // Idempotently inject the Google Fonts <link> for a given font id.
-// No-op for `system` and for fonts whose link already exists in <head>
-// (Cormorant Garamond is preloaded statically by index.html).
+// No-op for `system`, for fonts without a googleParam, for Cormorant
+// (self-hosted from /fonts/ — see index.html), and when the user has not
+// granted consent for fonts.googleapis.com fetches.
 export function loadGoogleFont(id) {
   const font = getFont(id);
   if (!font || !font.googleParam) return;
+  if (font.id === 'cormorant') return; // self-hosted
+  if (getGoogleFontsConsent() !== 'granted') return;
   const linkId = `liminal-font-${font.id}`;
   if (document.getElementById(linkId)) return;
-  // Cormorant is already in index.html under a different id — skip.
-  if (font.id === 'cormorant' && document.querySelector('link[href*="Cormorant+Garamond"]')) return;
 
   const link = document.createElement('link');
   link.id = linkId;

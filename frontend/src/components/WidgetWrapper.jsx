@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { WIDGET_LABELS, WIDTH_OPTIONS } from '../hooks/useLayout';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
   wrapper: {
@@ -86,6 +87,7 @@ const s = {
 
 export default function WidgetWrapper({ id, editMode, isLiminalDefault, width, onRemove, onShrink, onGrow, children }) {
   const isMobile = useIsMobile();
+  const { t } = useLanguage();
   const {
     attributes,
     listeners,
@@ -125,7 +127,7 @@ export default function WidgetWrapper({ id, editMode, isLiminalDefault, width, o
         {!isLiminalDefault && (
           <span style={s.dragHandle} {...listeners} title="Drag to reorder">⠿</span>
         )}
-        <span style={s.widgetName}>{WIDGET_LABELS[id] || id}</span>
+        <span style={s.widgetName}>{t(WIDGET_LABELS[id] || id)}</span>
         {!isLiminalDefault && (
           <>
             <button

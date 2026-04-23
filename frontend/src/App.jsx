@@ -19,6 +19,7 @@ import { useEntries } from './hooks/useEntries';
 import { useReflect } from './hooks/useReflect';
 import { isAuthenticated, getStoredUsername, getStoredToken, clearStoredToken, apiFetch } from './utils/api';
 import { LanguageProvider } from './i18n/LanguageContext';
+import { CrisisGateProvider } from './components/CrisisGate';
 import { useTtsLoading } from './utils/ttsStatus';
 import { useFont } from './hooks/useFont';
 
@@ -46,7 +47,12 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   const resetLockTimer = useCallback(() => {
     if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
     if (lockTimeoutMs == null) return;
-    lockTimerRef.current = setTimeout(() => setLocked(true), lockTimeoutMs);
+    lockTimerRef.current = setTimeout(() => {
+      setLocked(true);
+      // Release TTS VRAM at lock — no point holding the model while the
+      // user is away long enough to trigger auto-lock.
+      window.liminal?.releaseTts?.().catch(() => {});
+    }, lockTimeoutMs);
   }, [lockTimeoutMs]);
 
   useEffect(() => {
@@ -225,7 +231,13 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
 
   return (
     <>
-    {locked && <LockScreen username={username} onUnlock={() => { setLocked(false); resetLockTimer(); }} />}
+    {locked && <LockScreen username={username} onUnlock={() => {
+      setLocked(false);
+      resetLockTimer();
+      // Re-warm TTS after unlock so the first Read-aloud is instant,
+      // mirroring the post-login warmup.
+      window.liminal?.ensureTts?.().catch(() => {});
+    }} />}
     <Layout activeView={activeView} onViewChange={handleViewChange} onLogout={onLogout} onLock={() => setLocked(true)} avatarUrl={avatarUrl} username={username}>
       {{
         entryList: (
@@ -270,6 +282,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onSessionSelected={() => setPendingSessionId(null)}
               onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
               onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
+              onCloseSession={() => handleViewChange('home')}
             />
           );
           if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
@@ -459,11 +472,13 @@ export default function App() {
 
   return (
     <LanguageProvider initialLang={language}>
-      {authStatus === 'gate' && <PasswordGate onSuccess={handleAuthSuccess} />}
-      {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
-      {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} />}
-      {backupSplash && <BackupSplash />}
-      <TtsLoadingToast />
+      <CrisisGateProvider>
+        {authStatus === 'gate' && <PasswordGate onSuccess={handleAuthSuccess} />}
+        {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
+        {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} />}
+        {backupSplash && <BackupSplash />}
+        <TtsLoadingToast />
+      </CrisisGateProvider>
     </LanguageProvider>
   );
 }

@@ -4,7 +4,8 @@ import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
 import { useFont } from '../hooks/useFont';
-import { FONTS } from '../utils/fontCatalog';
+import { FONTS, needsGoogleFontsConsent, setGoogleFontsConsent, getFont } from '../utils/fontCatalog';
+import FontConsentModal from '../components/FontConsentModal';
 import TermsOfService from '../components/TermsOfService';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { waitForChatterbox } from '../utils/ttsStatus';
@@ -858,6 +859,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
 
 // ── Weather Location Field ───────────────────────────────────────────────────
 function WeatherLocationField() {
+  const { t } = useLanguage();
   const [city, setCity] = useState('');
   const [status, setStatus] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -890,8 +892,8 @@ function WeatherLocationField() {
   if (!loaded) return null;
 
   return (
-    <Section title="Weather Location">
-      <Field hint="City for weather on the home screen and AI context. Uses Open-Meteo — no API key needed.">
+    <Section title={t('settings.weatherLocation') || 'Weather Location'}>
+      <Field hint={t('settings.weatherLocationHint') || 'City for weather on the home screen and AI context. Uses Open-Meteo — no API key needed.'}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <input
             style={{ ...s.input, flex: 1, marginBottom: 0 }}
@@ -1007,18 +1009,18 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
             <Field
               label={t('settings.gpuForTts')}
               hint={gpus.mps
-                ? "Restart TTS server after changing."
-                : "Restart TTS server after changing. Use GPU name to survive index changes."}
+                ? (t('settings.ttsRestartHint') || 'Restart TTS server after changing.')
+                : (t('settings.ttsRestartHintGpuName') || 'Restart TTS server after changing. Use GPU name to survive index changes.')}
             >
               <select
                 style={s.select}
                 value={cfg.tts_device || 'auto'}
                 onChange={e => { set('tts_device', e.target.value); save({ tts_device: e.target.value }); }}
               >
-                <option value="auto">Auto (first available GPU)</option>
-                <option value="cpu">CPU (slow)</option>
+                <option value="auto">{t('settings.gpuAuto') || 'Auto (first available GPU)'}</option>
+                <option value="cpu">{t('settings.gpuCpu') || 'CPU (slow)'}</option>
                 {gpus.mps && (
-                  <option value="mps">Apple Silicon GPU (Metal)</option>
+                  <option value="mps">{t('settings.gpuMetal') || 'Apple Silicon GPU (Metal)'}</option>
                 )}
                 {gpus.gpus?.map(g => (
                   <option key={g.id} value={g.name}>
@@ -1034,7 +1036,7 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
             </Field>
           )}
 
-          <Field label={t('settings.voice')}>
+          <Field label={t('settings.voiceModel') || 'Voice Model'}>
             <select
               style={s.input}
               value={selectedVoice}
@@ -1072,7 +1074,7 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
             <TtsSlider
               label={t('settings.voiceFidelity')}
               hint={t('settings.voiceFidelityHint')}
-              min={0} max={1} step={0.05}
+              min={0.05} max={0.95} step={0.05}
               value={parseFloat(cfg.chatterbox_cfg_weight ?? 0.10)}
               onChange={v => { set('chatterbox_cfg_weight', v); save({ chatterbox_cfg_weight: v }); }}
             />
@@ -1144,7 +1146,7 @@ function OpenAITtsSection({ cfg, set, save, saving, showToast }) {
         </div>
       </Field>
 
-      <Field label={t('settings.voice')}>
+      <Field label={t('settings.voiceModel') || 'Voice Model'}>
         <select
           style={s.select}
           value={cfg.openai_tts_voice || 'nova'}
@@ -1896,30 +1898,63 @@ function AppearanceSection() {
   const { theme } = useTheme();
   const { t } = useLanguage();
   const { fontId, setFont, headingFontId, setHeadingFont } = useFont();
+  // Pending Google-font pick that's waiting on consent. { id, kind: 'body' | 'heading' } | null
+  const [pendingFont, setPendingFont] = useState(null);
+
+  function handlePick(kind, id) {
+    if (needsGoogleFontsConsent(id)) {
+      setPendingFont({ id, kind });
+      return;
+    }
+    if (kind === 'body') setFont(id); else setHeadingFont(id);
+  }
+
+  function grantAndApply() {
+    if (!pendingFont) return;
+    setGoogleFontsConsent('granted');
+    if (pendingFont.kind === 'body') setFont(pendingFont.id);
+    else setHeadingFont(pendingFont.id);
+    setPendingFont(null);
+  }
+
+  function denyConsent() {
+    // We do NOT persist a 'denied' flag — the user might change their mind on
+    // a different font later. We just dismiss the modal and leave the picker
+    // pinned to its current value.
+    setPendingFont(null);
+  }
+
   return (
-    <Section title="Appearance">
+    <Section title={t('settings.sectionAppearance') || 'Appearance'}>
       <Field>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <ThemeToggle />
           <span style={{ fontSize: '13px', color: 'var(--body)' }}>
-            {theme === 'dark' ? 'Dark mode' : 'Light mode'}
+            {theme === 'dark' ? (t('settings.darkMode') || 'Dark mode') : (t('settings.lightMode') || 'Light mode')}
           </span>
         </div>
       </Field>
       <Field label={t('settings.fontHeading') || 'Heading font'} hint={t('settings.fontHeadingHint') || 'Used on page titles. Cormorant Garamond is the default.'}>
-        <select style={s.input} value={headingFontId} onChange={(e) => setHeadingFont(e.target.value)}>
+        <select style={s.input} value={headingFontId} onChange={(e) => handlePick('heading', e.target.value)}>
           {FONTS.map((f) => (
             <option key={f.id} value={f.id} style={{ fontFamily: f.family }}>{f.label}</option>
           ))}
         </select>
       </Field>
       <Field label={t('settings.font') || 'Body font'} hint={t('settings.fontHint') || 'Used for paragraphs, entries, and UI chrome. Segoe UI is the default.'}>
-        <select style={s.input} value={fontId} onChange={(e) => setFont(e.target.value)}>
+        <select style={s.input} value={fontId} onChange={(e) => handlePick('body', e.target.value)}>
           {FONTS.map((f) => (
             <option key={f.id} value={f.id} style={{ fontFamily: f.family }}>{f.label}</option>
           ))}
         </select>
       </Field>
+      {pendingFont && (
+        <FontConsentModal
+          fontLabel={getFont(pendingFont.id).label}
+          onGrant={grantAndApply}
+          onDeny={denyConsent}
+        />
+      )}
     </Section>
   );
 }
@@ -2151,6 +2186,17 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
             {(t('settings.aboutCheckedAt') || 'Last checked')}: {checkedLabel}
           </div>
         )}
+
+        <div style={{ marginTop: '16px', fontSize: '11px', color: 'var(--muted)' }}>
+          <a
+            href="/THIRD_PARTY_LICENSES.txt"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--muted)', textDecoration: 'underline' }}
+          >
+            {t('settings.aboutOpenSourceNotices') || 'Open-source notices'}
+          </a>
+        </div>
 
         <div style={{ borderTop: 'var(--border-style)', marginTop: '20px', paddingTop: '16px' }}>
           <Field

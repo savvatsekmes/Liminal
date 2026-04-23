@@ -27,27 +27,29 @@ export const WIDGETS = {
 
 export const ALL_WIDGET_IDS = Object.values(WIDGETS);
 
+// Values are i18n keys — callers should wrap with t(...) to resolve.
+// The key string is itself a valid fallback if translations aren't loaded.
 export const WIDGET_LABELS = {
-  quote:      'Daily Quote',
-  moon:       'Moon Phase',
-  tarot:      'Daily Card',
-  pulse:      'Pulse',
-  stats:      'Journal / Notes / Conversations',
-  portrait:   'Your Portrait',
-  insight:    'Insight',
-  themes:     'Recurring Themes',
-  rhythm:     'Your Rhythm',
-  goals:      'Top Goals',
-  weather:      'Weather',
-  sky:          "Today's Sky",
-  gratitude:    'Gratitude',
-  dreams:       'Dreams',
-  reading:      'Reading List',
-  bucket:       'Bucket List',
-  affirmations: 'Affirmations',
-  questions:    'Open Questions',
-  lookback:     'Look Back',
-  threads:      'Threads',
+  quote:        'widgets.quote',
+  moon:         'widgets.moon',
+  tarot:        'widgets.tarot',
+  pulse:        'widgets.pulse',
+  stats:        'widgets.stats',
+  portrait:     'widgets.portrait',
+  insight:      'widgets.insight',
+  themes:       'widgets.themes',
+  rhythm:       'widgets.rhythm',
+  goals:        'widgets.goals',
+  weather:      'widgets.weather',
+  sky:          'widgets.sky',
+  gratitude:    'widgets.gratitude',
+  dreams:       'widgets.dreams',
+  reading:      'widgets.reading',
+  bucket:       'widgets.bucket',
+  affirmations: 'widgets.affirmations',
+  questions:    'widgets.questions',
+  lookback:     'widgets.lookback',
+  threads:      'widgets.threads',
 };
 
 // Width options as percentages (mapped to grid column spans out of 10)

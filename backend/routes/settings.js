@@ -38,9 +38,14 @@ router.put('/', (req, res) => {
     }
   }
 
-  // Clamp numeric TTS values
+  // Clamp numeric TTS values. cfg_weight must stay strictly inside (0, 1) —
+  // Chatterbox crashes at the boundaries — so clamp to [0.05, 0.95].
   for (const k of ['chatterbox_exaggeration', 'chatterbox_cfg_weight', 'chatterbox_temperature']) {
-    if (k in updates) updates[k] = String(parseFloat(updates[k]) || 0);
+    if (k in updates) {
+      let v = parseFloat(updates[k]) || 0;
+      if (k === 'chatterbox_cfg_weight') v = Math.min(0.95, Math.max(0.05, v));
+      updates[k] = String(v);
+    }
   }
 
   // Scope display_name per user

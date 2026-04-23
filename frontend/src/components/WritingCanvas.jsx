@@ -9,6 +9,7 @@ function TagLabel({ tag }) {
   return tagLabel(tag);
 }
 import MicButton from './MicButton';
+import { useCrisisGate } from './CrisisGate';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { InstagramEmbed } from '../extensions/InstagramEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
@@ -175,6 +176,7 @@ export default function WritingCanvas({
 }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
+  const { confirmIfCrisis } = useCrisisGate();
   const saveTimer = useRef(null);
   const savedTimer = useRef(null);
   const snapshotTimer = useRef(null);
@@ -254,6 +256,7 @@ async function fetchVersions() {
     if (!editor || !entry?.id || polishing) return;
     const html = editor.getHTML();
     if (!html || html === '<p></p>') return;
+    if (!await confirmIfCrisis(editor.getText())) return;
     setPolishing(true);
     try {
       // Snapshot before polish so user can undo

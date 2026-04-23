@@ -6,6 +6,7 @@ import ResizeDivider from '../components/ResizeDivider';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import SkyPage from './SkyPage';
+import AILabel from '../components/AILabel';
 
 const s = {
   root: {
@@ -371,6 +372,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
     <div style={{ padding: isMobile ? '20px 16px 0' : '40px 48px 0' }}>
       <div style={s.pageTitle}>The Oracle</div>
       <div style={s.pageSubtitle}>Do not try and bend the spoon — that's impossible. Instead, only try to realise the truth: there is no spoon.</div>
+      <AILabel compact />
       <div style={tabBarStyle}>
         {['portrait', 'sky', 'cards'].map(tb => (
           <button key={tb} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>

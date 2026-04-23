@@ -150,7 +150,7 @@ const s = {
 };
 
 export default function PasswordGate({ onSuccess }) {
-  const [view, setView] = useState('login'); // 'login' | 'register' | 'recover' | 'recovery-reveal'
+  const [view, setView] = useState('login'); // 'login' | 'register' | 'recover' | 'recovery-reveal' | 'wipe'
   // Pending context held while we pause on the recovery-key reveal screen
   // between a successful auth call and handing off to the app. The token is
   // already stored; we just delay calling onSuccess until the user confirms
@@ -187,7 +187,17 @@ export default function PasswordGate({ onSuccess }) {
   }
 
   if (view === 'recover') {
-    return <RecoverForm onSuccess={finishAuth} onBack={() => setView('login')} />;
+    return (
+      <RecoverForm
+        onSuccess={finishAuth}
+        onBack={() => setView('login')}
+        onWipe={() => setView('wipe')}
+      />
+    );
+  }
+
+  if (view === 'wipe') {
+    return <WipeForm onDone={() => setView('login')} onBack={() => setView('recover')} />;
   }
 
   return (
@@ -206,7 +216,6 @@ export default function PasswordGate({ onSuccess }) {
 
 function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
   const { theme } = useTheme();
-  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
   const [confirmed, setConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -226,7 +235,7 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
       <style>{mobileCSS}</style>
       <div className="auth-card" style={{ ...s.card, flexDirection: 'column', gap: '24px', textAlign: 'left', maxWidth: '540px' }}>
         <div className="auth-brand-col" style={{ ...s.brandCol, alignSelf: 'center' }}>
-          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline className="auth-brand-logo" style={{ ...s.brandLogo, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
         </div>
 
@@ -294,7 +303,6 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
 function LoginForm({ onSuccess, onRegister, onForgot }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
-  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -335,7 +343,7 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
       <style>{mobileCSS}</style>
       <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
         <div className="auth-brand-col" style={s.brandCol}>
-          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline className="auth-brand-logo" style={{ ...s.brandLogo, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <div style={s.tagline}>{t('auth.tagline')}</div>
         </div>
@@ -401,9 +409,8 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
 // a new password. The recovery key itself is unchanged — the user may still
 // have the slip of paper they wrote it on.
 
-function RecoverForm({ onSuccess, onBack }) {
+function RecoverForm({ onSuccess, onBack, onWipe }) {
   const { theme } = useTheme();
-  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
   const [username, setUsername] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -449,7 +456,7 @@ function RecoverForm({ onSuccess, onBack }) {
       <style>{mobileCSS}</style>
       <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
         <div className="auth-brand-col" style={s.brandCol}>
-          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline className="auth-brand-logo" style={{ ...s.brandLogo, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
         </div>
         <div style={s.formCol}>
@@ -508,6 +515,158 @@ function RecoverForm({ onSuccess, onBack }) {
           <button type="button" style={s.btnSecondary} onClick={onBack}>
             ← Back to login
           </button>
+
+          {onWipe && (
+            <button
+              type="button"
+              onClick={onWipe}
+              style={{
+                display: 'block',
+                margin: '14px auto 0',
+                background: 'none',
+                border: 'none',
+                color: 'var(--muted)',
+                fontSize: '12px',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                fontFamily: 'var(--font)',
+              }}
+            >
+              Don't want to recover — delete all data instead
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Wipe (recovery-key-authenticated account deletion) ──────────────────────
+// Required by Apple 5.1.1(v) and Google account-deletion guidance: a user who
+// forgot their password must still be able to delete their data. Recovery key
+// is the second factor that proves it's their account.
+
+function WipeForm({ onDone, onBack }) {
+  const { theme } = useTheme();
+  const [username, setUsername] = useState('');
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const CONFIRM_PHRASE = 'DELETE EVERYTHING';
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    if (!username.trim()) { setError('Username is required.'); return; }
+    if (!recoveryKey.trim()) { setError('Recovery key is required.'); return; }
+    if (confirmText !== CONFIRM_PHRASE) {
+      setError(`Type ${CONFIRM_PHRASE} to confirm. This cannot be undone.`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/wipe-with-recovery-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), recovery_key: recoveryKey.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Could not delete account.');
+      } else {
+        setDone(true);
+      }
+    } catch {
+      setError('Could not reach the backend.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div style={s.overlay}>
+        <style>{mobileCSS}</style>
+        <div className="auth-card" style={{ ...s.card, flexDirection: 'column', gap: '20px', textAlign: 'center', maxWidth: '460px' }}>
+          <div className="auth-brand-col" style={{ ...s.brandCol, alignSelf: 'center' }}>
+            <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline className="auth-brand-logo" style={{ ...s.brandLogo, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+          </div>
+          <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--strong)' }}>
+            Account deleted
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: 1.6 }}>
+            All journal data, threads, notes, and settings for this account have been removed from this device.
+          </div>
+          <button type="button" style={{ ...s.btn, marginBottom: 0 }} onClick={onDone}>
+            Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={s.overlay}>
+      <style>{mobileCSS}</style>
+      <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
+        <div className="auth-brand-col" style={s.brandCol}>
+          <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline className="auth-brand-logo" style={{ ...s.brandLogo, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+          <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+        </div>
+        <div style={s.formCol}>
+          <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: 1.6, marginBottom: '20px' }}>
+            This will permanently delete every journal entry, note, thread, oracle session, memory, and setting for this account. The data is encrypted at rest and cannot be recovered after deletion. Use this only if you no longer want this account on this device.
+          </div>
+
+          <label style={s.label} htmlFor="wipe-username">Username</label>
+          <input
+            id="wipe-username"
+            style={s.input}
+            type="text"
+            autoFocus
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+
+          <label style={s.label} htmlFor="wipe-key">Recovery key</label>
+          <input
+            id="wipe-key"
+            style={{ ...s.input, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: '0.05em' }}
+            type="text"
+            autoComplete="off"
+            value={recoveryKey}
+            onChange={(e) => setRecoveryKey(e.target.value)}
+            placeholder="xxxx-xxxx-xxxx-xxxx"
+          />
+
+          <label style={s.label} htmlFor="wipe-confirm">Type {CONFIRM_PHRASE} to confirm</label>
+          <input
+            id="wipe-confirm"
+            style={{ ...s.input, marginBottom: error ? '0' : '20px' }}
+            type="text"
+            autoComplete="off"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+          />
+
+          {error && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
+
+          <button
+            style={{ ...s.btn, opacity: loading ? 0.5 : 1, marginTop: '8px', background: 'var(--strong)' }}
+            type="submit"
+            disabled={loading}
+          >
+            {loading ? '…' : 'Delete account and all data'}
+          </button>
+
+          <button type="button" style={s.btnSecondary} onClick={onBack}>
+            ← Back
+          </button>
         </div>
       </form>
     </div>
@@ -519,7 +678,6 @@ function RecoverForm({ onSuccess, onBack }) {
 function RegisterForm({ onSuccess, onBack }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
-  const logoSrc = theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -567,7 +725,7 @@ function RegisterForm({ onSuccess, onBack }) {
       <style>{mobileCSS}</style>
       <form className="auth-card" style={s.card} onSubmit={handleSubmit}>
         <div className="auth-brand-col" style={s.brandCol}>
-          <img src={logoSrc} onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} alt="Liminal" className="auth-brand-logo" style={s.brandLogo} />
+          <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline className="auth-brand-logo" style={{ ...s.brandLogo, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           <div style={s.tagline}>{t('auth.tagline')}</div>
         </div>

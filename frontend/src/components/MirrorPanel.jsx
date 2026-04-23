@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import MirrorBlock from './MirrorBlock';
+import AILabel from './AILabel';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from './ArchetypeAvatar';
@@ -306,6 +307,7 @@ if (previewVersion) {
           <span style={s.headerCount}>{t('mirror.reflections', { count: blocks.length, s: blocks.length !== 1 ? 's' : '' })}</span>
         )}
       </div>
+      <div style={{ padding: '0 14px' }}><AILabel compact /></div>
 
       {/* Body */}
       <div style={s.body} ref={bodyRef} data-find-scope="1">

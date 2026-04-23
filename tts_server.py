@@ -156,7 +156,7 @@ except ImportError as e:
     SUPPORTED_LANGUAGES = {}
     _MTL_AVAILABLE = False
 
-_model_lock = threading.Lock()
+_model_lock = threading.RLock()  # RLock: _do_generate holds it while calling ensure_model, which also acquires it
 _current_kind = None  # "en" or "mtl"
 model = None
 
@@ -289,32 +289,31 @@ def _do_generate(text, voice_path, exaggeration, cfg_weight, temperature, langua
         log.warning(f"Unsupported language '{lang}', falling back to English")
         lang = "en"
     kind = "en" if lang == "en" else "mtl"
-    m = ensure_model(kind)
-    # The multilingual t3 has a different inference pathway and doesn't accept
-    # the eager generate_token_backend tweak — passing it raises
-    # "'list' object has no attribute 'size'" inside its sampler. Only the
-    # English model gets the perf knob.
-    extra = {} if kind == "en" else {"language_id": lang}
-    t3_params = _T3_PARAMS if kind == "en" else {}
-    try:
-        return m.generate(
-            text,
-            audio_prompt_path=voice_path,
-            exaggeration=exaggeration,
-            cfg_weight=cfg_weight,
-            temperature=temperature,
-            t3_params=t3_params,
-            **extra,
-        )
-    except TypeError:
-        # Older API without t3_params / temperature
-        return m.generate(
-            text,
-            audio_prompt_path=voice_path,
-            exaggeration=exaggeration,
-            cfg_weight=cfg_weight,
-            **extra,
-        )
+    # Hold the lock across ensure_model AND generate — otherwise a second request
+    # can swap the model out from under a generation in flight and free its CUDA
+    # memory, crashing the first request and wedging the server.
+    with _model_lock:
+        m = ensure_model(kind)
+        extra = {} if kind == "en" else {"language_id": lang}
+        t3_params = _T3_PARAMS if kind == "en" else {}
+        try:
+            return m.generate(
+                text,
+                audio_prompt_path=voice_path,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                temperature=temperature,
+                t3_params=t3_params,
+                **extra,
+            )
+        except TypeError:
+            return m.generate(
+                text,
+                audio_prompt_path=voice_path,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                **extra,
+            )
 
 def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature, language="en"):
     if COMPAT_MODE:
@@ -346,32 +345,77 @@ def synthesise(req: SpeechRequest):
     log.info(f"Generating {len(req.input)} chars in {len(chunks)} chunk(s) | "
              f"voice={req.voice} lang={req.language} exag={req.exaggeration} cfg={req.cfg_weight} temp={req.temperature}")
 
+    # Hold the lock for the full request so all chunks generate on the same
+    # model instance — prevents a mid-request swap between chunks.
     try:
-        audio_parts = []
-        for i, chunk in enumerate(chunks):
-            log.info(f"  chunk {i+1}/{len(chunks)}: {len(chunk.split())} words")
-            wav = generate_chunk(
-                chunk, voice_path,
-                float(req.exaggeration), float(req.cfg_weight), float(req.temperature),
-                req.language,
-            )
-            audio_parts.append(wav.squeeze().cpu().float().numpy())
+        with _model_lock:
+            audio_parts = []
+            for i, chunk in enumerate(chunks):
+                log.info(f"  chunk {i+1}/{len(chunks)}: {len(chunk.split())} words")
+                wav = generate_chunk(
+                    chunk, voice_path,
+                    float(req.exaggeration), float(req.cfg_weight), float(req.temperature),
+                    req.language,
+                )
+                audio_parts.append(wav.squeeze().cpu().float().numpy())
+            sr = model.sr
     except Exception as e:
         log.error(f"Generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     # Concatenate all chunks with a short silence between them
     import numpy as np
-    silence = np.zeros(int(model.sr * 0.25), dtype=np.float32)  # 250ms gap
+    silence = np.zeros(int(sr * 0.25), dtype=np.float32)  # 250ms gap
     combined = np.concatenate(
         [p for pair in zip(audio_parts, [silence] * len(audio_parts)) for p in pair][:-1]
     ) if len(audio_parts) > 1 else audio_parts[0]
 
     buf = io.BytesIO()
-    sf.write(buf, combined, model.sr, format="WAV")
-    buf.seek(0)
+    sf.write(buf, combined, sr, format="WAV")
+    wav_bytes = _embed_wav_synthetic_metadata(buf.getvalue())
 
-    return Response(content=buf.read(), media_type="audio/wav")
+    return Response(
+        content=wav_bytes,
+        media_type="audio/wav",
+        headers={
+            "X-AI-Generated": "true",
+            "X-AI-System": "Liminal-Chatterbox-TTS",
+        },
+    )
+
+
+def _embed_wav_synthetic_metadata(wav_bytes: bytes) -> bytes:
+    """Append a RIFF LIST/INFO chunk marking the audio as AI-generated.
+
+    Required for EU AI Act Art. 50(2) machine-readable disclosure of
+    synthetic audio. Fields written:
+        ICMT — free-form comment ("ai-generated=true; ...")
+        ISFT — software identifier ("Liminal Chatterbox TTS")
+        IART — artist ("Liminal — Synthetic Voice")
+        IPRD — product
+    """
+    import struct
+    if len(wav_bytes) < 12 or wav_bytes[:4] != b"RIFF" or wav_bytes[8:12] != b"WAVE":
+        return wav_bytes  # not a WAV, leave alone
+
+    def _info_subchunk(fourcc: bytes, value: str) -> bytes:
+        payload = value.encode("ascii", errors="replace") + b"\x00"
+        if len(payload) % 2:
+            payload += b"\x00"
+        return fourcc + struct.pack("<I", len(payload)) + payload
+
+    fields = [
+        (b"ICMT", "ai-generated=true; ai-act=Art50(2); system=Liminal-Chatterbox-TTS"),
+        (b"ISFT", "Liminal Chatterbox TTS"),
+        (b"IART", "Liminal - Synthetic Voice"),
+        (b"IPRD", "Liminal"),
+    ]
+    info_payload = b"INFO" + b"".join(_info_subchunk(c, v) for c, v in fields)
+    list_chunk = b"LIST" + struct.pack("<I", len(info_payload)) + info_payload
+
+    new_body = wav_bytes[12:] + list_chunk
+    new_size = len(new_body) + 4  # +4 for the "WAVE" marker
+    return b"RIFF" + struct.pack("<I", new_size) + b"WAVE" + wav_bytes[12:] + list_chunk
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 

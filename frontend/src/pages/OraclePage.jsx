@@ -4,6 +4,8 @@ import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { useLanguage } from '../i18n/LanguageContext';
 import MicButton from '../components/MicButton';
 import TagContextMenu from '../components/TagContextMenu';
+import AILabel from '../components/AILabel';
+import { useCrisisGate } from '../components/CrisisGate';
 import { useLockedTags } from '../hooks/useLockedTags';
 import { useCoreTags } from '../hooks/useCoreTags';
 import { apiFetch } from '../utils/api';
@@ -532,7 +534,7 @@ function formatSessionDate(dateStr) {
   } catch { return ''; }
 }
 
-export default function OraclePage({ initialSessionId, onSessionSelected, onNavigateToEntry, onNavigateToNote }) {
+export default function OraclePage({ initialSessionId, onSessionSelected, onNavigateToEntry, onNavigateToNote, onCloseSession }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('chat'); // 'list' | 'chat'
@@ -575,6 +577,58 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
 
   // Saved message tracking
   const [savedMsgIds, setSavedMsgIds] = useState(new Set());
+
+  const { confirmIfCrisis, flagOutput } = useCrisisGate();
+
+  // Session-length nudges: gentle toast after 90 min of CONTINUOUS Oracle
+  // use, escalation modal at 180 min. "Continuous" means the active-ms
+  // counter only ticks while this page is mounted, AND it resets to zero
+  // whenever there's been a 30+ min gap since the last tick (Oracle closed,
+  // sidebar navigation, etc). Cumulative-across-the-day was wrong — a user
+  // who chats 90 min in the morning shouldn't be hit with an escalation
+  // modal when they reopen Oracle in the evening.
+  const [showSessionNudge, setShowSessionNudge] = useState(false);
+  const [showEscalation, setShowEscalation] = useState(false);
+  const nudgeCountRef = useRef(0);
+  useEffect(() => {
+    const ACTIVE_KEY = 'liminal:oracleActiveMs';
+    const COUNT_KEY = 'liminal:oracleNudgeCount';
+    const LAST_TICK_KEY = 'liminal:oracleLastTick';
+    const INTERVAL_MS = 90 * 60 * 1000;
+    const TICK_MS = 30 * 1000;
+    const IDLE_RESET_MS = 30 * 60 * 1000;
+
+    const lastTick = parseInt(localStorage.getItem(LAST_TICK_KEY) || '0', 10);
+    if (!lastTick || Date.now() - lastTick > IDLE_RESET_MS) {
+      localStorage.setItem(ACTIVE_KEY, '0');
+      localStorage.setItem(COUNT_KEY, '0');
+    }
+    nudgeCountRef.current = parseInt(localStorage.getItem(COUNT_KEY) || '0', 10);
+
+    function tick() {
+      const cur = parseInt(localStorage.getItem(ACTIVE_KEY) || '0', 10);
+      const next = cur + TICK_MS;
+      localStorage.setItem(ACTIVE_KEY, String(next));
+      localStorage.setItem(LAST_TICK_KEY, String(Date.now()));
+      const expected = Math.floor(next / INTERVAL_MS);
+      if (expected > nudgeCountRef.current) {
+        nudgeCountRef.current = expected;
+        localStorage.setItem(COUNT_KEY, String(expected));
+        if (expected === 1) setShowSessionNudge(true);
+        else setShowEscalation(true);
+      }
+    }
+
+    const tickId = setInterval(tick, TICK_MS);
+    return () => clearInterval(tickId);
+  }, []);
+
+  function resetSessionNudgeClock() {
+    localStorage.setItem('liminal:oracleActiveMs', '0');
+    localStorage.setItem('liminal:oracleNudgeCount', '0');
+    localStorage.setItem('liminal:oracleLastTick', String(Date.now()));
+    nudgeCountRef.current = 0;
+  }
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -649,6 +703,11 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
   async function handleSend() {
     const content = input.trim();
     if (!content || loading) return;
+
+    // Crisis gate — design-level mitigation, not text-only. The gate is a
+    // no-op when the text is clean.
+    if (!await confirmIfCrisis(content)) return;
+
     setInput('');
 
     // Detect archetype switch mid-conversation
@@ -702,6 +761,11 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
         throw new Error(errData.detail || errData.error || 'Request failed');
       }
       const assistantMsg = await r2.json();
+
+      // Output-side crisis scan: surface helpline banner if the model's
+      // reply touches on self-harm or suicide. Non-blocking — the message
+      // still renders; the banner sits above as a separate signal.
+      try { flagOutput?.(assistantMsg.content || ''); } catch { /* */ }
 
       // Append assistant message (keep the optimistic user message)
       setMessages((prev) => [...prev, assistantMsg]);
@@ -1076,6 +1140,10 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
           </button>
         </div>
       )}
+      {/* Persistent AI disclosure + "not a crisis line" reminder
+          (EU AI Act Art. 50(1) + design-level crisis policy). */}
+      <AILabel />
+
       {/* Session tag selector */}
       {currentSession && (
         <SessionTagSelector
@@ -1342,6 +1410,141 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
           </div>
         </div>
       )}
+
+      {/* Soft 30-min session-length nudge. */}
+      {showSessionNudge && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--white)',
+            border: 'var(--border-style)',
+            borderRadius: '10px',
+            padding: '12px 16px',
+            fontSize: '13px',
+            color: 'var(--body)',
+            fontFamily: 'var(--font)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            zIndex: 1900,
+            maxWidth: '420px',
+            display: 'flex',
+            gap: '12px',
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ flex: 1 }}>{t('crisis.sessionLengthNudge')}</span>
+          <button
+            type="button"
+            onClick={() => setShowSessionNudge(false)}
+            onMouseDownCapture={(e) => e.stopPropagation()}
+            onKeyDownCapture={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              background: 'transparent',
+              color: 'var(--muted)',
+              border: 'var(--border-style)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontFamily: 'var(--font)',
+            }}
+          >
+            {t('common.dismiss') || 'Dismiss'}
+          </button>
+        </div>
+      )}
+
+      {showEscalation && (
+        <SessionEscalationModal
+          onOpenHelpline={() => {
+            try { window.open('https://findahelpline.com', '_blank', 'noopener,noreferrer'); } catch { /* */ }
+            setShowEscalation(false);
+          }}
+          onCloseSession={() => {
+            setShowEscalation(false);
+            resetSessionNudgeClock();
+            onCloseSession?.();
+          }}
+          onContinue={() => setShowEscalation(false)}
+        />
+      )}
+      </div>
+    </div>
+  );
+}
+
+function SessionEscalationModal({ onOpenHelpline, onCloseSession, onContinue }) {
+  const { t } = useLanguage();
+  const helplineRef = useRef(null);
+  useEffect(() => { helplineRef.current?.focus(); }, []);
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="session-esc-title"
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100,
+      }}
+    >
+      <div style={{
+        background: 'var(--white)', border: 'var(--border-style)', borderRadius: '14px',
+        padding: '28px', maxWidth: '480px', width: '92vw', fontFamily: 'var(--font)',
+        color: 'var(--body)', maxHeight: '90vh', overflowY: 'auto',
+      }}>
+        <div id="session-esc-title" style={{
+          fontSize: '17px', fontWeight: 700, color: 'var(--strong)', marginBottom: '12px',
+        }}>
+          {t('crisis.escalationTitle')}
+        </div>
+        <div style={{ fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
+          {t('crisis.escalationBody')}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button
+            type="button"
+            ref={helplineRef}
+            onClick={onOpenHelpline}
+            onMouseDownCapture={(e) => e.stopPropagation()}
+            onKeyDownCapture={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+            style={{
+              padding: '10px 16px', fontSize: '13px', background: 'var(--strong)',
+              color: 'var(--white)', border: 'none', borderRadius: '10px',
+              cursor: 'pointer', fontWeight: 600, fontFamily: 'var(--font)',
+            }}
+          >
+            {t('crisis.escalationOpenHelpline')}
+          </button>
+          <button
+            type="button"
+            onClick={onCloseSession}
+            onMouseDownCapture={(e) => e.stopPropagation()}
+            onKeyDownCapture={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+            style={{
+              padding: '10px 16px', fontSize: '13px', background: 'transparent',
+              color: 'var(--body)', border: 'var(--border-style)', borderRadius: '10px',
+              cursor: 'pointer', fontFamily: 'var(--font)',
+            }}
+          >
+            {t('crisis.escalationCloseSession')}
+          </button>
+          <button
+            type="button"
+            onClick={onContinue}
+            onMouseDownCapture={(e) => e.stopPropagation()}
+            onKeyDownCapture={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+            style={{
+              padding: '10px 16px', fontSize: '12px', background: 'transparent',
+              color: 'var(--muted)', border: 'none', borderRadius: '10px',
+              cursor: 'pointer', fontFamily: 'var(--font)',
+            }}
+          >
+            {t('crisis.escalationContinue')}
+          </button>
+        </div>
       </div>
     </div>
   );

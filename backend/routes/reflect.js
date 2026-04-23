@@ -289,13 +289,10 @@ Return JSON with this shape:
 Rules: prose only, no bullets, bold sparingly (1-2 phrases max). Speak as one coherent voice — do not label which archetype you draw from. Show both sides. Speak directly using "you".
 Return ONLY the JSON object.`;
   } else {
-    // Single archetype voice — custom archetype prompt overrides built-in voice
-    let voice = null;
-    try {
-      const customs = JSON.parse(portrait?.custom_archetypes || '[]');
-      const match = customs.find(c => c.name === archetype);
-      if (match?.prompt) voice = match.prompt;
-    } catch {}
+    // Single archetype voice — custom prompt overrides built-in voice.
+    // Wrapped via getSafeCustomArchetypePrompt so the immutable safety suffix
+    // sits below any user-controlled text.
+    let voice = memory.getSafeCustomArchetypePrompt(portrait, archetype);
     if (!voice) voice = memory.getArchetypeVoice(archetype);
 
     // Voice anchoring strategy: lead with the voice instructions, keep the
@@ -503,13 +500,10 @@ async function buildSingleArchetypeReflectPrompt(portrait, archetype, userId) {
   const summary = await memory.synthesizeMemory(userId);
   const shortSummary = summary && summary.length > 600 ? summary.slice(0, 600) + '…' : (summary || '');
 
-  // Custom archetype prompt overrides the built-in voice if the user defined one
-  let voice = null;
-  try {
-    const customs = JSON.parse(portrait?.custom_archetypes || '[]');
-    const match = customs.find(c => c.name === archetype);
-    if (match?.prompt) voice = match.prompt;
-  } catch {}
+  // Custom archetype prompt overrides the built-in voice if the user defined one.
+  // memory.getSafeCustomArchetypePrompt wraps user text with an immutable safety
+  // suffix so jailbreaks inside the description can't bypass crisis/medical rules.
+  let voice = memory.getSafeCustomArchetypePrompt(portrait, archetype);
   if (!voice) voice = memory.getArchetypeVoice(archetype);
 
   // Inject response style sliders so they apply even in single-archetype mode

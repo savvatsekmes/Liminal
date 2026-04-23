@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('liminal', {
   ensureTts() {
     return ipcRenderer.invoke('liminal:ensure-tts');
   },
+  releaseTts() {
+    return ipcRenderer.invoke('liminal:release-tts');
+  },
 
   // ── Backup system ──────────────────────────────────────────────────────────
   pickBackupFolder() {

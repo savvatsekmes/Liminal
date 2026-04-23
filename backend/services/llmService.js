@@ -25,6 +25,49 @@ function withLanguage(systemPrompt, options = {}) {
   return `${systemPrompt}\n\nIMPORTANT: Respond entirely in ${name}. All output must be in ${name}, not English.`;
 }
 
+// Qwen and similar safety-trained local models sometimes leak meta-reasoning
+// into their visible (non-<think>-tagged) output — typically a bolded
+// "**Wait! Before I continue, let me verify whether the user is at risk...**"
+// block that talks about the safety policy instead of answering. Two harms:
+//   1. Jarring/confusing for the user (they see the model arguing with itself).
+//   2. CrisisGate's output banner scans for "suicide" / "self-harm" — and
+//      these words appear in the meta block purely in the context of the
+//      model checking whether a policy applies, not because the conversation
+//      is actually about crisis. Result: false-positive crisis banner on
+//      benign or sexual conversations.
+// Strip the obvious meta patterns before returning to callers.
+function stripModelMeta(text) {
+  if (!text || typeof text !== 'string') return text;
+  let out = text;
+
+  // Bolded leading or standalone meta blocks ("**Wait! ...**", "**Note:...**").
+  out = out.replace(
+    /(^|\n\n)\*\*(?:Wait|Note|Safety check|Safety note|Pause|Checking|Verifying|Verify|Hold on|Hmm|Actually|Important)[^*]{0,500}\*\*\s*/gi,
+    (m, sep) => sep || ''
+  );
+
+  // "Let me verify / check / confirm ... [suicide|self-harm|risk|policy|rails]" sentences.
+  out = out.replace(
+    /(?:^|(?<=[.!?\n]))\s*[^.!?\n]{0,40}?\b(?:let me (?:verify|check|confirm|make sure|see whether|see if|first (?:verify|check|confirm))|i (?:need|have) to (?:verify|check|confirm|consider whether|first (?:verify|check|confirm))|i(?:'?m| am) going to (?:verify|check|consider whether))\b[^.!?\n]{0,200}\b(?:suicide|self[\s-]?harm|crisis|at\s+risk|safety\s+policy|safety\s+(?:rail|guardrail|protocol)s?|guideline|policy applies)\b[^.!?\n]*[.!?]?\s*/gi,
+    ''
+  );
+
+  // Self-referential safety-rail lecture sentences ("I'm built with safety
+  // rails that hard-stop me from..."). Different from a refusal — refusal
+  // is "I won't do X"; this is the model lecturing about its own architecture.
+  out = out.replace(
+    /(?:^|(?<=[.!?\n]))\s*[^.!?\n]{0,40}?\b(?:i(?:'?m| am)|i have|i was|i(?:'?ve| have))\b[^.!?\n]{0,80}\b(?:built with|trained with|designed with|equipped with|programmed with|configured with|come with|operate under)\b[^.!?\n]{0,120}\b(?:safety|content)[\s-]+(?:rail|guardrail|protocol|policy|policies|filter|restriction|guideline)s?\b[^.!?\n]*[.!?]?\s*/gi,
+    ''
+  );
+
+  const cleaned = out.replace(/\n{3,}/g, '\n\n').trim();
+  // If the strip ate everything, the response was nothing but meta — return
+  // the original so callers can decide what to do (oracle.js retries; reflect
+  // falls back to a single block). Empty-from-strip would otherwise trigger
+  // false "empty response" errors for benign-but-overly-verbose models.
+  return cleaned || text.trim();
+}
+
 function getSettings() {
   // Lazy-require to avoid circular deps at startup
   const s = require('./settingsService');
@@ -117,8 +160,10 @@ async function callOllama(systemPrompt, userMessage, options = {}) {
   }
 
   const data = await response.json();
-  // Strip any <think>...</think> tags that reasoning models may include
-  return (data.message.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+  // Strip any <think>...</think> tags that reasoning models may include,
+  // then strip any safety meta-reasoning that leaked outside <think>.
+  const noThink = (data.message?.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+  return stripModelMeta(noThink);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -315,7 +360,13 @@ async function callWithHistory(systemPrompt, messages, options = {}) {
   }
   if (!response.ok) throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
   const data = await response.json();
-  return (data.message.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+  const raw = data.message?.content || '';
+  const stripped = stripModelMeta(raw.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim());
+  if (stripped) return stripped;
+  // Model spent the whole token budget "thinking" and never got to an answer.
+  // Rather than surface "Model returned an empty response", return the thinking
+  // content minus the tags so the user sees something.
+  return stripModelMeta(raw.replace(/<\/?think>/g, '').trim());
 }
 
 // ── Tool-calling conversation (web search) ──────────────────────────────────

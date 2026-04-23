@@ -1822,8 +1822,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
-              <span style={s.themesLabel}>Recurring Themes</span>
-              <span style={s.themesPeriod}> ·  last 90 days</span>
+              <span style={s.themesLabel}>{t('home.themesTitle')}</span>
+              <span style={s.themesPeriod}> ·  {t('home.themesPeriod')}</span>
             </div>
             {themes.length >= 1 ? (
               <div style={s.themesRow}>
@@ -1845,8 +1845,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
-              <span style={s.themesLabel}>Top Goals</span>
-              <span style={s.themesPeriod}> ·  from your notes</span>
+              <span style={s.themesLabel}>{t('home.goalsTitle')}</span>
+              <span style={s.themesPeriod}> ·  {t('home.goalsPeriod')}</span>
             </div>
             {goals.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
@@ -1894,7 +1894,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.rhythmHeader}>
-              <span style={s.rhythmLabel}>Your Rhythm</span>
+              <span style={s.rhythmLabel}>{t('home.rhythmTitle')}</span>
             </div>
             <RhythmGrid rhythm={rhythm} />
           </div>
@@ -1904,8 +1904,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
-              <span style={s.themesLabel}>Look Back</span>
-              <span style={s.themesPeriod}> ·  echoes from your journal</span>
+              <span style={s.themesLabel}>{t('home.lookbackTitle')}</span>
+              <span style={s.themesPeriod}> ·  {t('home.lookbackPeriod')}</span>
               <button
                 onClick={() => setLookbackShuffleKey(k => k + 1)}
                 style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontFamily: 'var(--font)' }}
@@ -1960,8 +1960,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
-              <span style={s.themesLabel}>Threads</span>
-              <span style={s.themesPeriod}> ·  what you're navigating</span>
+              <span style={s.themesLabel}>{t('home.threadsTitle')}</span>
+              <span style={s.themesPeriod}> ·  {t('home.threadsPeriod')}</span>
             </div>
             {threadsList.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
@@ -1999,7 +1999,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                           flexDirection: 'column',
                           justifyContent: 'center',
                         }}
-                        onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--bg-hover, #ececec)'; }}
+                        onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--panel-bg)'; }}
                         onMouseLeave={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
                       >
                         <div style={{ fontSize: '12px', color: 'var(--strong)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -2031,7 +2031,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                                 minWidth: 0,
                                 padding: '8px 10px',
                                 borderRadius: '19px',
-                                background: 'var(--bg, #fafafa)',
+                                background: 'var(--near-white)',
                                 border: '1px solid var(--border)',
                                 cursor: 'pointer',
                                 fontSize: '10px',
@@ -2043,8 +2043,8 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                                 alignItems: 'center',
                                 transition: 'background 0.12s',
                               }}
-                              onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
-                              onMouseLeave={(ev) => { ev.currentTarget.style.background = 'var(--bg, #fafafa)'; }}
+                              onMouseEnter={(ev) => { ev.currentTarget.style.background = 'var(--panel-bg)'; }}
+                              onMouseLeave={(ev) => { ev.currentTarget.style.background = 'var(--near-white)'; }}
                             >
                               {b.title}
                             </div>
@@ -2067,7 +2067,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
-              <span style={s.themesLabel}>Weather</span>
+              <span style={s.themesLabel}>{t('home.weatherTitle')}</span>
               {weather?.city && <span style={s.themesPeriod}> ·  {weather.city}</span>}
             </div>
             {weather ? (
@@ -2089,7 +2089,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
-              <span style={s.themesLabel}>Today's Sky</span>
+              <span style={s.themesLabel}>{t('home.skyTitle')}</span>
             </div>
             {hasData ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
@@ -2133,14 +2133,14 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
       case 'questions': {
         const cfg = TAG_WIDGET_CONFIG[widgetId];
         const items = tagged[widgetId] || [];
-        const label = WIDGET_LABELS[widgetId];
+        const label = t(WIDGET_LABELS[widgetId] || widgetId);
         const onClick = cfg.source === 'entries' ? onNavigateToEntry : onNavigateToNote;
-        const sourceLabel = cfg.source === 'entries' ? 'journal' : 'notes';
+        const sourceLabel = cfg.source === 'entries' ? t('home.sourceJournal') : t('home.sourceNotes');
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
               <span style={s.themesLabel}>{label}</span>
-              <span style={s.themesPeriod}> ·  from your {sourceLabel}</span>
+              <span style={s.themesPeriod}> ·  {t('home.taggedFromSource', { source: sourceLabel })}</span>
             </div>
             {items.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
@@ -2400,7 +2400,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               >
                 <option value="">+ Add widget…</option>
                 {layout.availableWidgets.map(id => (
-                  <option key={id} value={id}>{layout.WIDGET_LABELS[id] || id}</option>
+                  <option key={id} value={id}>{t(layout.WIDGET_LABELS[id] || id)}</option>
                 ))}
               </select>
               <button
@@ -2455,7 +2455,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
         {/* Greeting + Quick Ask row */}
         <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', minHeight: '160px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'center', flexShrink: 0, marginRight: '8px', gap: '6px' }}>
-            <img src={theme === 'dark' ? '/Liminal_Logo_Inverted.png' : '/logo.png'} alt="Liminal" onError={(e) => { if (e.currentTarget.src.endsWith('/Liminal_Logo_Inverted.png')) e.currentTarget.src = '/logo.png'; }} style={{ width: '100px', objectFit: 'contain', opacity: 0.85 }} />
+            <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline style={{ width: '100px', objectFit: 'contain', opacity: 0.85, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
             <img src="/liminal-wordmark.png" alt="Liminal." style={{ width: '90px', objectFit: 'contain', opacity: 0.75, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           </div>
           <div style={{ marginLeft: '12px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', padding: '32px 28px 16px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>

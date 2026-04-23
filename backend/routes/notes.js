@@ -269,14 +269,12 @@ router.post('/:id/reflect', async (req, res) => {
 
   const typePrompt = typeContext[note.type] || 'Reflect thoughtfully on this note.';
 
-  // Resolve voice for single-archetype mode (custom prompt overrides built-in)
+  // Resolve voice for single-archetype mode (custom prompt overrides built-in).
+  // Custom prompts go through getSafeCustomArchetypePrompt so the immutable
+  // safety suffix wins over any jailbreak text in the user description.
   let archetypeVoice = null;
   if (singleArchetype) {
-    try {
-      const customs = JSON.parse(portrait?.custom_archetypes || '[]');
-      const match = customs.find(c => c.name === singleArchetype);
-      if (match?.prompt) archetypeVoice = match.prompt;
-    } catch {}
+    archetypeVoice = memoryService.getSafeCustomArchetypePrompt(portrait, singleArchetype);
     if (!archetypeVoice) archetypeVoice = memoryService.getArchetypeVoice(singleArchetype);
   }
   const shortMemory = memorySummary && memorySummary.length > 600 ? memorySummary.slice(0, 600) + '…' : (memorySummary || '');

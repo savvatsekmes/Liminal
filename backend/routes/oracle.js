@@ -237,19 +237,21 @@ router.post('/sessions/:id/messages', async (req, res) => {
 
   // Load full conversation history, filtering out empty responses. Messages on
   // disk are encrypted per-user, so we decrypt before handing them to the LLM.
+  // No row cap — Ollama enforces num_ctx and trims oldest turns gracefully when
+  // the prompt exceeds the window. A SQL LIMIT here previously dropped the
+  // user's just-inserted message once a session passed 30 messages, producing
+  // empty model responses that looked like refusals.
   const history = db.prepare(
-    "SELECT role, content FROM oracle_messages WHERE session_id = ? AND content != '' ORDER BY created_at ASC LIMIT 30"
+    "SELECT role, content FROM oracle_messages WHERE session_id = ? AND content != '' ORDER BY created_at ASC"
   ).all(session.id).map((m) => ({ ...m, content: safeDecrypt(req.userId, m.content) }));
 
   try {
     const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session);
-    const answer = await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 200 });
+    const answer = await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 400 });
     const trimmed = answer.trim();
 
-    // Don't save empty responses
     if (!trimmed) {
-      db.prepare('DELETE FROM oracle_messages WHERE id = ?').run(userMsgResult.lastInsertRowid);
-      return res.status(502).json({ error: 'Model returned an empty response. Try again or switch models.' });
+      return res.status(502).json({ error: 'Model returned an empty response. Try again or switch models in Settings.' });
     }
 
     const assistantResult = db.prepare(

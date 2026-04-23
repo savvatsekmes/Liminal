@@ -14,14 +14,32 @@
 // `backend/data/` for storage. The Windows .vbs scripts continue to work
 // independently — this Electron entry point is purely additive.
 
-const { app, BrowserWindow, ipcMain, shell, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, dialog, Tray, Menu, nativeImage } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
+const os = require('os');
+
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const BACKEND_PORT = 3001;
+
+/** Collect all usable non-internal IPv4 addresses, grouped by type. */
+function getNetworkIps() {
+  const ifaces = os.networkInterfaces();
+  const skip = /vethernet|wsl|hyper-v|docker|loopback|virtualbox|vmware/i;
+  const ips = [];
+  for (const [name, addrs] of Object.entries(ifaces)) {
+    if (skip.test(name)) continue;
+    for (const a of addrs) {
+      if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) {
+        ips.push({ address: a.address, name });
+      }
+    }
+  }
+  return ips;
+}
 const TTS_PORT = 8100;
 
 // ── Path resolution ──────────────────────────────────────────────────────────
@@ -39,6 +57,18 @@ const TTS_DIR      = isDev ? REPO_ROOT                              : path.join(
 //   Win:   %APPDATA%\Liminal\
 //   macOS: ~/Library/Application Support/Liminal/
 //   Linux: ~/.config/Liminal/
+// Dev override: keep the per-user-encryption test run fully isolated from the
+// real installed app's data dir so test registrations never touch the
+// production journal. Must happen before anything else reads getPath('userData').
+if (isDev) {
+  const appDataRoot = process.env.APPDATA
+    || (process.platform === 'darwin'
+          ? path.join(os.homedir(), 'Library', 'Application Support')
+          : path.join(os.homedir(), '.config'));
+  const devUserData = path.join(appDataRoot, 'Liminal Dev PerUser');
+  fs.mkdirSync(devUserData, { recursive: true });
+  app.setPath('userData', devUserData);
+}
 const USER_DATA = app.getPath('userData');
 fs.mkdirSync(USER_DATA, { recursive: true });
 
@@ -53,6 +83,115 @@ if (!gotLock) {
 let backendProc = null;
 let ttsProc = null;
 let mainWindow = null;
+let tray = null;
+
+// ── TTS idle management ─────────────────────────────────────────────────────
+// TTS stays resident whenever the main window is visible (no wait on "wake up"
+// during active use) AND whenever remote browser users have been active
+// recently. Only when the window is hidden (tray) AND no speak has happened
+// for a while do we release the VRAM.
+const TTS_HIDDEN_IDLE_MS = 5 * 60 * 1000; // kill after 5 min tray-idle
+let ttsLastActivity = Date.now();
+let ttsHiddenIdleTimer = null;
+
+function markTtsActivity() {
+  ttsLastActivity = Date.now();
+  // If we're currently in the "hidden idle" window, push the deadline out.
+  if (ttsHiddenIdleTimer) scheduleTtsHiddenIdleCheck();
+}
+
+function scheduleTtsHiddenIdleCheck() {
+  // Only schedule if the window is actually hidden. If it's visible, TTS
+  // stays resident indefinitely.
+  const windowVisible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
+  if (windowVisible) return;
+  if (ttsHiddenIdleTimer) clearTimeout(ttsHiddenIdleTimer);
+  const elapsed = Date.now() - ttsLastActivity;
+  const remaining = Math.max(1000, TTS_HIDDEN_IDLE_MS - elapsed);
+  ttsHiddenIdleTimer = setTimeout(() => {
+    // Only kill if the window is still hidden and TTS has stayed idle.
+    const windowVisible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
+    if (windowVisible) return;
+    if (Date.now() - ttsLastActivity < TTS_HIDDEN_IDLE_MS) {
+      scheduleTtsHiddenIdleCheck();
+      return;
+    }
+    if (ttsProc && !ttsProc.killed) {
+      const proc = ttsProc;
+      ttsProc = null;
+      killChild(proc);
+      try {
+        fs.appendFileSync(logFile('tts_server'),
+          `\n[${new Date().toISOString()}] TTS released — window hidden and idle for ${TTS_HIDDEN_IDLE_MS / 1000}s\n`);
+      } catch {}
+    }
+    ttsHiddenIdleTimer = null;
+  }, remaining);
+}
+
+function cancelTtsHiddenIdleCheck() {
+  if (ttsHiddenIdleTimer) {
+    clearTimeout(ttsHiddenIdleTimer);
+    ttsHiddenIdleTimer = null;
+  }
+}
+
+// Backwards-compat stub — old call sites just update activity.
+function resetTtsIdleTimer() {
+  markTtsActivity();
+}
+
+function healthCheckTts(timeoutMs = 1000) {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: TTS_PORT, path: '/v1/models', timeout: timeoutMs },
+      (res) => resolve(res.statusCode === 200)
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+}
+
+async function ensureTtsRunning() {
+  // Trust the cached handle only if it's alive AND responding. A crash fires
+  // the 'exit' handler which nulls ttsProc, but there's a narrow race where
+  // the next request arrives before that event dispatches — the health check
+  // closes that gap. Without it, a crashed Chatterbox stays "not reachable"
+  // until the app is restarted.
+  if (ttsProc && !ttsProc.killed) {
+    if (await healthCheckTts(1000)) {
+      resetTtsIdleTimer();
+      return;
+    }
+    // Zombie — kill and fall through to respawn.
+    try { killChild(ttsProc); } catch {}
+    ttsProc = null;
+  }
+  ttsProc = spawnTts();
+  if (!ttsProc) throw new Error('TTS server could not be started');
+  markTtsActivity();
+  // If the window is already hidden when TTS spawns (e.g. --hidden auto-start
+  // + remote browser user), start the idle countdown so we don't hold VRAM
+  // indefinitely when that user walks away.
+  scheduleTtsHiddenIdleCheck();
+  // Wait for TTS to become healthy
+  const deadline = Date.now() + 30000;
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      const req = http.get(
+        { host: '127.0.0.1', port: TTS_PORT, path: '/v1/models', timeout: 1000 },
+        (res) => { if (res.statusCode === 200) return resolve(); retry(); }
+      );
+      req.on('error', retry);
+      req.on('timeout', () => { req.destroy(); retry(); });
+    };
+    const retry = () => {
+      if (Date.now() > deadline) return reject(new Error('TTS health check timed out'));
+      setTimeout(tick, 500);
+    };
+    tick();
+  });
+}
 
 function logFile(name) {
   return path.join(USER_DATA, `${name}.log`);
@@ -62,13 +201,76 @@ function openLogStream(name) {
   return fs.createWriteStream(logFile(name), { flags: 'a' });
 }
 
+// Localhost-only control server so the backend (a child process) can ask
+// Electron main to spawn the on-demand TTS server when a remote client
+// (mobile / other computer) hits /api/tts/speak. Without this, TTS only
+// worked for users physically on the Electron host.
+let controlServerPort = null;
+function startControlServer() {
+  if (controlServerPort) return controlServerPort;
+  const server = http.createServer(async (req, res) => {
+    if (req.url === '/tts/ensure' && req.method === 'POST') {
+      try {
+        await ensureTtsRunning();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+      return;
+    }
+    // Lightweight keepalive: just marks TTS activity so window-hidden idle
+    // timers push their deadline forward. No health check, no spawn.
+    if (req.url === '/tts/keepalive' && req.method === 'POST') {
+      markTtsActivity();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (req.url === '/relaunch' && req.method === 'POST') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 300);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  // Pick a port outside Windows' dynamic excluded ranges (Hyper-V/WSL reserve
+  // large swathes of the ephemeral range). 3099 fell inside 3002–3101 on many
+  // machines, causing EACCES. 13099 is well outside typical exclusions.
+  // If the port is still held (fast restart), retry then fall back to OS-assigned.
+  controlServerPort = 13099;
+  server.on('error', (err) => {
+    if (err.code === 'EACCES' || err.code === 'EADDRINUSE') {
+      const retries = server._retryCount || 0;
+      if (retries < 3) {
+        server._retryCount = retries + 1;
+        setTimeout(() => server.listen(controlServerPort, '127.0.0.1'), 500);
+      } else {
+        server.listen(0, '127.0.0.1', () => {
+          controlServerPort = server.address().port;
+        });
+      }
+    }
+  });
+  server.listen(controlServerPort, '127.0.0.1');
+  return controlServerPort;
+}
+
 function spawnBackend() {
+  const controlPort = startControlServer();
   const env = {
     ...process.env,
     PORT: String(BACKEND_PORT),
     LIMINAL_USER_DATA: USER_DATA,
     LIMINAL_FRONTEND_DIST: FRONTEND_DIST,
     LIMINAL_APP_VERSION: app.getVersion(),
+    LIMINAL_CONTROL_URL: `http://127.0.0.1:${controlPort}`,
     NODE_ENV: isDev ? 'development' : 'production',
   };
 
@@ -136,9 +338,15 @@ function spawnTts() {
     const out = openLogStream('tts_server');
     child.stdout.pipe(out);
     child.stderr.pipe(out);
-    child.on('error', (err) => out.write(`\n[tts spawn error] ${err.message}\n`));
+    child.on('error', (err) => {
+      out.write(`\n[tts spawn error] ${err.message}\n`);
+      if (ttsProc === child) ttsProc = null;
+    });
     child.on('exit', (code, signal) => {
       out.write(`\n[tts exited code=${code} signal=${signal}]\n`);
+      // Crash or manual stop — drop the reference so the next /tts/ensure
+      // call respawns instead of short-circuiting on a zombie handle.
+      if (ttsProc === child) ttsProc = null;
     });
     return child;
   } catch (err) {
@@ -187,6 +395,21 @@ async function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  // Minimize to tray instead of closing
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
+  // Window visibility drives TTS residency: visible → keep TTS in VRAM;
+  // hidden → start countdown to release, bumped by remote browser activity.
+  mainWindow.on('hide', () => scheduleTtsHiddenIdleCheck());
+  mainWindow.on('minimize', () => scheduleTtsHiddenIdleCheck());
+  mainWindow.on('show', () => cancelTtsHiddenIdleCheck());
+  mainWindow.on('restore', () => cancelTtsHiddenIdleCheck());
 
   // External links open in the user's default browser, not a new Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -271,9 +494,14 @@ app.on('web-contents-created', (_event, contents) => {
   });
 });
 
+// Detect if launched silently at login (openAtLogin + --hidden arg).
+// On Windows, Electron also reports `wasOpenedAsHidden` via getLoginItemSettings.
+const launchedHidden = process.argv.includes('--hidden')
+  || (process.platform === 'win32' && app.getLoginItemSettings().wasOpenedAsHidden);
+
 app.whenReady().then(async () => {
   backendProc = spawnBackend();
-  ttsProc = spawnTts();
+  // TTS is NOT started on boot — spawned on-demand to save VRAM
 
   try {
     await waitForBackend();
@@ -281,17 +509,203 @@ app.whenReady().then(async () => {
     console.error('[main]', err.message, '— see backend.log in', USER_DATA);
   }
 
-  await createWindow();
+  // Always create the tray so the user can bring up the window from it.
+  createTray();
+
+  // If auto-started at login, stay in the tray — only open the window when
+  // the user explicitly clicks the tray icon.
+  if (!launchedHidden) {
+    await createWindow();
+  }
 });
 
-app.on('window-all-closed', () => {
-  // Standard behaviour: quit on Win/Linux, stay alive on macOS until Cmd+Q.
-  if (process.platform !== 'darwin') app.quit();
+app.on('window-all-closed', (e) => {
+  // Don't quit when window is closed — keep running in tray
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (mainWindow) {
+    mainWindow.show();
+  } else {
+    createWindow();
+  }
 });
+
+// ── Share Access window ─────────────────────────────────────────────────────
+
+let shareWindow = null;
+
+async function showShareAccess() {
+  if (shareWindow && !shareWindow.isDestroyed()) {
+    shareWindow.focus();
+    return;
+  }
+
+  const QRCode = require('qrcode');
+  const ips = getNetworkIps();
+
+  // Build link entries — each IP gets a QR + copyable link
+  const entries = await Promise.all(ips.map(async ({ address, name }) => {
+    const url = `http://${address}:${BACKEND_PORT}/`;
+    const qrDataUrl = await QRCode.toDataURL(url, { width: 200, margin: 1, color: { dark: '#1a1a2e', light: '#ffffff' } });
+    return { url, name, address, qrDataUrl };
+  }));
+
+  // Separate LAN vs Tailscale entries
+  const lanEntries = entries.filter(e => !e.address.startsWith('100.'));
+  const tsEntries = entries.filter(e => e.address.startsWith('100.'));
+  const hasTailscale = tsEntries.length > 0;
+
+  function renderEntries(list, startIdx) {
+    return list.map((e, i) => {
+      const idx = startIdx + i;
+      return `
+      <div class="entry">
+        <div class="label">${e.name}</div>
+        <div class="qr"><img src="${e.qrDataUrl}" /></div>
+        <div class="link-row">
+          <div class="url" onclick="copyLink(${idx})" title="Click to copy">${e.url}</div>
+          <span class="copied" id="copied-${idx}">Copied!</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #f8f8fa; color: #1a1a2e; padding: 24px; user-select: none; }
+  h1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: #888; margin-bottom: 20px; line-height: 1.5; }
+  .section-title { font-size: 13px; font-weight: 600; color: #1a1a2e; margin: 18px 0 8px; }
+  .section-desc { font-size: 11px; color: #888; line-height: 1.5; margin-bottom: 12px; }
+  .section-desc a { color: #5b6abf; text-decoration: none; }
+  .section-desc a:hover { text-decoration: underline; }
+  .entry { background: #fff; border: 1px solid #e8e8ec; border-radius: 12px; padding: 20px; margin-bottom: 14px; text-align: center; }
+  .label { font-size: 11px; color: #888; margin-bottom: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .qr { margin-bottom: 12px; }
+  .qr img { width: 160px; height: 160px; border-radius: 8px; }
+  .link-row { text-align: center; margin-top: 4px; position: relative; }
+  .url { display: inline-block; font-family: 'Consolas', monospace; font-size: 13px; color: #1a1a2e; background: #f0f0f4; padding: 8px 14px; border-radius: 8px; border: 1px solid #e0e0e4; cursor: pointer; transition: background 0.15s; }
+  .url:hover { background: #e8e8ec; }
+  .copied { display: block; font-size: 11px; color: #27ae60; margin-top: 4px; opacity: 0; transition: opacity 0.2s; }
+  .copied.show { opacity: 1; }
+  .divider { height: 1px; background: #e8e8ec; margin: 20px 0; }
+</style></head><body>
+  <h1>Share Access</h1>
+  <div class="subtitle">Scan the QR code on your phone, or click the link to copy it.</div>
+
+  <div class="section-title">Local Network</div>
+  <div class="section-desc">Works for devices on the same Wi-Fi or LAN. No extra software needed.</div>
+  ${lanEntries.length ? renderEntries(lanEntries, 0) : '<div class="section-desc">No local network detected.</div>'}
+
+  ${hasTailscale ? `
+    <div class="divider"></div>
+    <div class="section-title">Remote Access via Tailscale</div>
+    <div class="section-desc">
+      Works from anywhere — home, work, or on the go. Requires
+      <a href="https://tailscale.com/download" onclick="openExternal(this.href); return false;">Tailscale</a>
+      running on both this computer and the companion device.
+      Free for up to 3 users and 100 devices.
+    </div>
+    ${renderEntries(tsEntries, lanEntries.length)}
+  ` : `
+    <div class="divider"></div>
+    <div class="section-desc" style="margin-top: 16px;">
+      Want remote access from anywhere? Install
+      <a href="https://tailscale.com/download" onclick="openExternal(this.href); return false;">Tailscale</a>
+      (free for up to 3 users) on this computer and your companion device. A remote link will appear here automatically.
+    </div>
+  `}
+
+  <script>
+    const { clipboard, shell } = require('electron');
+    function copyLink(i) {
+      const urls = ${JSON.stringify(entries.map(e => e.url))};
+      clipboard.writeText(urls[i]);
+      const el = document.getElementById('copied-' + i);
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 1500);
+    }
+    function openExternal(url) {
+      shell.openExternal(url);
+    }
+  </script>
+</body></html>`;
+
+  shareWindow = new BrowserWindow({
+    width: 340,
+    height: Math.min(280 + entries.length * 280, 800),
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: 'Liminal — Share Access',
+    autoHideMenuBar: true,
+    webPreferences: { nodeIntegration: true, contextIsolation: false },
+  });
+
+  shareWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  shareWindow.on('closed', () => { shareWindow = null; });
+}
+
+// ── System tray ─────────────────────────────────────────────────────────────
+
+function createTray() {
+  const iconPath = path.join(__dirname, 'icons', 'icon.png');
+  tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
+  tray.setToolTip('Liminal');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open Liminal',
+      click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+        } else {
+          createWindow();
+        }
+      },
+    },
+    {
+      label: 'Open in Browser',
+      submenu: getNetworkIps().map(({ address, name }) => ({
+        label: `${address} (${name})`,
+        click: () => shell.openExternal(`http://${address}:${BACKEND_PORT}/`),
+      })),
+    },
+    {
+      label: 'Share Access',
+      click: () => showShareAccess(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Restart',
+      click: () => {
+        app.relaunch();
+        app.exit(0);
+      },
+    },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+  tray.on('click', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
+      createWindow();
+    }
+  });
+}
 
 function killChild(child) {
   if (!child || child.killed) return;
@@ -305,14 +719,94 @@ function killChild(child) {
   } catch {}
 }
 
+// ── Clipboard ───────────────────────────────────────────────────────────────
+// Native clipboard access for the right-click menu. Going through Electron's
+// main-process clipboard avoids the renderer-side focus/selection quirks that
+// break document.execCommand('copy') when the menu is open.
+ipcMain.handle('liminal:clipboard-write', (_e, payload) => {
+  try {
+    const { clipboard } = require('electron');
+    const data = {};
+    if (payload?.text) data.text = payload.text;
+    if (payload?.html) data.html = payload.html;
+    if (Object.keys(data).length) clipboard.write(data);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('liminal:clipboard-read', () => {
+  try {
+    const { clipboard } = require('electron');
+    return { text: clipboard.readText() || '', html: clipboard.readHTML() || '' };
+  } catch (err) {
+    return { text: '', html: '', error: err.message };
+  }
+});
+
+// ── Open on startup ─────────────────────────────────────────────────────────
+
+ipcMain.handle('liminal:get-login-item', () => {
+  return app.getLoginItemSettings();
+});
+
+ipcMain.handle('liminal:set-login-item', (_event, enabled) => {
+  // Pass --hidden so on auto-start we stay in the tray until the user clicks it.
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    args: enabled ? ['--hidden'] : [],
+  });
+  return app.getLoginItemSettings();
+});
+
+// ── On-demand TTS ───────────────────────────────────────────────────────────
+
+ipcMain.handle('liminal:ensure-tts', async () => {
+  try {
+    await ensureTtsRunning();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Called when the app auto-locks — release VRAM immediately instead of
+// waiting for the hidden-window idle timer.
+ipcMain.handle('liminal:release-tts', async () => {
+  cancelTtsHiddenIdleCheck();
+  if (ttsProc && !ttsProc.killed) {
+    const proc = ttsProc;
+    ttsProc = null;
+    killChild(proc);
+    try {
+      fs.appendFileSync(logFile('tts_server'),
+        `\n[${new Date().toISOString()}] TTS released — app auto-locked\n`);
+    } catch {}
+  }
+  return { ok: true };
+});
+
 // ── Backup system ────────────────────────────────────────────────────────────
 
 let sessionPassword = null;
 let sessionToken = null;
+let sessionUsername = null;
 
 ipcMain.on('liminal:set-session-password', (_event, pw, token) => {
   sessionPassword = pw;
-  if (token) sessionToken = token;
+  if (token) {
+    sessionToken = token;
+    try {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+      sessionUsername = payload.username || payload.sub || null;
+    } catch {}
+  }
+  // Warm TTS on login so the first Read-aloud press is instant. Safe because
+  // the window-hidden idle timer will release VRAM after 5 min in the tray.
+  ensureTtsRunning().catch(err => {
+    console.warn('[tts] login warmup failed:', err.message);
+  });
 });
 
 ipcMain.handle('liminal:pick-backup-folder', async () => {
@@ -372,15 +866,16 @@ async function performBackup(backupDir, maxBackups) {
     throw new Error(`Backup request failed (${res.status}): ${errText}`);
   }
 
-  // Write to backup dir
-  fs.mkdirSync(backupDir, { recursive: true });
+  // Write to user-specific subfolder inside backup dir
+  const userDir = sessionUsername ? path.join(backupDir, sessionUsername) : backupDir;
+  fs.mkdirSync(userDir, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `liminal-backup-${ts}.liminal`;
-  const filepath = path.join(backupDir, filename);
+  const filepath = path.join(userDir, filename);
   fs.writeFileSync(filepath, res.buf);
 
   // Rotate
-  rotateBackups(backupDir, maxBackups || 10);
+  rotateBackups(userDir, maxBackups || 10);
 
   return filepath;
 }
@@ -407,6 +902,13 @@ ipcMain.handle('liminal:trigger-backup', async () => {
     const backupDir = (settings.backup_location || '').trim() || path.join(USER_DATA, 'backups');
     const maxBackups = parseInt(settings.max_backups, 10) || 10;
     const filepath = await performBackup(backupDir, maxBackups);
+    try {
+      await backendFetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ last_backup_time: new Date().toISOString() }),
+      });
+    } catch {}
     return { success: true, path: filepath };
   } catch (err) {
     return { success: false, error: err.message };
@@ -419,14 +921,40 @@ let isQuitting = false;
 
 app.on('before-quit', async (event) => {
   if (isQuitting) {
-    // Second pass — actually quit, kill children
-    killChild(backendProc);
-    killChild(ttsProc);
+    // A second Quit click while cleanup is in flight would otherwise be
+    // allowed through by Electron's default behavior and kill the app
+    // mid-sweep. Block it; the in-flight handler will exit when done.
+    event.preventDefault();
     return;
   }
-
   event.preventDefault();
   isQuitting = true;
+
+  // Instant visual feedback so the user doesn't think Quit was ignored.
+  // Cleanup below can take up to ~30s on slow thread sweeps.
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); } catch {}
+  try { if (tray) { tray.destroy(); tray = null; } } catch {}
+
+  // Incremental thread sweep: catches entries/notes/sessions the user saved
+  // but didn't Reflect on. Bounded to 20 items server-side so it can't stall
+  // quit. We poll for completion for up to 30s — longer backlogs simply carry
+  // over to the next quit.
+  try {
+    if (sessionPassword) {
+      await backendFetch('/api/threads/sweep', { method: 'POST', timeout: 5000 });
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        try {
+          const { buf } = await backendFetch('/api/threads/detect-status', { timeout: 3000 });
+          const status = JSON.parse(buf.toString('utf8'));
+          if (!status.running) break;
+        } catch { break; }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  } catch (err) {
+    console.error('[quit] thread sweep failed:', err.message);
+  }
 
   try {
     if (sessionPassword) {
@@ -436,14 +964,18 @@ app.on('before-quit', async (event) => {
       if (settings.auto_backup_enabled === 'true') {
         const backupDir = (settings.backup_location || '').trim();
         if (backupDir) {
-          // Show backup splash
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('liminal:backup-starting');
           }
-
           const maxBackups = parseInt(settings.max_backups, 10) || 10;
           await performBackup(backupDir, maxBackups);
-
+          try {
+            await backendFetch('/api/settings', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ last_backup_time: new Date().toISOString() }),
+            });
+          } catch {}
           try {
             fs.appendFileSync(path.join(USER_DATA, 'backup.log'),
               `[${new Date().toISOString()}] Auto-backup saved to ${backupDir}\n`);
@@ -452,12 +984,16 @@ app.on('before-quit', async (event) => {
       }
     }
   } catch (err) {
-    // Never block quit on backup failure
     try {
       fs.appendFileSync(path.join(USER_DATA, 'backup.log'),
         `[${new Date().toISOString()}] Auto-backup failed: ${err.message}\n`);
     } catch {}
   }
 
-  app.quit();
+  // Clean up children and force exit. app.exit() bypasses before-quit so we
+  // guarantee the process terminates on a single Quit click.
+  if (ttsIdleTimer) clearTimeout(ttsIdleTimer);
+  killChild(backendProc);
+  killChild(ttsProc);
+  app.exit(0);
 });

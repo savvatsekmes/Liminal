@@ -73,10 +73,30 @@ const USER_DATA = app.getPath('userData');
 fs.mkdirSync(USER_DATA, { recursive: true });
 
 // ── Single-instance lock ─────────────────────────────────────────────────────
-const gotLock = app.requestSingleInstanceLock();
+// If a previous instance is still cleaning up (tray-Quit runs an async
+// backup/sweep that can take up to ~20s), the lock will be held when the user
+// double-clicks the exe again. Rather than bouncing off with a notification
+// and making the user click a second time, poll for the lock for ~20s before
+// giving up. The old process, once it finishes cleanup, calls app.exit(0)
+// which releases the lock.
+let gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  app.quit();
-  process.exit(0);
+  const deadline = Date.now() + 20000;
+  // Busy-wait synchronously — we're at the very top of main before Electron
+  // has finished bootstrapping, so setTimeout/async isn't reliable here.
+  // A tight sleep loop is fine for the ~20s worst case.
+  const sleepSync = (ms) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { /* spin */ }
+  };
+  while (Date.now() < deadline && !gotLock) {
+    sleepSync(500);
+    gotLock = app.requestSingleInstanceLock();
+  }
+  if (!gotLock) {
+    app.quit();
+    process.exit(0);
+  }
 }
 
 // ── Child process handles ────────────────────────────────────────────────────
@@ -86,31 +106,94 @@ let mainWindow = null;
 let tray = null;
 
 // ── TTS idle management ─────────────────────────────────────────────────────
-const TTS_IDLE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
-let ttsIdleTimer = null;
+// TTS stays resident whenever the main window is visible (no wait on "wake up"
+// during active use) AND whenever remote browser users have been active
+// recently. Only when the window is hidden (tray) AND no speak has happened
+// for a while do we release the VRAM.
+const TTS_HIDDEN_IDLE_MS = 5 * 60 * 1000; // kill after 5 min tray-idle
+let ttsLastActivity = Date.now();
+let ttsHiddenIdleTimer = null;
 
-function resetTtsIdleTimer() {
-  if (ttsIdleTimer) clearTimeout(ttsIdleTimer);
-  ttsIdleTimer = setTimeout(() => {
-    if (ttsProc && !ttsProc.killed) {
-      killChild(ttsProc);
-      ttsProc = null;
-      try {
-        fs.appendFileSync(logFile('tts_server'),
-          `\n[${new Date().toISOString()}] TTS idle timeout — process stopped to free VRAM\n`);
-      } catch {}
-    }
-  }, TTS_IDLE_TIMEOUT_MS);
+function markTtsActivity() {
+  ttsLastActivity = Date.now();
+  // If we're currently in the "hidden idle" window, push the deadline out.
+  if (ttsHiddenIdleTimer) scheduleTtsHiddenIdleCheck();
 }
 
-function ensureTtsRunning() {
+function scheduleTtsHiddenIdleCheck() {
+  // Only schedule if the window is actually hidden. If it's visible, TTS
+  // stays resident indefinitely.
+  const windowVisible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
+  if (windowVisible) return;
+  if (ttsHiddenIdleTimer) clearTimeout(ttsHiddenIdleTimer);
+  const elapsed = Date.now() - ttsLastActivity;
+  const remaining = Math.max(1000, TTS_HIDDEN_IDLE_MS - elapsed);
+  ttsHiddenIdleTimer = setTimeout(() => {
+    // Only kill if the window is still hidden and TTS has stayed idle.
+    const windowVisible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
+    if (windowVisible) return;
+    if (Date.now() - ttsLastActivity < TTS_HIDDEN_IDLE_MS) {
+      scheduleTtsHiddenIdleCheck();
+      return;
+    }
+    if (ttsProc && !ttsProc.killed) {
+      const proc = ttsProc;
+      ttsProc = null;
+      killChild(proc);
+      try {
+        fs.appendFileSync(logFile('tts_server'),
+          `\n[${new Date().toISOString()}] TTS released — window hidden and idle for ${TTS_HIDDEN_IDLE_MS / 1000}s\n`);
+      } catch {}
+    }
+    ttsHiddenIdleTimer = null;
+  }, remaining);
+}
+
+function cancelTtsHiddenIdleCheck() {
+  if (ttsHiddenIdleTimer) {
+    clearTimeout(ttsHiddenIdleTimer);
+    ttsHiddenIdleTimer = null;
+  }
+}
+
+// Backwards-compat stub — old call sites just update activity.
+function resetTtsIdleTimer() {
+  markTtsActivity();
+}
+
+function healthCheckTts(timeoutMs = 1000) {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: TTS_PORT, path: '/v1/models', timeout: timeoutMs },
+      (res) => resolve(res.statusCode === 200)
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+}
+
+async function ensureTtsRunning() {
+  // Trust the cached handle only if it's alive AND responding. A crash fires
+  // the 'exit' handler which nulls ttsProc, but there's a narrow race where
+  // the next request arrives before that event dispatches — the health check
+  // closes that gap. Without it, a crashed Chatterbox stays "not reachable"
+  // until the app is restarted.
   if (ttsProc && !ttsProc.killed) {
-    resetTtsIdleTimer();
-    return Promise.resolve();
+    if (await healthCheckTts(1000)) {
+      resetTtsIdleTimer();
+      return;
+    }
+    // Zombie — kill and fall through to respawn.
+    try { killChild(ttsProc); } catch {}
+    ttsProc = null;
   }
   ttsProc = spawnTts();
-  if (!ttsProc) return Promise.reject(new Error('TTS server could not be started'));
-  resetTtsIdleTimer();
+  if (!ttsProc) throw new Error('TTS server could not be started');
+  markTtsActivity();
+  // If the window is already hidden when TTS spawns (e.g. --hidden auto-start
+  // + remote browser user), start the idle countdown so we don't hold VRAM
+  // indefinitely when that user walks away.
+  scheduleTtsHiddenIdleCheck();
   // Wait for TTS to become healthy
   const deadline = Date.now() + 30000;
   return new Promise((resolve, reject) => {
@@ -157,11 +240,25 @@ function startControlServer() {
       }
       return;
     }
+    // Lightweight keepalive: just marks TTS activity so window-hidden idle
+    // timers push their deadline forward. No health check, no spawn.
+    if (req.url === '/tts/keepalive' && req.method === 'POST') {
+      markTtsActivity();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
     if (req.url === '/relaunch' && req.method === 'POST') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
       setTimeout(() => {
+        if (isQuitting) return;
+        isQuitting = true;
+        try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); } catch {}
+        try { if (tray) { tray.destroy(); tray = null; } } catch {}
         app.relaunch();
+        try { killChild(backendProc); } catch {}
+        try { killChild(ttsProc); } catch {}
         app.exit(0);
       }, 300);
       return;
@@ -189,6 +286,71 @@ function startControlServer() {
   });
   server.listen(controlServerPort, '127.0.0.1');
   return controlServerPort;
+}
+
+// If a previous backend survived (Electron crash, Task Manager kill, power loss
+// before before-quit completed) it still holds :3001 with the user's session
+// keys decrypted in memory. Without this, our new spawnBackend hits EADDRINUSE
+// and waitForBackend silently attaches to the orphan — frontend lands in the
+// unlocked session with no password prompt.
+async function killOrphanBackend() {
+  const probe = (timeoutMs) => new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: BACKEND_PORT, path: '/api/health', timeout: timeoutMs },
+      (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => resolve({ status: res.statusCode, body }));
+      }
+    );
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+
+  const initial = await probe(1000);
+  if (!initial || initial.status !== 200) return;
+
+  // Confirm it's a Liminal backend before killing — refuse to kill an
+  // unrelated process that happens to be on :3001.
+  let parsed = null;
+  try { parsed = JSON.parse(initial.body); } catch {}
+  if (!parsed || parsed.status !== 'ok') return;
+
+  let orphanPid = null;
+  try {
+    const { execFileSync } = require('child_process');
+    const out = execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true });
+    const line = out.split('\n').find(
+      (l) => /LISTENING/.test(l) && new RegExp(`:${BACKEND_PORT}\\b`).test(l)
+    );
+    if (line) {
+      const parts = line.trim().split(/\s+/);
+      const pid = parseInt(parts[parts.length - 1], 10);
+      if (Number.isFinite(pid) && pid > 0) orphanPid = pid;
+    }
+  } catch {}
+
+  if (!orphanPid) return;
+
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('taskkill', ['/pid', String(orphanPid), '/t', '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  } catch {}
+
+  // Wait for the port to actually release before spawnBackend tries to bind.
+  for (let i = 0; i < 15; i++) {
+    const stillThere = await probe(300);
+    if (!stillThere) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  try {
+    fs.appendFileSync(path.join(USER_DATA, 'backend.log'),
+      `[${new Date().toISOString()}] Killed orphan backend pid=${orphanPid} on :${BACKEND_PORT}\n`);
+  } catch {}
 }
 
 function spawnBackend() {
@@ -267,9 +429,15 @@ function spawnTts() {
     const out = openLogStream('tts_server');
     child.stdout.pipe(out);
     child.stderr.pipe(out);
-    child.on('error', (err) => out.write(`\n[tts spawn error] ${err.message}\n`));
+    child.on('error', (err) => {
+      out.write(`\n[tts spawn error] ${err.message}\n`);
+      if (ttsProc === child) ttsProc = null;
+    });
     child.on('exit', (code, signal) => {
       out.write(`\n[tts exited code=${code} signal=${signal}]\n`);
+      // Crash or manual stop — drop the reference so the next /tts/ensure
+      // call respawns instead of short-circuiting on a zombie handle.
+      if (ttsProc === child) ttsProc = null;
     });
     return child;
   } catch (err) {
@@ -327,6 +495,13 @@ async function createWindow() {
     }
   });
 
+  // Window visibility drives TTS residency: visible → keep TTS in VRAM;
+  // hidden → start countdown to release, bumped by remote browser activity.
+  mainWindow.on('hide', () => scheduleTtsHiddenIdleCheck());
+  mainWindow.on('minimize', () => scheduleTtsHiddenIdleCheck());
+  mainWindow.on('show', () => cancelTtsHiddenIdleCheck());
+  mainWindow.on('restore', () => cancelTtsHiddenIdleCheck());
+
   // External links open in the user's default browser, not a new Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -375,11 +550,34 @@ async function createWindow() {
   });
 }
 
-// Focus existing window if user launches a second instance.
+// Focus existing window if user launches a second instance. The window may be
+// hidden (closed-to-tray) — in that case restore/focus alone won't make it
+// visible, so we explicitly show() it. If the window object is gone for any
+// reason, recreate it instead of leaving the user staring at nothing.
+//
+// During quit cleanup (isQuitting), do NOT surface a window — the process is
+// about to die. Showing the dying instance would let the user start typing
+// into a session that's about to terminate. Tell them to wait instead.
 app.on('second-instance', () => {
-  if (mainWindow) {
+  if (isQuitting) {
+    try {
+      const { Notification } = require('electron');
+      if (Notification.isSupported()) {
+        new Notification({
+          title: 'Liminal is closing',
+          body: 'Finishing up — please wait a moment, then try again.',
+          silent: true,
+        }).show();
+      }
+    } catch {}
+    return;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
     mainWindow.focus();
+  } else {
+    createWindow();
   }
 });
 
@@ -416,6 +614,7 @@ const launchedHidden = process.argv.includes('--hidden')
   || (process.platform === 'win32' && app.getLoginItemSettings().wasOpenedAsHidden);
 
 app.whenReady().then(async () => {
+  await killOrphanBackend();
   backendProc = spawnBackend();
   // TTS is NOT started on boot — spawned on-demand to save VRAM
 
@@ -600,7 +799,22 @@ function createTray() {
     {
       label: 'Restart',
       click: () => {
+        // Fast path: skip the full before-quit cleanup (thread sweep +
+        // auto-backup) which is appropriate for Quit but adds 15-25s to a
+        // Restart. The user is restarting in-place, so a backup will run
+        // on actual Quit later. We still need to kill children synchronously
+        // — otherwise the orphan backend keeps :3001 and the relaunched
+        // instance attaches to it (the old auth-skip bug).
+        // Idempotent: if Restart was already clicked, don't queue another
+        // relaunch (each app.relaunch() adds to a list that all fires on
+        // exit, which previously spawned multiple Liminal windows).
+        if (isQuitting) return;
+        isQuitting = true;
+        try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); } catch {}
+        try { if (tray) { tray.destroy(); tray = null; } } catch {}
         app.relaunch();
+        try { killChild(backendProc); } catch {}
+        try { killChild(ttsProc); } catch {}
         app.exit(0);
       },
     },
@@ -627,8 +841,14 @@ function killChild(child) {
   if (!child || child.killed) return;
   try {
     if (process.platform === 'win32') {
-      // Use taskkill to ensure the whole subprocess tree dies on Windows.
-      spawn('taskkill', ['/pid', String(child.pid), '/t', '/f']);
+      // Synchronous taskkill — the previous async spawn would not actually
+      // run before app.exit() killed the parent, leaving orphan node/python
+      // processes that hold the single-instance lock and block restart.
+      const { execFileSync } = require('child_process');
+      execFileSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
     } else {
       child.kill('SIGTERM');
     }
@@ -687,6 +907,22 @@ ipcMain.handle('liminal:ensure-tts', async () => {
   }
 });
 
+// Called when the app auto-locks — release VRAM immediately instead of
+// waiting for the hidden-window idle timer.
+ipcMain.handle('liminal:release-tts', async () => {
+  cancelTtsHiddenIdleCheck();
+  if (ttsProc && !ttsProc.killed) {
+    const proc = ttsProc;
+    ttsProc = null;
+    killChild(proc);
+    try {
+      fs.appendFileSync(logFile('tts_server'),
+        `\n[${new Date().toISOString()}] TTS released — app auto-locked\n`);
+    } catch {}
+  }
+  return { ok: true };
+});
+
 // ── Backup system ────────────────────────────────────────────────────────────
 
 let sessionPassword = null;
@@ -702,6 +938,11 @@ ipcMain.on('liminal:set-session-password', (_event, pw, token) => {
       sessionUsername = payload.username || payload.sub || null;
     } catch {}
   }
+  // Warm TTS on login so the first Read-aloud press is instant. Safe because
+  // the window-hidden idle timer will release VRAM after 5 min in the tray.
+  ensureTtsRunning().catch(err => {
+    console.warn('[tts] login warmup failed:', err.message);
+  });
 });
 
 ipcMain.handle('liminal:pick-backup-folder', async () => {
@@ -815,18 +1056,62 @@ ipcMain.handle('liminal:trigger-backup', async () => {
 let isQuitting = false;
 
 app.on('before-quit', async (event) => {
-  if (isQuitting) return; // Already handling a quit — let it finish
+  if (isQuitting) {
+    // Second Quit click while cleanup is in flight = user wants out now.
+    // Skip the remaining sweep/backup and exit immediately. Sweep is
+    // additive/idempotent so partial completion is safe; an interrupted
+    // backup is logged and retried on next quit.
+    try {
+      fs.appendFileSync(path.join(USER_DATA, 'backup.log'),
+        `[${new Date().toISOString()}] Quit force-exited by second tray click — sweep/backup may be incomplete\n`);
+    } catch {}
+    try { killChild(backendProc); } catch {}
+    try { killChild(ttsProc); } catch {}
+    app.exit(0);
+    return;
+  }
   event.preventDefault();
   isQuitting = true;
 
+  // Instant visual feedback so the user doesn't think Quit was ignored.
+  // Cleanup below can take up to ~15s on slow thread sweeps + backup.
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); } catch {}
+  try { if (tray) { tray.destroy(); tray = null; } } catch {}
+
+  // Native notification so the user knows the process is still alive
+  // during cleanup. Tray + window vanish instantly; without this, relaunch
+  // attempts during the cleanup window feel broken.
+  try {
+    const { Notification } = require('electron');
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'Liminal is closing',
+        body: 'Finishing backup — will close in a few seconds.',
+        silent: true,
+      }).show();
+    }
+  } catch {}
+
+  // Hard ceiling on cleanup. If backend is stuck (or auto-backup is huge)
+  // we still want the process to die so the single-instance lock releases
+  // and the user can relaunch. 20s gives the 10s sweep poll + a normal
+  // backup room to finish, then forces exit.
+  const hardExitTimer = setTimeout(() => {
+    try { killChild(backendProc); } catch {}
+    try { killChild(ttsProc); } catch {}
+    app.exit(0);
+  }, 20000);
+  hardExitTimer.unref?.();
+
   // Incremental thread sweep: catches entries/notes/sessions the user saved
   // but didn't Reflect on. Bounded to 20 items server-side so it can't stall
-  // quit. We poll for completion for up to 30s — longer backlogs simply carry
-  // over to the next quit.
+  // quit. We poll for completion for up to 10s — longer backlogs simply carry
+  // over to the next quit (previously 30s, but that left the user staring at
+  // a vanished tray icon for half a minute).
   try {
     if (sessionPassword) {
       await backendFetch('/api/threads/sweep', { method: 'POST', timeout: 5000 });
-      const deadline = Date.now() + 30000;
+      const deadline = Date.now() + 10000;
       while (Date.now() < deadline) {
         try {
           const { buf } = await backendFetch('/api/threads/detect-status', { timeout: 3000 });

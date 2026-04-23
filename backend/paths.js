@@ -35,9 +35,11 @@ try {
     if (!fs.existsSync(VOICES_DIR)) fs.mkdirSync(VOICES_DIR, { recursive: true });
     let copied = 0;
     for (const f of fs.readdirSync(DEFAULT_VOICES_DIR)) {
+      const src = path.join(DEFAULT_VOICES_DIR, f);
+      if (!fs.statSync(src).isFile()) continue;
       const dest = path.join(VOICES_DIR, f);
       if (!fs.existsSync(dest)) {
-        fs.copyFileSync(path.join(DEFAULT_VOICES_DIR, f), dest);
+        fs.copyFileSync(src, dest);
         copied++;
       }
     }

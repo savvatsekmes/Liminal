@@ -21,6 +21,7 @@ import { useNotes } from '../hooks/useNotes';
 import { useListArrowNav } from '../hooks/useListArrowNav';
 import { useDictation } from '../hooks/useDictation';
 import { useTagSuggestions } from '../hooks/useTagSuggestions';
+import { useCrisisGate } from '../components/CrisisGate';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { InstagramEmbed } from '../extensions/InstagramEmbed';
 import { ImageEmbed } from '../extensions/ImageEmbed';
@@ -37,6 +38,7 @@ function TagLabel({ tag }) {
 }
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
+import AILabel from '../components/AILabel';
 import MicButton from '../components/MicButton';
 import CardPullModal from '../components/CardPullModal';
 import DoodleModal from '../components/DoodleModal';
@@ -86,6 +88,7 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const { isCore, coreList } = useCoreTags();
+  const { confirmIfCrisis } = useCrisisGate();
   const [mobileView, setMobileView] = useState('editor'); // 'list' | 'editor' | 'reflect'
   const {
     notes,
@@ -162,6 +165,8 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
 
   async function handleReflect(archetype) {
     if (!activeNote?.id) return;
+    const noteText = (activeNote.body || '').replace(/<[^>]*>/g, ' ');
+    if (!await confirmIfCrisis(noteText)) return;
     setReflecting(true);
     setReflectError(null);
     try {
@@ -1253,6 +1258,7 @@ const NOTE_PLACEHOLDER_KEYS = {
 
 function NoteEditor({ note, onChange, customTags, onVersionPreview, previewVersionId, onTalkAboutNote }) {
   const { t } = useLanguage();
+  const { confirmIfCrisis } = useCrisisGate();
   const noteRef = useRef(note);
   noteRef.current = note;
 
@@ -1306,6 +1312,7 @@ async function handlePolish() {
     if (!ed || !note?.id || polishing) return;
     const html = ed.getHTML();
     if (!html || html === '<p></p>') return;
+    if (!await confirmIfCrisis(ed.getText())) return;
     setPolishing(true);
     try {
       await apiFetch(`/api/notes/${note.id}/snapshot`, { method: 'POST' }).catch(() => {});
@@ -1947,6 +1954,7 @@ const panelStyle = {
           {t('notes.mirror')}
         </div>
       </div>
+      <div style={{ padding: '0 14px' }}><AILabel compact /></div>
 
       {/* Blocks */}
       <div ref={bodyRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }} data-find-scope="1">

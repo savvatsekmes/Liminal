@@ -9,6 +9,13 @@ const spreads = require('../data/spreads');
 
 router.use(requireAuth);
 
+const LANGUAGE_NAMES = {
+  en: 'English', el: 'Greek', es: 'Spanish', fr: 'French', de: 'German',
+  pt: 'Portuguese', it: 'Italian', ja: 'Japanese', zh: 'Chinese', ko: 'Korean',
+  nl: 'Dutch', sv: 'Swedish', pl: 'Polish', tr: 'Turkish', ru: 'Russian', ar: 'Arabic',
+};
+function getLanguageName(code) { return LANGUAGE_NAMES[code] || code; }
+
 // Visible threads = canonical (always shown) + novel/custom with 3+ beads.
 // This mirrors the ThreadsPage visibility rule and gives the card prompt a
 // high-signal summary of what the user's life is currently about — much
@@ -94,8 +101,20 @@ router.get('/daily', async (req, res) => {
     let context = '';
     if (portrait) {
       if (displayName) context += `Name: ${displayName}. `;
-      if (portrait.pronouns) context += `Pronouns: ${portrait.pronouns}. `;
-      if (portrait.sex) context += `Sex: ${portrait.sex}. `;
+      // Spell out gender agreement explicitly — "Pronouns: he. Sex: Male." alone
+      // isn't strong enough signal for gendered languages like Greek, Spanish,
+      // French etc., where the LLM will otherwise drift to feminine or neuter
+      // adjective/verb endings.
+      const sex = (portrait.sex || '').toLowerCase();
+      const pron = (portrait.pronouns || '').toLowerCase();
+      const isMasc = sex.startsWith('m') || /\bhe\b|him|his/.test(pron);
+      const isFem  = sex.startsWith('f') || /\bshe\b|her/.test(pron);
+      if (isMasc) context += 'Gender: male (he/him) — use MASCULINE grammatical forms (adjective, participle, verb endings) when writing in gendered languages. ';
+      else if (isFem) context += 'Gender: female (she/her) — use FEMININE grammatical forms (adjective, participle, verb endings) when writing in gendered languages. ';
+      else {
+        if (portrait.pronouns) context += `Pronouns: ${portrait.pronouns}. `;
+        if (portrait.sex) context += `Sex: ${portrait.sex}. `;
+      }
       if (portrait.mbti) context += `MBTI: ${portrait.mbti}. `;
       if (portrait.current_intention) context += `Current intention: ${portrait.current_intention}. `;
       if (portrait.season_of_life) context += `Season of life: ${portrait.season_of_life}. `;
@@ -112,13 +131,16 @@ router.get('/daily', async (req, res) => {
     const threadContext = getThreadContext(req.userId);
 
     const systemPrompt = 'You are a warm, intuitive oracle reader. You give personalised daily card readings that connect the card\'s energy to the person\'s life. Do NOT repeat or paraphrase the card\'s textbook meaning — instead, weave it into specific, actionable guidance for their day. Be poetic but grounded. No greeting or sign-off. Plain text only, 3-4 sentences.';
+    const languageLine = (lang && lang !== 'en')
+      ? `\n\nLANGUAGE: You MUST write the entire reading in ${getLanguageName(lang)}. Honour the gender specified above when choosing adjective/verb endings.`
+      : '';
     const userMessage = `Card: "${card.name}"${reversed ? ' (reversed)' : ''}. Meaning: "${card.meaning}".
 
 ${context ? `About the person: ${context}` : ''}
 ${threadContext ? `Active life threads (what they're currently navigating):\n${threadContext}` : ''}
 ${journalContext ? `Recent journal entries:\n${journalContext}` : ''}
 
-Write a personalised daily reading for this person based on this card. Focus on what this card means for their day ahead — don't just restate the meaning.`;
+Write a personalised daily reading for this person based on this card. Focus on what this card means for their day ahead — don't just restate the meaning.${languageLine}`;
     const insight = await llm.call(systemPrompt, userMessage, { maxTokens: 300 });
     card.reading = insight.trim();
   } catch (err) {

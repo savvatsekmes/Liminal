@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { apiFetch } from '../utils/api';
 import { useTtsOnline } from '../utils/ttsStatus';
+import { useCrisisGate } from '../components/CrisisGate';
 
 export function useReflect() {
   const [blocks, setBlocks] = useState([]);
@@ -8,9 +9,16 @@ export function useReflect() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const ttsOnline = useTtsOnline();
+  // Reflect is a single-shot operation on the user's own writing. The output
+  // banner was firing on the model's dramatic interpretation of journal
+  // entries (framing the user as "feeling suicidal" when they weren't), not
+  // on genuine novel crisis content. The banner now lives only on Oracle —
+  // the only true open-ended chat surface.
+  const { confirmIfCrisis } = useCrisisGate();
 
   async function reflect(entry, archetype) {
     if (!entry || !entry.body_text) return;
+    if (!await confirmIfCrisis(entry.body_text)) return;
     setLoading(true);
     setError(null);
 

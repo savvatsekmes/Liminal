@@ -270,18 +270,16 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 1 && (
-            <WhoYouAreStep
+            <BirthDetailsStep
               data={data}
               set={set}
               onContinue={() => goTo(2)}
               onBack={() => goTo(0)}
-              onSkipForNow={handleSkipForNow}
-              onSkipCompletely={handleSkipCompletely}
               saving={saving}
             />
           )}
           {step === 2 && (
-            <BirthDetailsStep
+            <WhoYouAreStep
               data={data}
               set={set}
               onContinue={() => goTo(3)}
@@ -473,14 +471,29 @@ function WhoYouAreStep({ data, set, onContinue, onBack, onSkipForNow, onSkipComp
 
 // ── Step 2: Birth Details ────────────────────────────────────────────────────
 
-function BirthDetailsStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
+function BirthDetailsStep({ data, set, onContinue, onBack, saving }) {
   const [calculating, setCalculating] = useState(false);
   const [astroResults, setAstroResults] = useState(null);
   const timerRef = useRef(null);
 
-  // Auto-calculate when birth_date changes
+  // Age check — non-skippable gate. Returns 'ok' | 'empty' | 'invalid' | 'under13'.
+  const dobStatus = (() => {
+    if (!data.birth_date) return 'empty';
+    const dob = new Date(data.birth_date);
+    if (isNaN(dob.getTime())) return 'invalid';
+    const now = new Date();
+    if (dob > now) return 'invalid';
+    if (dob.getFullYear() < 1900) return 'invalid';
+    let age = now.getFullYear() - dob.getFullYear();
+    const m = now.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+    if (age < 16) return 'underAge';
+    return 'ok';
+  })();
+
+  // Auto-calculate when birth_date changes (only once age gate passes)
   useEffect(() => {
-    if (!data.birth_date) { setAstroResults(null); return; }
+    if (dobStatus !== 'ok') { setAstroResults(null); return; }
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => calcAstro(), 800);
     return () => clearTimeout(timerRef.current);
@@ -522,16 +535,44 @@ function BirthDetailsStep({ data, set, onContinue, onBack, onSkipForNow, onSkipC
     finally { setCalculating(false); }
   }
 
+  // Persist birth fields immediately so PortraitPage is pre-populated even if
+  // the user later abandons onboarding via "Skip for now".
+  async function persistBirth() {
+    if (!data.birth_date) return;
+    try {
+      await apiFetch('/api/portrait', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          birth_date: data.birth_date,
+          birth_time: data.birth_time || '',
+          birth_location: data.birth_location || '',
+          sun_sign: data.sun_sign || '',
+          moon_sign: data.moon_sign || '',
+          rising_sign: data.rising_sign || '',
+          chinese_zodiac: data.chinese_zodiac || '',
+          chinese_element: data.chinese_element || '',
+          life_path_number: data.life_path_number,
+          soul_card: data.soul_card || '',
+          life_path_card: data.life_path_card || '',
+        }),
+      });
+    } catch {}
+  }
+
   function handleContinue() {
+    if (dobStatus !== 'ok') return;
     // If birth data entered but no astro results yet, calculate first
     if (data.birth_date && !astroResults && !calculating) {
-      calcAstro().then(() => onContinue());
+      calcAstro().then(() => persistBirth()).then(() => onContinue());
     } else {
-      onContinue();
+      persistBirth().then(() => onContinue());
     }
   }
 
   const { t } = useLanguage();
+  const today = new Date().toISOString().slice(0, 10);
+  const canContinue = dobStatus === 'ok' && !calculating;
 
   return (
     <>
@@ -546,9 +587,20 @@ function BirthDetailsStep({ data, set, onContinue, onBack, onSkipForNow, onSkipC
         style={s.input}
         type="date"
         value={data.birth_date}
+        max={today}
+        min="1900-01-01"
         onChange={(e) => set('birth_date', e.target.value)}
         autoFocus
       />
+      {dobStatus === 'empty' && (
+        <div style={s.hint}>{t('onboarding.dobRequiredHint')}</div>
+      )}
+      {dobStatus === 'invalid' && (
+        <div style={{ ...s.hint, color: 'var(--danger, #c0392b)' }}>{t('onboarding.dobInvalid')}</div>
+      )}
+      {dobStatus === 'underAge' && (
+        <div style={{ ...s.hint, color: 'var(--danger, #c0392b)' }}>{t('onboarding.dobUnderAge')}</div>
+      )}
 
       <label style={s.label}>{t('onboarding.timeOfBirth')}</label>
       <input
@@ -590,13 +642,12 @@ function BirthDetailsStep({ data, set, onContinue, onBack, onSkipForNow, onSkipC
       )}
 
       <button
-        style={{ ...s.btn, opacity: calculating ? 0.5 : 1 }}
+        style={{ ...s.btn, opacity: canContinue ? 1 : 0.5, cursor: canContinue ? 'pointer' : 'not-allowed' }}
         onClick={handleContinue}
-        disabled={calculating}
+        disabled={!canContinue}
       >
         {calculating ? t('onboarding.calculating') : data.birth_date ? t('onboarding.calculateContinue') : t('common.continue')}
       </button>
-      <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
     </>
   );
 }
