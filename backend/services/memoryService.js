@@ -869,33 +869,77 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
 
-  // Inject linked entry/note context when this session was created from "Let's talk about this"
+  // Inject linked entry/note context when this session was created from "Let's talk about this".
+  // Title/body/tags are encrypted at rest — decrypt before handing to the LLM, otherwise the
+  // model gets lenc:v1:<base64> blobs as text and starts hallucinating about the "encoded string".
   try {
     if (session?.source_entry_id) {
       const entry = db.prepare('SELECT title, body_text, date, tags FROM entries WHERE id = ? AND user_id = ?').get(session.source_entry_id, userId);
       if (entry) {
-        const tags = (() => { try { return JSON.parse(entry.tags || '[]'); } catch { return []; } })();
+        const title = safeDecrypt(userId, entry.title) || '';
+        const bodyText = safeDecrypt(userId, entry.body_text) || '';
+        const tagsRaw = safeDecrypt(userId, entry.tags) || entry.tags || '[]';
+        const tags = (() => { try { return JSON.parse(tagsRaw); } catch { return []; } })();
+        const reflectionText = (() => {
+          const r = db.prepare('SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?').get(session.source_entry_id, userId);
+          if (!r) return '';
+          try {
+            const decoded = JSON.parse(safeDecrypt(userId, r.blocks));
+            const opening = Array.isArray(decoded) ? null : (decoded.opening || null);
+            const blocks = Array.isArray(decoded) ? decoded : (decoded.blocks || []);
+            const parts = [];
+            if (opening) parts.push(opening);
+            for (const b of blocks) {
+              const t = (b?.title || '').trim();
+              const body = (b?.body || '').trim();
+              const quote = (b?.quote || '').trim();
+              if (!t && !body) continue;
+              parts.push(`${t ? `[${t}] ` : ''}${body}${quote ? `\n  > ${quote}` : ''}`);
+            }
+            return parts.join('\n\n');
+          } catch { return ''; }
+        })();
         sections.push(
           `THIS CONVERSATION IS ABOUT A SPECIFIC JOURNAL ENTRY. The user wants to explore and discuss this entry with you.\n\n` +
-          `Entry title: "${entry.title || 'Untitled'}"\n` +
+          `Entry title: "${title || 'Untitled'}"\n` +
           `Date: ${entry.date || 'unknown'}\n` +
           (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
-          `\nFull entry text:\n"""\n${entry.body_text || '(empty)'}\n"""\n\n` +
-          `Ground your responses in the content, emotions, and themes of this specific entry. Reference specific things they wrote. Help them go deeper into what they were feeling and thinking.`
+          `\nFull entry text:\n"""\n${bodyText || '(empty)'}\n"""\n` +
+          (reflectionText ? `\nMirror reflection saved on this entry:\n"""\n${reflectionText}\n"""\n` : '') +
+          `\nWhen the user asks about this entry, reference specific things they wrote — but stay short. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
         );
       }
     }
     if (session?.source_note_id) {
       const note = db.prepare('SELECT title, body, tags FROM notes WHERE id = ? AND user_id = ?').get(session.source_note_id, userId);
       if (note) {
-        const tags = (() => { try { return JSON.parse(note.tags || '[]'); } catch { return []; } })();
-        const noteText = (note.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        const title = safeDecrypt(userId, note.title) || '';
+        const body = safeDecrypt(userId, note.body) || '';
+        const tagsRaw = safeDecrypt(userId, note.tags) || note.tags || '[]';
+        const tags = (() => { try { return JSON.parse(tagsRaw); } catch { return []; } })();
+        const noteText = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        const reflectionText = (() => {
+          const r = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?').get(session.source_note_id, userId);
+          if (!r) return '';
+          try {
+            const blocks = JSON.parse(safeDecrypt(userId, r.blocks));
+            if (!Array.isArray(blocks)) return '';
+            return blocks.map(b => {
+              const t = (b?.title || '').trim();
+              const bd = (b?.body || '').trim();
+              const q = (b?.quote || '').trim();
+              if (!t && !bd) return '';
+              return `${t ? `[${t}] ` : ''}${bd}${q ? `\n  > ${q}` : ''}`;
+            }).filter(Boolean).join('\n\n');
+          } catch { return ''; }
+        })();
         sections.push(
           `THIS CONVERSATION IS ABOUT A SPECIFIC NOTE. The user wants to explore and discuss this note with you.\n\n` +
-          `Note title: "${note.title || 'Untitled'}"\n` +
+          `Note title: "${title || 'Untitled'}"\n` +
           (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
-          `\nFull note text:\n"""\n${noteText || '(empty)'}\n"""\n\n` +
-          `Ground your responses in the content and themes of this specific note. Reference specific things they wrote. Help them think through and develop their ideas further.`
+          `\nFull note text:\n"""\n${noteText || '(empty)'}\n"""\n` +
+          (reflectionText ? `\nMirror reflection saved on this note:\n"""\n${reflectionText}\n"""\n` : '') +
+          `\nWhen the user asks about this note, reference specific things they wrote — but stay short. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
         );
       }
     }

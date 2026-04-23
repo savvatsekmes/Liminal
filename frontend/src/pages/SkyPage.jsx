@@ -679,13 +679,15 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
       return;
     }
 
-    // Fetch one more from LLM
+    // Fetch one more from LLM. Pass already-pulled card ids so the backend
+    // can exclude them and avoid handing back a duplicate.
     setPulling(true);
     try {
+      const excludeIds = pulledCards.map(c => c.id).filter(id => Number.isFinite(id));
       const res = await apiFetch('/api/cards/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck, spread: spreadId, count: 1 }),
+        body: JSON.stringify({ deck, spread: spreadId, count: 1, excludeIds }),
       });
       const data = await res.json();
       if (data.cards?.length) {

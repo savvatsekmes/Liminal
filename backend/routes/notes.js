@@ -7,6 +7,7 @@ const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
 const threadService = require('../services/threadService');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
+const { applyPatchWithEditTracking, applyPutWithEditTracking } = require('../services/reflectionEdits');
 
 router.use(requireAuth);
 
@@ -379,13 +380,20 @@ router.put('/:id/reflect/blocks', (req, res) => {
   const owns = db.prepare('SELECT 1 FROM notes WHERE id = ? AND user_id = ?').get(noteId, req.userId);
   if (!owns) return res.status(404).json({ error: 'note not found' });
 
+  let oldBlocks = [];
+  try {
+    const prev = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?').get(noteId, req.userId);
+    if (prev) oldBlocks = JSON.parse(safeDecrypt(req.userId, prev.blocks));
+  } catch {}
+  const tracked = applyPutWithEditTracking(oldBlocks, blocks);
+
   try {
     db.prepare(`
       INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-    `).run(noteId, req.userId, encryptField(req.userId, JSON.stringify(blocks)));
-    res.json({ blocks });
+    `).run(noteId, req.userId, encryptField(req.userId, JSON.stringify(tracked)));
+    res.json({ blocks: tracked });
   } catch (err) {
     console.error('[notes] PUT reflect/blocks failed:', err.message);
     res.status(500).json({ error: 'Save failed.' });
@@ -412,7 +420,7 @@ router.patch('/:id/reflect/blocks/:index', (req, res) => {
     if (!Array.isArray(blocks) || index < 0 || index >= blocks.length) {
       return res.status(400).json({ error: 'index out of range' });
     }
-    blocks[index] = { ...blocks[index], ...patch };
+    blocks[index] = applyPatchWithEditTracking(blocks[index], patch);
     db.prepare(`
       INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)

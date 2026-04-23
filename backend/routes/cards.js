@@ -48,7 +48,12 @@ router.get('/decks', (req, res) => {
       : `/cards/tarot/major_${card.id}.jpg`;
     return { ...card, image: img };
   });
-  res.json({ tarot: tarotWithImages, oracle: oracleDeck, spreads });
+  // Oracle cards: placeholder jpg per id, replaceable by overwriting the file.
+  const oracleWithImages = oracleDeck.map(card => ({
+    ...card,
+    image: `/cards/oracle/oracle_${card.id}.jpg`,
+  }));
+  res.json({ tarot: tarotWithImages, oracle: oracleWithImages, spreads });
 });
 
 // ── GET /api/cards/daily — daily card (cached per day) ──────────────────────
@@ -83,6 +88,8 @@ router.get('/daily', async (req, res) => {
     image = raw.suit
       ? `/cards/tarot/${raw.suit}_${raw.rank}.jpg`
       : `/cards/tarot/major_${raw.id}.jpg`;
+  } else if (deck === 'oracle') {
+    image = `/cards/oracle/oracle_${raw.id}.jpg`;
   }
 
   const card = {
@@ -247,7 +254,7 @@ Format as clean HTML:
 // ── POST /api/cards/pull — LLM-guided card selection ────────────────────────
 // Blends intuition (LLM context) with randomness for card pulls
 router.post('/pull', async (req, res) => {
-  const { deck, spread, count } = req.body;
+  const { deck, spread, count, excludeIds } = req.body;
   if (!deck || !spread) {
     return res.status(400).json({ error: 'deck and spread are required' });
   }
@@ -255,8 +262,13 @@ router.post('/pull', async (req, res) => {
   const spreadObj = spreads.find(s => s.id === spread);
   if (!spreadObj) return res.status(400).json({ error: 'Unknown spread' });
 
-  const deckCards = deck === 'tarot' ? tarotDeck : oracleDeck;
-  const numCards = count || spreadObj.cardCount || 1;
+  const fullDeck = deck === 'tarot' ? tarotDeck : oracleDeck;
+  // Filter out cards already pulled in this session (frontend sends ids on
+  // "Pull another card" so the same card can't appear twice in a Free Pull).
+  const excludeSet = new Set(Array.isArray(excludeIds) ? excludeIds.filter(n => Number.isFinite(n)) : []);
+  const deckCards = excludeSet.size ? fullDeck.filter(c => !excludeSet.has(c.id)) : fullDeck;
+  const numCards = Math.min(count || spreadObj.cardCount || 1, deckCards.length);
+  if (numCards <= 0) return res.json({ cards: [] });
 
   // Gather context
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
@@ -361,8 +373,19 @@ Respond with ONLY a JSON array, no other text:
 
     const selections = JSON.parse(jsonMatch[0]);
 
+    // Dedupe LLM selections by id — the model occasionally repeats a card
+    // across multiple positions in larger spreads. Keep the first occurrence
+    // and let the random-fill below cover the missing slots.
+    const seenIds = new Set();
+    const uniqueSelections = [];
+    for (const sel of selections) {
+      if (!sel || typeof sel.id !== 'number' || seenIds.has(sel.id)) continue;
+      seenIds.add(sel.id);
+      uniqueSelections.push(sel);
+    }
+
     // Map selections back to full card data
-    const result = selections.slice(0, numCards).map((sel, i) => {
+    const result = uniqueSelections.slice(0, numCards).map((sel, i) => {
       const card = deckCards.find(c => c.id === sel.id);
       if (!card) return null;
       return {

@@ -10,6 +10,7 @@ const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
+const { applyPatchWithEditTracking, applyPutWithEditTracking } = require('../services/reflectionEdits');
 
 router.use(requireAuth);
 
@@ -201,12 +202,24 @@ router.put('/:entryId/blocks', (req, res) => {
   const owns = db.prepare('SELECT 1 FROM entries WHERE id = ? AND user_id = ?').get(entryId, req.userId);
   if (!owns) return res.status(404).json({ error: 'entry not found' });
 
+  // Pull the previous saved blocks so we can flag any block whose content
+  // differs from what was there before as `edited: true`.
+  let oldBlocks = [];
+  try {
+    const prev = db.prepare('SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?').get(entryId, req.userId);
+    if (prev) {
+      const saved = JSON.parse(safeDecrypt(req.userId, prev.blocks));
+      oldBlocks = Array.isArray(saved) ? saved : (saved.blocks || []);
+    }
+  } catch {}
+  const tracked = applyPutWithEditTracking(oldBlocks, blocks);
+
   try {
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify({ opening, blocks })));
-    res.json({ opening, blocks });
+    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify({ opening, blocks: tracked })));
+    res.json({ opening, blocks: tracked });
   } catch (err) {
     console.error('[reflect] PUT blocks failed:', err.message);
     res.status(500).json({ error: 'Save failed.' });
@@ -237,7 +250,7 @@ router.patch('/:entryId/blocks/:index', (req, res) => {
     const opening = Array.isArray(saved) ? null : (saved.opening || null);
     const blocks = Array.isArray(saved) ? saved : (saved.blocks || []);
     if (index < 0 || index >= blocks.length) return res.status(400).json({ error: 'index out of range' });
-    blocks[index] = { ...blocks[index], ...patch };
+    blocks[index] = applyPatchWithEditTracking(blocks[index], patch);
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`

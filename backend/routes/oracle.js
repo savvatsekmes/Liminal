@@ -134,17 +134,21 @@ router.post('/sessions', (req, res) => {
 
   // Inherit the title from the source entry/note so the linked chat is
   // identifiable in the sessions list instead of showing "New conversation".
+  // Title/body columns are encrypted at rest — decrypt before using as a label.
   let title = null;
   if (sourceEntryId) {
     const src = db.prepare('SELECT title FROM entries WHERE id = ? AND user_id = ?').get(sourceEntryId, req.userId);
-    if (src?.title) title = src.title;
+    const decTitle = src ? safeDecrypt(req.userId, src.title) : null;
+    if (decTitle) title = decTitle;
   } else if (sourceNoteId) {
     const src = db.prepare('SELECT title, body FROM notes WHERE id = ? AND user_id = ?').get(sourceNoteId, req.userId);
-    if (src?.title) {
-      title = src.title;
-    } else if (src?.body) {
+    const decTitle = src ? safeDecrypt(req.userId, src.title) : null;
+    const decBody = src ? safeDecrypt(req.userId, src.body) : null;
+    if (decTitle) {
+      title = decTitle;
+    } else if (decBody) {
       // Notes often have no title — fall back to the first line of body (plain text, trimmed to 80)
-      const firstLine = String(src.body).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+      const firstLine = String(decBody).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
       if (firstLine) title = firstLine;
     }
   }

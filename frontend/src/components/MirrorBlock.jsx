@@ -106,6 +106,14 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
   const editable = typeof onChange === 'function' || typeof onPatch === 'function';
   const isManual = block.archetype === 'Manual';
   const isImported = block.source === 'imported' || block.archetype === 'Imported';
+  const isEdited = !!block.edited && !isManual;
+
+  // Provenance labels shown next to the block title, comma-separated.
+  const provenance = [
+    isManual ? 'added manually' : null,
+    isImported ? 'imported' : null,
+    isEdited ? 'edited' : null,
+  ].filter(Boolean).join(' · ');
 
   async function handleListen() {
     if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
@@ -166,7 +174,7 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
         ) : (
           <div style={s.title}>
             {block.title}
-            {isImported && (
+            {provenance && (
               <span style={{
                 marginLeft: 8,
                 fontSize: '10px',
@@ -174,7 +182,7 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
                 fontStyle: 'italic',
                 color: 'var(--muted)',
                 letterSpacing: '0.3px',
-              }}>imported</span>
+              }}>{provenance}</span>
             )}
           </div>
         )}

@@ -353,10 +353,14 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
 
     setPulling(true);
     try {
+      // Send already-pulled card ids so the backend can exclude them from the
+      // next selection — without this, the same card can be re-picked across
+      // multiple "Pull another card" clicks (the LLM has no session memory).
+      const excludeIds = pulledCards.map(c => c.id).filter(id => Number.isFinite(id));
       const res = await apiFetch('/api/cards/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck, spread: spreadId, count: 1 }),
+        body: JSON.stringify({ deck, spread: spreadId, count: 1, excludeIds }),
       });
       const data = await res.json();
       if (data.cards?.length) {

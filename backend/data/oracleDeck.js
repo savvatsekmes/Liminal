@@ -1,4 +1,4 @@
-// Liminal Oracle Deck — 36 archetype/threshold cards
+// Liminal Oracle Deck — 64 archetype/threshold cards
 // No reversed meanings (oracle tradition — all cards read upright)
 
 module.exports = [
@@ -37,5 +37,33 @@ module.exports = [
   { id: 33, name: 'The Shield',     meaning: 'Protect your energy. Not everything that comes toward you requires a response.' },
   { id: 34, name: 'The Dance',      meaning: 'Life is asking you to move with it, not against it. Rhythm, not rigidity, is the way through.' },
   { id: 35, name: 'The Silence',    meaning: 'Be quiet long enough to hear. The answer is not in more words — it is in the space between them.' },
-  { id: 36, name: 'The Return',     meaning: 'You are coming home — to a place, a person, a version of yourself. The circle is completing.' },
+  { id: 36, name: 'The Return',       meaning: 'You are coming home — to a place, a person, a version of yourself. The circle is completing.' },
+  { id: 37, name: 'The Breath',       meaning: 'Come back to the body. This is where you are.' },
+  { id: 38, name: 'The Boundary',     meaning: 'Where you end and another begins. Draw it.' },
+  { id: 39, name: 'The Blockage',     meaning: 'What is stopped here. Name it before you force it.' },
+  { id: 40, name: 'The Rage',         meaning: 'Something was violated. This anger is information.' },
+  { id: 41, name: 'The Grief',        meaning: 'Let it move through. It only hardens when you hold it still.' },
+  { id: 42, name: 'The Fear',         meaning: 'Beneath the fear is the thing that matters most to you.' },
+  { id: 43, name: 'The Noise',        meaning: "Step back from the signal. What's actually yours?" },
+  { id: 44, name: 'The Desire',       meaning: 'What do you want. Not what you should want. What you want.' },
+  { id: 45, name: 'The Disillusion',  meaning: "The story broke. Good. Now see what's actually there." },
+  { id: 46, name: 'The Compassion',   meaning: 'Give yourself what you would give someone you love.' },
+  { id: 47, name: 'The Trigger',      meaning: 'Trace it back. This reaction is older than today.' },
+  { id: 48, name: 'The Sovereignty',  meaning: 'No one is coming to give you permission.' },
+  { id: 49, name: 'The Softening',    meaning: 'Stop bracing. You are safe enough to open.' },
+  { id: 50, name: 'The Intuition',    meaning: 'You already know. Stop asking for proof.' },
+  { id: 51, name: 'The Play',         meaning: 'Not everything is heavy. Let yourself be light.' },
+  { id: 52, name: 'The Patience',     meaning: 'The timing is not yours to control. Trust the season.' },
+  { id: 53, name: 'The Trust',        meaning: 'Fall in the direction of life. It has held you before.' },
+  { id: 54, name: 'The Tears',        meaning: 'Crying is not weakness. It is the body releasing what words cannot.' },
+  { id: 55, name: 'The Hunger',       meaning: 'What are you actually starving for beneath the surface need?' },
+  { id: 56, name: 'The Unknown',      meaning: "You don't need to know yet. Unknowing is its own kind of wisdom." },
+  { id: 57, name: 'The Courage',      meaning: 'Not the absence of fear. The step taken anyway.' },
+  { id: 58, name: 'The Expand',       meaning: "You've been small for long enough. Let yourself take up space." },
+  { id: 59, name: 'The Simplify',     meaning: 'What can be put down. What actually needs to stay.' },
+  { id: 60, name: 'The Nurture',      meaning: 'What in you needs tending right now, not later.' },
+  { id: 61, name: 'The Abundance',    meaning: 'You are not running out. There is enough and you are enough.' },
+  { id: 62, name: 'The Humility',     meaning: "The teaching is here. In this. In what you'd rather avoid." },
+  { id: 63, name: 'The Exhale',       meaning: "It's over. You can stop holding now." },
+  { id: 64, name: 'The Crossing',     meaning: 'You are in the middle. Neither shore is close. Keep going.' },
 ];
