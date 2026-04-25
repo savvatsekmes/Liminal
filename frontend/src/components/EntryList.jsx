@@ -602,9 +602,10 @@ function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
   const isFight = tags.includes('fights');
   const isBreakthrough = tags.includes('breakthrough') || entry.breakthrough_level != null;
   // Right-side emoji strip — shows the glyph for every tag on the entry,
-  // including `breakthrough` (🫠) and `fights` (🔥) even though those also
-  // render as dedicated signals on the meta line.
-  const emojiTags = tagEmojisFromTags(tags);
+  // manual + auto. Includes auto_tags so historical entries (before
+  // auto-tagging was removed) still surface their LLM-applied glyphs.
+  // tagEmojisFromTags dedupes, so manual takes precedence on collisions.
+  const emojiTags = tagEmojisFromTags([...tags, ...(entry.auto_tags || [])]);
 
   return (
     <div

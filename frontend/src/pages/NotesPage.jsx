@@ -905,7 +905,7 @@ function NoteListItem({ note, active, onClick, onDelete, onNavigateToChat }) {
       )}
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '2px' }}>
-          {(note.tags || []).length > 0 ? (note.tags || []).map(t => tagLabel(t)).join(' · ') + ' · ' : ''}{formatDate(note.created_at)}
+          {(note.tags || []).length > 0 ? (note.tags || []).join(' · ') + ' · ' : ''}{formatDate(note.created_at)}
         </div>
         <div style={{
           fontSize: '12px',

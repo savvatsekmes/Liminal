@@ -7,7 +7,7 @@ const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
 const threadService = require('../services/threadService');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
-const { applyPatchWithEditTracking, applyPutWithEditTracking } = require('../services/reflectionEdits');
+const { applyPatchWithEditTracking, applyPutWithEditTracking, sanitiseQuote } = require('../services/reflectionEdits');
 
 router.use(requireAuth);
 
@@ -354,6 +354,10 @@ Rules:
     if (singleArchetype) {
       blocks = blocks.map(b => ({ ...b, archetype: singleArchetype }));
     }
+
+    // Coerce LLM-emitted "null"/"undefined"/"none" string quotes to real null
+    // so the frontend doesn't render the literal word as a quote.
+    blocks = blocks.map(sanitiseQuote);
 
     // Persist the reflection
     db.prepare(`

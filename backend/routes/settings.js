@@ -431,9 +431,15 @@ router.post('/backup', express.json(), async (req, res) => {
   const { password } = req.body || {};
   if (!password) return res.status(400).json({ error: 'Password required for encrypted backup' });
 
-  // Verify password against any existing user
+  // Verify the password against the LOGGED-IN user — not just whichever user
+  // happens to have id=1. With multi-account, the old `ORDER BY id LIMIT 1`
+  // query always rejected non-primary accounts (bug surfaced when a second
+  // account tried to back up with their own password).
   const bcrypt = require('bcryptjs');
-  const user = db.prepare('SELECT password_hash FROM users ORDER BY id LIMIT 1').get();
+  const userId = resolveUserId(req);
+  const user = userId
+    ? db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId)
+    : db.prepare('SELECT password_hash FROM users ORDER BY id LIMIT 1').get();
   if (!user) return res.status(401).json({ error: 'No user account found' });
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ error: 'Incorrect password' });

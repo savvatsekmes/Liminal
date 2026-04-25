@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useResizable } from '../hooks/useResizable';
@@ -249,10 +249,21 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
   const [generating, setGenerating] = useState(false);
   const [editingPortrait, setEditingPortrait] = useState(false);
   const astroTimer = useRef(null);
-  const [portraitPanelWidth, startPortraitPanelDrag] = useResizable(
+  const [portraitPanelWidth, startPortraitPanelDrag, setPortraitPanelWidth] = useResizable(
     Math.floor((window.innerWidth - 48) / 2),
     { min: 280, max: window.innerWidth - 48 - 280 }
   );
+  // Measure the actual page container after mount so the right panel takes
+  // EXACTLY half AFTER subtracting the 9px ResizeDivider sitting between the
+  // two columns. The left column is `flex: 1` so it absorbs the remainder —
+  // setting the right panel to (containerW - 9) / 2 makes both visible
+  // halves identical instead of leaving the left ~9px narrower.
+  const splitContainerRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!splitContainerRef.current || isMobile) return;
+    const measured = splitContainerRef.current.clientWidth;
+    if (measured > 0) setPortraitPanelWidth(Math.floor((measured - 9) / 2));
+  }, [isMobile, setPortraitPanelWidth]);
 
   useEffect(() => {
     apiFetch('/api/portrait')
@@ -374,7 +385,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
       <div style={s.pageSubtitle}>Do not try and bend the spoon — that's impossible. Instead, only try to realise the truth: there is no spoon.</div>
       <AILabel compact />
       <div style={tabBarStyle}>
-        {['portrait', 'sky', 'cards'].map(tb => (
+        {['portrait', 'cards', 'sky'].map(tb => (
           <button key={tb} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>
             {tb === 'portrait' ? 'Portrait' : tb === 'sky' ? 'Sky' : 'Cards'}
           </button>
@@ -396,7 +407,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       {oracleHeader}
-    <div style={{ ...s.root, ...(isMobile ? { flexDirection: 'column', overflowY: 'auto' } : {}) }}>
+    <div ref={splitContainerRef} style={{ ...s.root, ...(isMobile ? { flexDirection: 'column', overflowY: 'auto' } : {}) }}>
       {/* ── Left: form column ── */}
       <div style={{ ...s.formCol, paddingTop: '0', ...(isMobile ? { padding: '0 16px 24px', overflowY: 'visible', flex: 'none' } : {}) }}>
 

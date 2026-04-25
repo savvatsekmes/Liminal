@@ -108,6 +108,18 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
   const isImported = block.source === 'imported' || block.archetype === 'Imported';
   const isEdited = !!block.edited && !isManual;
 
+  // Local LLMs occasionally emit the string "null" (or "undefined") as the
+  // quote value instead of an actual null. Treat those as empty so the UI
+  // doesn't render `"null"` as a quote bubble.
+  const realQuote = (() => {
+    if (!block.quote) return '';
+    const s = String(block.quote).trim();
+    if (!s) return '';
+    const lower = s.toLowerCase();
+    if (lower === 'null' || lower === 'undefined' || lower === 'none') return '';
+    return s;
+  })();
+
   // Provenance labels shown next to the block title, comma-separated.
   const provenance = [
     isManual ? 'added manually' : null,
@@ -117,7 +129,7 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
 
   async function handleListen() {
     if (playing) { stopSpeak(audioRef, cancelRef); setPlaying(false); return; }
-    const text = (block.title ? block.title + '. ' : '') + (block.body || '') + (block.quote ? ' ' + block.quote : '');
+    const text = (block.title ? block.title + '. ' : '') + (block.body || '') + (realQuote ? ' ' + realQuote : '');
     if (!text.trim()) return;
     cancelRef.current = false;
     setPlaying(true);
@@ -200,9 +212,9 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
           <div style={s.body}>{renderBody(block.body)}</div>
         )}
 
-        {editable && (block.quote || hovered) ? (
+        {editable && (realQuote || hovered) ? (
           <EditableField
-            value={block.quote || ''}
+            value={realQuote}
             onCommit={(v) => commitField('quote', v || null)}
             placeholder="Quote (optional)"
             multiline
@@ -210,8 +222,8 @@ export default function MirrorBlock({ block, overrideArchetype, onChange, onPatc
             inputStyle={{ fontStyle: 'italic', color: 'var(--muted)' }}
             wrapInQuotes
           />
-        ) : block.quote ? (
-          <div style={s.quote}>"{block.quote}"</div>
+        ) : realQuote ? (
+          <div style={s.quote}>"{realQuote}"</div>
         ) : null}
 
         {block.echo && block.echo.snippet ? (

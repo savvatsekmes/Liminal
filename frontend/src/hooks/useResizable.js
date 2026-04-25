@@ -43,5 +43,13 @@ export function useResizable(defaultWidth, { min = 120, max = 800 } = {}) {
     [min, max],
   );
 
-  return [width, startDrag];
+  // Imperative setter — used to sync the initial width to the actual measured
+  // container width (window.innerWidth often differs from page width by the
+  // sidebar/strip, throwing a 50/50 default off by N pixels).
+  const setExplicit = useCallback((n) => {
+    widthRef.current = n;
+    setWidth(n);
+  }, []);
+
+  return [width, startDrag, setExplicit];
 }

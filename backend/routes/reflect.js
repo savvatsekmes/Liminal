@@ -10,7 +10,7 @@ const { buildYoutubeContext } = require('./youtube');
 const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
-const { applyPatchWithEditTracking, applyPutWithEditTracking } = require('../services/reflectionEdits');
+const { applyPatchWithEditTracking, applyPutWithEditTracking, sanitiseQuote } = require('../services/reflectionEdits');
 
 router.use(requireAuth);
 
@@ -81,6 +81,11 @@ router.post('/', async (req, res) => {
       blocks = blocks.map(b => ({ ...b, archetype: singleArchetype }));
     }
 
+    // Local LLMs sometimes emit the literal string "null" as the quote field
+    // instead of a real JSON null. Coerce those (and "undefined", "none",
+    // empty strings) to null so the frontend doesn't render `"null"`.
+    blocks = blocks.map(sanitiseQuote);
+
     // 4. Echo: find a relevant snippet from a past entry and attach it to the
     // most thematically related block. Best-effort, never blocks the response.
     if (entryId && text && text.length >= 200 && blocks.length) {
@@ -124,35 +129,13 @@ router.post('/', async (req, res) => {
         // Extract discrete memory items from this entry
         await memory.extractAndStoreMemories(text, buildPortraitString(portrait), userId, entryId);
 
-        // Auto-tag — write to auto_tags so the LLM-origin tags stay separate
-        // from the user's manual tags. Manual wins: anything already in `tags`
-        // is dropped from the auto set so a tag never lives in both at once.
-        if (entryId) {
-          const generated = await autoTag(text);
-          if (generated.length) {
-            const existing = db.prepare('SELECT tags FROM entries WHERE id = ? AND user_id = ?').get(entryId, userId);
-            let manual = [];
-            try { manual = JSON.parse(existing?.tags || '[]'); } catch {}
-            const manualSet = new Set(manual.map((t) => String(t || '').trim().toLowerCase()));
-            const seen = new Set();
-            const auto = [];
-            for (const t of generated) {
-              const c = String(t || '').trim().toLowerCase();
-              if (!c || seen.has(c) || manualSet.has(c)) continue;
-              seen.add(c);
-              auto.push(c);
-            }
-            db.prepare('UPDATE entries SET auto_tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?').run(
-              JSON.stringify(auto),
-              entryId,
-              userId
-            );
-          }
-        }
+        // Auto-tagging on reflect was removed by request — the user found the
+        // LLM-applied tags noisy and not particularly useful. Manual tags are
+        // the only source of truth for entry tagging now. Threads still get a
+        // bead per entry (below); they just lose auto_tags as a match signal.
 
         // Place a rosary bead on the Threads graph: match this entry against
-        // existing threads now that auto_tags have been written (auto_tags are
-        // a strong match signal). User already has their reflection on screen.
+        // existing threads. User already has their reflection on screen.
         if (entryId) {
           try {
             await threadService.threadSingleItem('entry', entryId, userId);
@@ -340,7 +323,7 @@ Return ONLY the JSON object.`;
   try {
     const raw = await llm.call(systemPrompt, `Journal entry:\n\n${entryText}`, { maxTokens: 600 });
     const parsed = extractJsonObject(raw);
-    const block = parsed || { title: blockTitle || 'Reflection', body: raw, quote: null, archetype: isAuto ? 'Auto' : archetype };
+    const block = sanitiseQuote(parsed || { title: blockTitle || 'Reflection', body: raw, quote: null, archetype: isAuto ? 'Auto' : archetype });
     res.json(block);
   } catch (err) {
     console.error('[reflect/block] Error:', err.message);

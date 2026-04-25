@@ -434,7 +434,7 @@ function GeneratingDots({ label }) {
 
 // ── Main Page ───────────────────────────────────────────────────────────────
 
-const TABS = ['sky', 'cards'];
+const TABS = ['cards', 'sky'];
 
 export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
   const { t } = useLanguage();
@@ -473,7 +473,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
 
   // ── Resizable split ──
   const contentRef = useRef(null);
-  const [splitPct, setSplitPct] = useState(55);
+  const [splitPct, setSplitPct] = useState(50);
   const startDrag = useCallback((e) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -828,7 +828,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
     <div style={{ ...s.root, ...(isMobile ? { flexDirection: 'column', overflowY: 'auto' } : {}) }} ref={contentRef}>
 
       {/* ── LEFT COLUMN ──────────────────────────────────────────────────── */}
-      <div style={{ ...s.leftCol, width: isMobile ? '100%' : `${splitPct}%`, ...(isMobile ? { overflowY: 'visible', flexShrink: 0 } : {}) }}>
+      <div style={{ ...s.leftCol, width: isMobile ? '100%' : `calc(${splitPct}% - 4.5px)`, ...(isMobile ? { overflowY: 'visible', flexShrink: 0 } : {}) }}>
         <div style={{ ...s.leftInner, ...(isMobile ? { padding: '20px 16px 80px' } : {}) }}>
 
           {/* Tabs */}
@@ -851,7 +851,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
           {tab === 'sky' && !loading && !skyData && <div style={s.loading}>Unable to load sky data.</div>}
 
           {tab === 'sky' && !loading && skyData && (
-            <>
+            <div style={{ paddingLeft: '15px' }}>
               {/* Moon */}
               <div style={s.section}>
                 <div style={s.sectionLabel}>Moon</div>
@@ -955,12 +955,12 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                   </div>
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {/* ── CARDS TAB LEFT: settings ───────────────────────────────── */}
           {tab === 'cards' && (
-            <>
+            <div style={{ paddingLeft: '15px' }}>
               <div style={s.sectionLabel}>Deck</div>
               <div style={s.pillRow}>
                 <button
@@ -1033,7 +1033,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                   </button>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
 
@@ -1041,7 +1041,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
             the 600px controls-width. Renders the full leftCol width, letting
             many more cards fit per row before wrapping. */}
         {tab === 'cards' && pulledCards && (
-          <div style={{ padding: '0 36px 60px' }}>
+          <div style={{ padding: '0 36px 60px 51px' }}>
             <div style={{ ...s.sectionLabel, marginBottom: '4px' }}>Reading</div>
             <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '14px' }}>
               Your pulled cards
@@ -1129,7 +1129,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
       {!isMobile && <ResizeDivider onMouseDown={startDrag} inverted />}
 
       {/* ── RIGHT COLUMN — stacked below on mobile ──────────────────────── */}
-      <div style={{ ...s.rightCol, width: isMobile ? '100%' : `${100 - splitPct}%`, ...(isMobile ? { borderTop: 'var(--border-style)', overflow: 'visible' } : {}) }}>
+      <div style={{ ...s.rightCol, width: isMobile ? '100%' : `calc(${100 - splitPct}% - 4.5px)`, ...(isMobile ? { borderTop: 'var(--border-style)', overflow: 'visible' } : {}) }}>
 
         {/* ── SKY TAB RIGHT: astrology summary panel ───────────────────── */}
         {tab === 'sky' && (
