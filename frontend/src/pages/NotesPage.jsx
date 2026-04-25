@@ -1694,13 +1694,16 @@ async function handlePolish() {
         <CardPullModal
           onClose={() => setCardModalOpen(false)}
           onInsert={(data) => {
+            // focus('end') clears any lingering NodeSelection (which CardReading
+            // sets on dragstart) — without this, a second card-reading insert
+            // would replace an existing selected one instead of appending.
             if (data.type === 'cardReading') {
-              editorRef.current?.chain().focus().insertContent({
+              editorRef.current?.chain().focus('end').insertContent({
                 type: 'cardReading',
                 attrs: data.attrs,
               }).run();
             } else {
-              editorRef.current?.chain().focus().insertContent(data).run();
+              editorRef.current?.chain().focus('end').insertContent(data).run();
             }
             setCardModalOpen(false);
           }}

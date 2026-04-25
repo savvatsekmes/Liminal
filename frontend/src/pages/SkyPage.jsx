@@ -4,6 +4,7 @@ import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
 import ResizeDivider from '../components/ResizeDivider';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { CardDetailPopup } from '../extensions/CardReading';
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
@@ -242,7 +243,7 @@ const s = {
   },
   cardRow: {
     display: 'flex',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: '16px',
     flexWrap: 'wrap',
     marginBottom: '20px',
@@ -346,7 +347,14 @@ const s = {
   },
 };
 
-const CARD_BACK = '/cards/card-back.png';
+// Per-deck back lives in each deck folder. Unknown deck → fall back to tarot back.
+const DECK_BACKS = {
+  tarot:  '/cards/Tarot_Deck/card-back_tarot.png',
+  oracle: '/cards/Oracle_Deck/card-back_oracle.png',
+};
+function backFor(deck) {
+  return DECK_BACKS[deck] || DECK_BACKS.tarot;
+}
 
 // Fisher-Yates shuffle
 function shuffle(arr) {
@@ -450,6 +458,9 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
   const [decksData, setDecksData] = useState(null);
   const [deck, setDeck] = useState(null);
   const [spreadId, setSpreadId] = useState(null);
+  const [question, setQuestion] = useState('');
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [readingSaved, setReadingSaved] = useState(false);
   const [pulledCards, setPulledCards] = useState(null);
   const [flipped, setFlipped] = useState([]);
   const [cardReading, setCardReading] = useState(null);
@@ -579,7 +590,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
       const res = await apiFetch('/api/cards/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck, spread: spreadId, count: numCards }),
+        body: JSON.stringify({ deck, spread: spreadId, count: numCards, question: question.trim() || undefined }),
       });
       const data = await res.json();
       if (!data.cards?.length) throw new Error('No cards returned');
@@ -687,7 +698,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
       const res = await apiFetch('/api/cards/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck, spread: spreadId, count: 1, excludeIds }),
+        body: JSON.stringify({ deck, spread: spreadId, count: 1, excludeIds, question: question.trim() || undefined }),
       });
       const data = await res.json();
       if (data.cards?.length) {
@@ -717,6 +728,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
   async function handleGenerateReading() {
     if (!pulledCards || cardGenerating) return;
     setCardGenerating(true);
+    setReadingSaved(false); // regenerating produces a new reading; unsave.
 
     const cardsPayload = pulledCards.map(c => ({
       name: c.name,
@@ -730,7 +742,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
       const res = await apiFetch('/api/cards/reading', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck, spread: spreadId, cards: cardsPayload, entryText: '' }),
+        body: JSON.stringify({ deck, spread: spreadId, cards: cardsPayload, entryText: '', question: question.trim() || undefined }),
       });
       const data = await res.json();
       if (data.reading) {
@@ -744,12 +756,56 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
     }
   }
 
+  // Save the current pulled cards + reading as a new journal entry. Mirrors
+  // the HomePage daily-card flow — builds a <div data-card-reading> block
+  // that the entry editor parses back into a CardReading node on load.
+  async function handleSaveReadingToJournal() {
+    if (!pulledCards || !cardReading || readingSaved) return;
+    const encode = (str) => { try { return btoa(unescape(encodeURIComponent(str || ''))); } catch { return ''; } };
+
+    const cardData = pulledCards.map(c => ({
+      name: c.name,
+      image: c.image || null,
+      position: c.position,
+      reversed: !!c.reversed,
+      upright: c.upright || c.meaning || '',
+      meaning: c.meaning || '',
+      reversed_meaning: c.reversed_meaning || '',
+    }));
+
+    const spreadObj = decksData?.spreads.find(sp => sp.id === spreadId);
+    const spreadLabel = spreadObj ? t(spreadObj.nameKey) : spreadId;
+    const deckLabel = deck === 'tarot' ? 'Tarot' : 'Oracle';
+    const q = question.trim();
+    const title = q ? `${deckLabel} Reading — ${q.slice(0, 60)}` : `${deckLabel} Reading — ${spreadLabel}`;
+
+    const cardHtml = `<div data-card-reading data-cards="${encode(JSON.stringify(cardData))}" data-reading="${encode(cardReading)}" data-deck-type="${deck}" data-spread-name="${spreadLabel}"></div>`;
+    const questionHtml = q ? `<p><em>Question: ${q.replace(/</g, '&lt;')}</em></p>` : '';
+    const body = questionHtml + cardHtml;
+
+    try {
+      const res = await apiFetch('/api/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, body }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setReadingSaved(true);
+      window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
+    } catch (err) {
+      console.error('[cards] save to journal failed:', err);
+    }
+  }
+
   function handleStartOver() {
     setPulledCards(null);
     setFlipped([]);
     setCardReading(null);
     setSpreadId(null);
     setDeck(null);
+    setQuestion('');
+    setSelectedCard(null);
+    setReadingSaved(false);
     shuffledDeckRef.current = null;
     drawIndexRef.current = 0;
   }
@@ -939,9 +995,35 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
               )}
 
               {deck && spreadId && !pulledCards && (
-                <button style={{ ...s.actionBtn, opacity: pulling ? 0.5 : 1 }} onClick={handlePull} disabled={pulling}>
-                  {pulling ? t('cards.drawing') || 'Drawing…' : t('cards.pull')}
-                </button>
+                <>
+                  <div style={s.sectionLabel}>{t('cards.questionLabel') || 'Your question (optional)'}</div>
+                  <textarea
+                    style={{
+                      width: '100%',
+                      minHeight: '44px',
+                      maxHeight: '120px',
+                      padding: '10px 12px',
+                      fontSize: '13px',
+                      fontFamily: 'var(--font)',
+                      color: 'var(--body)',
+                      background: 'var(--white)',
+                      border: 'var(--border-style)',
+                      borderRadius: '10px',
+                      outline: 'none',
+                      resize: 'vertical',
+                      marginBottom: '16px',
+                      boxSizing: 'border-box',
+                    }}
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder={t('cards.questionPlaceholder') || 'What are you sitting with? Leave blank for an open reading.'}
+                    rows={2}
+                    disabled={pulling}
+                  />
+                  <button style={{ ...s.actionBtn, opacity: pulling ? 0.5 : 1 }} onClick={handlePull} disabled={pulling}>
+                    {pulling ? t('cards.drawing') || 'Drawing…' : t('cards.pull')}
+                  </button>
+                </>
               )}
 
               {pulledCards && (
@@ -954,6 +1036,93 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
             </>
           )}
         </div>
+
+        {/* Pulled cards live OUTSIDE leftInner so they aren't constrained to
+            the 600px controls-width. Renders the full leftCol width, letting
+            many more cards fit per row before wrapping. */}
+        {tab === 'cards' && pulledCards && (
+          <div style={{ padding: '0 36px 60px' }}>
+            <div style={{ ...s.sectionLabel, marginBottom: '4px' }}>Reading</div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '14px' }}>
+              Your pulled cards
+            </div>
+            {question.trim() && (
+              <div style={{
+                fontSize: '12px',
+                color: 'var(--body)',
+                fontStyle: 'italic',
+                lineHeight: '1.5',
+                padding: '10px 14px',
+                background: 'var(--near-white)',
+                borderLeft: '3px solid var(--strong)',
+                borderRadius: '0 8px 8px 0',
+                marginBottom: '16px',
+              }}>
+                <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: '8px' }}>Your question</span>
+                {question.trim()}
+              </div>
+            )}
+            <div style={s.cardRow}>
+              {pulledCards.map((card, i) => (
+                <div key={i} style={s.cardSlot}>
+                  <div
+                    style={{ ...s.flipContainer, cursor: flipped[i] ? 'pointer' : 'default' }}
+                    onClick={() => { if (flipped[i]) setSelectedCard(card); }}
+                    title={flipped[i] ? 'Click for meaning' : ''}
+                  >
+                    <div style={{
+                      ...s.flipInner,
+                      transform: flipped[i] ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                    }}>
+                      <div style={s.flipFace}>
+                        <img src={backFor(deck)} alt="Card back" style={s.cardImg} />
+                      </div>
+                      <div style={{ ...s.flipFace, transform: 'rotateY(180deg)' }}>
+                        {card.image ? (
+                          <img
+                            src={card.image}
+                            alt={card.name}
+                            style={{
+                              ...s.cardImg,
+                              transform: card.reversed ? 'rotate(180deg)' : 'none',
+                            }}
+                          />
+                        ) : (
+                          <div style={s.oracleCard}>
+                            <div style={s.oracleDiamond} />
+                            <div style={s.oracleName}>{card.name}</div>
+                            <div style={s.oracleMeaning}>{card.meaning}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {flipped[i] && (
+                    <div style={{ opacity: 1, transition: 'opacity 0.3s' }}>
+                      <div style={s.cardPosition}>{card.position}</div>
+                      <div style={s.cardName}>{card.name}</div>
+                      {card.reversed && <span style={s.reversed}>{t('cards.reversed')}</span>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {canPullMore && !cardReading && (
+              <button
+                style={{ ...s.ghostBtn, marginTop: '12px', marginBottom: '8px' }}
+                onClick={handlePullAnother}
+              >
+                + {t('cards.pullAnother')}
+              </button>
+            )}
+            {isFreePull && pulledCards.length >= freePullMax && allFlipped && !cardReading && (
+              <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '12px' }}>
+                {t('cards.maxReached')}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── DIVIDER ──────────────────────────────────────────────────────── */}
@@ -1030,12 +1199,12 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
           </>
         )}
 
-        {/* ── CARDS TAB RIGHT: pulled cards + reading ──────────────────── */}
+        {/* ── CARDS TAB RIGHT: reading text only (cards moved to left col) ─ */}
         {tab === 'cards' && (
           <>
             <div style={s.panelHeader}>
               <div style={s.panelHeaderLabel}>Reading</div>
-              <div style={s.panelHint}>Your pulled cards and interpretation</div>
+              <div style={s.panelHint}>Your pulled interpretation</div>
             </div>
             <div style={s.panelContent}>
               {!pulledCards && (
@@ -1043,80 +1212,18 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                   Choose a deck and spread, then pull cards to begin your reading.
                 </div>
               )}
-
-              {pulledCards && (
-                <>
-                  {/* Card display */}
-                  <div style={s.cardRow}>
-                    {pulledCards.map((card, i) => (
-                      <div key={i} style={s.cardSlot}>
-                        <div style={s.flipContainer}>
-                          <div style={{
-                            ...s.flipInner,
-                            transform: flipped[i] ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                          }}>
-                            <div style={s.flipFace}>
-                              <img src={CARD_BACK} alt="Card back" style={s.cardImg} />
-                            </div>
-                            <div style={{ ...s.flipFace, transform: 'rotateY(180deg)' }}>
-                              {card.image ? (
-                                <img
-                                  src={card.image}
-                                  alt={card.name}
-                                  style={{
-                                    ...s.cardImg,
-                                    transform: card.reversed ? 'rotate(180deg)' : 'none',
-                                  }}
-                                />
-                              ) : (
-                                <div style={s.oracleCard}>
-                                  <div style={s.oracleDiamond} />
-                                  <div style={s.oracleName}>{card.name}</div>
-                                  <div style={s.oracleMeaning}>{card.meaning}</div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        {flipped[i] && (
-                          <div style={{ opacity: 1, transition: 'opacity 0.3s' }}>
-                            <div style={s.cardPosition}>{card.position}</div>
-                            <div style={s.cardName}>{card.name}</div>
-                            {card.reversed && <span style={s.reversed}>{t('cards.reversed')}</span>}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Free-pull: pull another */}
-                  {canPullMore && !cardReading && (
-                    <button
-                      style={{ ...s.ghostBtn, width: '100%', marginBottom: '8px' }}
-                      onClick={handlePullAnother}
-                    >
-                      + {t('cards.pullAnother')}
-                    </button>
-                  )}
-
-                  {/* Free-pull max reached */}
-                  {isFreePull && pulledCards.length >= freePullMax && allFlipped && !cardReading && (
-                    <div style={{ textAlign: 'center', fontSize: '10px', color: 'var(--muted)', marginBottom: '8px' }}>
-                      {t('cards.maxReached')}
-                    </div>
-                  )}
-
-                  {/* Reading */}
-                  {cardReading && (
-                    <div ref={readingRef} style={{ marginTop: '16px' }}>
-                      <div style={{ ...s.sectionLabel, marginBottom: '12px' }}>Reading</div>
-                      <div
-                        style={s.reading}
-                        dangerouslySetInnerHTML={{ __html: cardReading }}
-                      />
-                    </div>
-                  )}
-                </>
+              {pulledCards && !cardReading && (
+                <div style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.7' }}>
+                  {allFlipped ? 'Generate a reading from your pulled cards.' : 'Waiting for cards to reveal…'}
+                </div>
+              )}
+              {cardReading && (
+                <div ref={readingRef}>
+                  <div
+                    style={s.reading}
+                    dangerouslySetInnerHTML={{ __html: cardReading }}
+                  />
+                </div>
               )}
             </div>
             <div style={s.panelFooter}>
@@ -1156,6 +1263,27 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                   <WaveformIcon playing={cardPlaying} />
                 </button>
               </div>
+              {cardReading && (
+                <button
+                  onClick={handleSaveReadingToJournal}
+                  disabled={readingSaved}
+                  style={{
+                    marginTop: '8px',
+                    padding: '8px 0',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    color: readingSaved ? 'var(--muted)' : 'var(--strong)',
+                    background: 'none',
+                    border: 'var(--border-style)',
+                    borderRadius: '20px',
+                    cursor: readingSaved ? 'default' : 'pointer',
+                    fontFamily: 'var(--font)',
+                    transition: 'color 0.15s, border-color 0.15s',
+                  }}
+                >
+                  {readingSaved ? '✓ Saved to journal' : 'Save to journal'}
+                </button>
+              )}
               <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: '1.5', marginTop: '2px' }}>
                 {!pulledCards ? 'Pull cards to generate a reading.' : !allFlipped ? 'Waiting for cards to reveal...' : 'Reading based on your cards and portrait.'}
               </div>
@@ -1163,6 +1291,14 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
           </>
         )}
       </div>
+
+      {selectedCard && (
+        <CardDetailPopup
+          card={selectedCard}
+          deckType={deck}
+          onClose={() => setSelectedCard(null)}
+        />
+      )}
     </div>
   );
 }

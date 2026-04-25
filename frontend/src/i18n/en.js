@@ -338,6 +338,8 @@ export default {
   'cards.generating': 'Generating reading\u2026',
   'cards.insertReading': 'Insert into entry',
   'cards.reversed': 'Reversed',
+  'cards.questionLabel': 'Your question (optional)',
+  'cards.questionPlaceholder': 'What are you sitting with? Leave blank for an open reading.',
   'cards.startOver': 'Start over',
   'cards.close': 'Close',
   'cards.spreadSingle': 'Single Card',

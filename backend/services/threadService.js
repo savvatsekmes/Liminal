@@ -262,14 +262,20 @@ function buildNumberedCorpusLines(corpus, excerptLen = 160) {
   }).join('\n');
 }
 
-async function detectThemes(corpus) {
+async function detectThemes(corpus, existingNovel = []) {
   // Local models slow down dramatically with long contexts, so we truncate
   // aggressively for the theme pass — titles + short excerpts are enough to
   // surface broad arcs.
   const themeCorpus = corpus.slice(0, 140);
   const corpusLines = buildNumberedCorpusLines(themeCorpus, 80);
   const canonicalList = CANONICAL_THEMES.map((c, i) => `${i + 1}. ${c.name} — ${c.description}`).join('\n');
-  const userMessage = `CANONICAL THEMES (already tracked, do NOT duplicate):\n${canonicalList}\n\nCORPUS (most recent first):\n\n${corpusLines}\n\nReturn the JSON array of 3-6 specific novel themes (concrete practices, instruments, projects, named people, specific struggles). Lean toward including specific arcs rather than excluding them.`;
+  // Show existing novel threads so the model doesn't propose rephrasings
+  // ("relationship with aysha" vs "aysha relationship arc"). Without this
+  // the LLM has no memory of what's already been clustered.
+  const novelList = existingNovel.length
+    ? existingNovel.map((t, i) => `${i + 1}. ${t.name}${t.description ? ' — ' + t.description : ''}`).join('\n')
+    : '';
+  const userMessage = `CANONICAL THEMES (already tracked, do NOT duplicate):\n${canonicalList}\n\n${novelList ? `EXISTING NOVEL THREADS (already tracked — do NOT propose any rephrasing, partial overlap, or narrower/broader version of these. If new items belong to one of these, they will be matched in a later pass; you don't need to re-propose them):\n${novelList}\n\n` : ''}CORPUS (most recent first):\n\n${corpusLines}\n\nReturn the JSON array of 3-6 specific novel themes (concrete practices, instruments, projects, named people, specific struggles). Lean toward including specific arcs rather than excluding them.`;
 
   const t0 = Date.now();
   console.log(`[threads] theme stage: corpus size ${themeCorpus.length} (truncated from ${corpus.length})`);
@@ -352,6 +358,36 @@ function normaliseThemeKey(name) {
     .trim();
 }
 
+// Generic words that don't carry meaning for thread-name comparison ("the
+// relationship" overlaps "a relationship" purely on stopword "relationship",
+// but two threads sharing only a generic noun should NOT count as duplicates).
+const STOPWORDS = new Set([
+  'the','a','an','and','or','of','to','in','on','at','for','with','my','i',
+  'is','was','being','this','that','these','those','about','arc','journey',
+  'relationship','project','practice','exploration','transition','phase',
+]);
+
+// Tokens that survive stopword filtering — typically proper nouns or distinctive
+// concepts. Two themes sharing 1+ such tokens are probably the same arc.
+function distinctiveTokens(name) {
+  return new Set(
+    normaliseThemeKey(name)
+      .split(/\s+/)
+      .filter((w) => w.length >= 3 && !STOPWORDS.has(w))
+  );
+}
+
+// Returns true if two theme names look like rephrasings of the same arc
+// (e.g. "aysha relationship arc" vs "relationship with aysha" both contain
+// the distinctive token "aysha"). Catches what normaliseThemeKey misses.
+function themesAreNearDuplicates(a, b) {
+  const ta = distinctiveTokens(a);
+  const tb = distinctiveTokens(b);
+  if (!ta.size || !tb.size) return false;
+  for (const w of ta) if (tb.has(w)) return true;
+  return false;
+}
+
 async function detectThreadsFromCorpus(corpus, onMatchProgress) {
   if (!corpus.length) return [];
 
@@ -364,10 +400,16 @@ async function detectThreadsFromCorpus(corpus, onMatchProgress) {
     name: c.name, description: c.description, status: 'active', weight: 'medium', kind: 'canonical',
   }));
   const seenKeys = new Set(canonical.map((t) => normaliseThemeKey(t.name)));
+  const seenThemes = [...canonical];
   const filteredNovel = novelThemes.filter((t) => {
     const k = normaliseThemeKey(t.name);
     if (seenKeys.has(k)) return false;
+    if (seenThemes.some((ex) => themesAreNearDuplicates(t.name, ex.name))) {
+      console.log(`[threads] detectFromCorpus skipping near-duplicate "${t.name}"`);
+      return false;
+    }
     seenKeys.add(k);
+    seenThemes.push(t);
     return true;
   }).map((t) => ({ ...t, kind: 'novel' }));
   const themes = [...canonical, ...filteredNovel];
@@ -887,17 +929,33 @@ async function sweepOrphans(userId) {
   if (orphans.length < 2) return { promoted: 0, orphans: orphans.length };
 
   console.log(`[threads] sweepOrphans: ${orphans.length} orphans to cluster`);
-  const novelThemes = await detectThemes(orphans);
+
+  // Pull existing threads so we can both feed them to the LLM and dedupe
+  // the LLM's output against them post-hoc.
+  const existingThreadRows = db.prepare(
+    "SELECT name, description, kind FROM threads WHERE user_id = ?"
+  ).all(userId);
+  const existingThreads = existingThreadRows.map((r) => ({
+    name:        safeDecrypt(userId, r.name) || '',
+    description: safeDecrypt(userId, r.description) || '',
+    kind:        r.kind,
+  })).filter((t) => t.name);
+  const existingNovel = existingThreads.filter((t) => t.kind === 'novel');
+
+  const novelThemes = await detectThemes(orphans, existingNovel);
   console.log(`[threads] sweepOrphans: LLM proposed ${novelThemes.length} novel themes`);
 
-  // Skip themes whose name collides with an existing thread for this user.
-  const existingKeys = new Set(
-    db.prepare('SELECT name FROM threads WHERE user_id = ?').all(userId)
-      .map((r) => normaliseThemeKey(safeDecrypt(userId, r.name) || ''))
-  );
+  const existingKeys = new Set(existingThreads.map((t) => normaliseThemeKey(t.name)));
   const candidates = novelThemes.filter((t) => {
     const k = normaliseThemeKey(t.name);
     if (existingKeys.has(k)) return false;
+    // Backstop: if this theme shares any distinctive token with an existing
+    // thread (e.g. a proper noun like "aysha"), it's almost certainly a
+    // rephrasing — skip rather than create a duplicate.
+    if (existingThreads.some((ex) => themesAreNearDuplicates(t.name, ex.name))) {
+      console.log(`[threads] sweepOrphans skipping near-duplicate "${t.name}"`);
+      return false;
+    }
     existingKeys.add(k);
     return true;
   }).map((t) => ({ ...t, kind: 'novel' }));

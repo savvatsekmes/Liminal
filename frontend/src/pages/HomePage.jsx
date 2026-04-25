@@ -242,8 +242,8 @@ const s = {
     flexWrap: 'wrap',
   },
   dailyFlipContainer: {
-    width: 80,
-    height: 137,
+    width: 110,
+    height: 188,
     perspective: '800px',
     flexShrink: 0,
   },
@@ -1577,7 +1577,15 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               <div style={s.dailyFlipContainer}>
                 <div style={{ ...s.dailyFlipInner, transform: cardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
                   <div style={s.dailyFlipFace}>
-                    <img src="/cards/card-back.png" alt="Card back" style={s.dailyCardImg} />
+                    <img
+                      src={
+                        dailyCard.deck === 'oracle'
+                          ? '/cards/Oracle_Deck/card-back_oracle.png'
+                          : '/cards/Tarot_Deck/card-back_tarot.png'
+                      }
+                      alt="Card back"
+                      style={s.dailyCardImg}
+                    />
                   </div>
                   <div style={{ ...s.dailyFlipFace, transform: 'rotateY(180deg)' }}>
                     {dailyCard.image ? (

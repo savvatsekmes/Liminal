@@ -39,21 +39,28 @@ function getThreadContext(userId) {
     .join('\n');
 }
 
+// Per-deck back image. Each deck folder ships its own back so the flip
+// animation matches the deck the user is pulling from.
+const DECK_BACKS = {
+  tarot:  '/cards/Tarot_Deck/card-back_tarot.png',
+  oracle: '/cards/Oracle_Deck/card-back_oracle.png',
+};
+
 // ── GET /api/cards/decks — return deck + spread data to frontend ─────────────
 router.get('/decks', (req, res) => {
   // Add image paths to tarot cards
   const tarotWithImages = tarotDeck.map(card => {
     const img = card.suit
-      ? `/cards/tarot/${card.suit}_${card.rank}.jpg`
-      : `/cards/tarot/major_${card.id}.jpg`;
+      ? `/cards/Tarot_Deck/${card.suit}_${card.rank}.png`
+      : `/cards/Tarot_Deck/major_${card.id}.png`;
     return { ...card, image: img };
   });
-  // Oracle cards: placeholder jpg per id, replaceable by overwriting the file.
+  // Oracle cards
   const oracleWithImages = oracleDeck.map(card => ({
     ...card,
-    image: `/cards/oracle/oracle_${card.id}.jpg`,
+    image: `/cards/Oracle_Deck/oracle_${card.id}.png`,
   }));
-  res.json({ tarot: tarotWithImages, oracle: oracleWithImages, spreads });
+  res.json({ tarot: tarotWithImages, oracle: oracleWithImages, spreads, backs: DECK_BACKS });
 });
 
 // ── GET /api/cards/daily — daily card (cached per day) ──────────────────────
@@ -86,10 +93,10 @@ router.get('/daily', async (req, res) => {
   let image = null;
   if (deck === 'tarot') {
     image = raw.suit
-      ? `/cards/tarot/${raw.suit}_${raw.rank}.jpg`
-      : `/cards/tarot/major_${raw.id}.jpg`;
+      ? `/cards/Tarot_Deck/${raw.suit}_${raw.rank}.png`
+      : `/cards/Tarot_Deck/major_${raw.id}.png`;
   } else if (deck === 'oracle') {
-    image = `/cards/oracle/oracle_${raw.id}.jpg`;
+    image = `/cards/Oracle_Deck/oracle_${raw.id}.png`;
   }
 
   const card = {
@@ -165,10 +172,11 @@ Write a personalised daily reading for this person based on this card. Focus on 
 
 // ── POST /api/cards/reading — generate LLM reading ──────────────────────────
 router.post('/reading', async (req, res) => {
-  const { deck, spread, cards, entryText } = req.body;
+  const { deck, spread, cards, entryText, question } = req.body;
   if (!deck || !spread || !cards?.length) {
     return res.status(400).json({ error: 'deck, spread, and cards are required' });
   }
+  const userQuestion = typeof question === 'string' ? question.trim().slice(0, 500) : '';
 
   // Load portrait for personalisation
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(req.userId);
@@ -219,14 +227,14 @@ ${portraitContext}
 ${memorySummary ? `\n\n## WHAT YOU KNOW ABOUT THEM\n${memorySummary}` : ''}
 ${threadContext ? `\n\n## ACTIVE LIFE THREADS (what they're currently navigating)\n${threadContext}` : ''}
 
-The user has pulled the following cards in a "${spreadLabel}" spread:
+${userQuestion ? `The user came to this reading with a specific question. Anchor your interpretation to it — the cards are answering THIS question, not just speaking abstractly:\n"${userQuestion}"\n\n` : ''}The user has pulled the following cards in a "${spreadLabel}" spread:
 
 ${cardLines}
 
 ${entryText ? `Their current journal entry provides context:\n"${entryText.slice(0, 2000)}"` : 'No journal entry context was provided.'}
 
 Provide a reading that:
-- Addresses each card in its position with genuine insight
+- ${userQuestion ? "Speaks directly to their question, using each card as part of the answer" : 'Addresses each card in its position with genuine insight'}
 - Weaves the cards together into a cohesive narrative
 - ${entryText ? 'Connects the cards to themes in their journal entry' : 'Speaks to universal human themes the cards reveal'}
 - ${deck === 'tarot' ? 'For reversed cards, reads them as shadow aspects, blocks, internalised energy, or invitations to look deeper' : 'Reads each oracle card as a direct message or invitation'}
@@ -254,10 +262,11 @@ Format as clean HTML:
 // ── POST /api/cards/pull — LLM-guided card selection ────────────────────────
 // Blends intuition (LLM context) with randomness for card pulls
 router.post('/pull', async (req, res) => {
-  const { deck, spread, count, excludeIds } = req.body;
+  const { deck, spread, count, excludeIds, question } = req.body;
   if (!deck || !spread) {
     return res.status(400).json({ error: 'deck and spread are required' });
   }
+  const userQuestion = typeof question === 'string' ? question.trim().slice(0, 500) : '';
 
   const spreadObj = spreads.find(s => s.id === spread);
   if (!spreadObj) return res.status(400).json({ error: 'Unknown spread' });
@@ -348,14 +357,14 @@ ${noteContext ? `## RECENT NOTES\n${noteContext}` : ''}
 
 ${skyCtx ? `## CURRENT SKY\n${skyCtx}` : ''}
 
-## SPREAD
+${userQuestion ? `## USER'S QUESTION (highest signal — pick cards that answer THIS, not just the broader life context)\n"${userQuestion}"\n\n` : ''}## SPREAD
 ${positions}
 
 ## AVAILABLE CARDS
 ${cardList}
 
 ## INSTRUCTIONS
-Select exactly ${numCards} card(s) by ID. For each card, choose one that genuinely speaks to what this person is navigating right now.
+Select exactly ${numCards} card(s) by ID. For each card, choose one that ${userQuestion ? "speaks directly to the user's question above, drawing on their broader life context only as needed" : "genuinely speaks to what this person is navigating right now"}.
 
 ${deck === 'tarot' ? 'For each card, also decide if it should appear reversed (true/false). Use reversals meaningfully — when the shadow side or blocked energy is more relevant.' : 'Oracle cards are never reversed.'}
 

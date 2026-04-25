@@ -2,10 +2,19 @@ import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import AILabel from './AILabel';
+import { CardDetailPopup } from '../extensions/CardReading';
 
 const CARD_W = 120;
 const CARD_H = 205;
-const CARD_BACK = '/cards/card-back.png';
+// Per-deck back lives in each deck folder. Unknown deck → fall back to the
+// tarot back (deck is validated server-side, so the fallback shouldn't fire).
+const DECK_BACKS = {
+  tarot:  '/cards/Tarot_Deck/card-back_tarot.png',
+  oracle: '/cards/Oracle_Deck/card-back_oracle.png',
+};
+function backFor(deck) {
+  return DECK_BACKS[deck] || DECK_BACKS.tarot;
+}
 
 const s = {
   overlay: {
@@ -102,6 +111,22 @@ const s = {
     transition: 'opacity 0.15s',
     boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
     marginBottom: '8px',
+  },
+  questionInput: {
+    width: '100%',
+    minHeight: '44px',
+    maxHeight: '120px',
+    padding: '10px 12px',
+    fontSize: '13px',
+    fontFamily: 'var(--font)',
+    color: 'var(--body)',
+    background: 'var(--white)',
+    border: 'var(--border-style)',
+    borderRadius: '10px',
+    outline: 'none',
+    resize: 'vertical',
+    marginBottom: '20px',
+    boxSizing: 'border-box',
   },
   ghostBtn: {
     width: '100%',
@@ -239,6 +264,8 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
   const [decksData, setDecksData] = useState(null);
   const [deck, setDeck] = useState(null);
   const [spreadId, setSpreadId] = useState(null);
+  const [question, setQuestion] = useState('');
+  const [selectedCard, setSelectedCard] = useState(null);
   const [pulledCards, setPulledCards] = useState(null);
   const [flipped, setFlipped] = useState([]);
   const [reading, setReading] = useState(null);
@@ -272,7 +299,7 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
       const res = await apiFetch('/api/cards/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck, spread: spreadId, count: numCards }),
+        body: JSON.stringify({ deck, spread: spreadId, count: numCards, question: question.trim() || undefined }),
       });
       const data = await res.json();
       if (!data.cards?.length) throw new Error('No cards returned');
@@ -360,7 +387,7 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
       const res = await apiFetch('/api/cards/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck, spread: spreadId, count: 1, excludeIds }),
+        body: JSON.stringify({ deck, spread: spreadId, count: 1, excludeIds, question: question.trim() || undefined }),
       });
       const data = await res.json();
       if (data.cards?.length) {
@@ -400,6 +427,7 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
           spread: spreadId,
           cards: cardsPayload,
           entryText: entryText || '',
+          question: question.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -448,6 +476,8 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
     setReading(null);
     setSpreadId(null);
     setDeck(null);
+    setQuestion('');
+    setSelectedCard(null);
     shuffledDeckRef.current = null;
     drawIndexRef.current = 0;
   }
@@ -524,7 +554,22 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
                 </>
               )}
 
-              {/* Step 3: Pull button */}
+              {/* Step 3: Optional question to focus the reading */}
+              {deck && spreadId && (
+                <>
+                  <div style={s.sectionLabel}>{t('cards.questionLabel') || 'Your question (optional)'}</div>
+                  <textarea
+                    style={s.questionInput}
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder={t('cards.questionPlaceholder') || 'What are you sitting with? Leave blank for an open reading.'}
+                    rows={2}
+                    disabled={pulling}
+                  />
+                </>
+              )}
+
+              {/* Step 4: Pull button */}
               {deck && spreadId && (
                 <button style={{ ...s.actionBtn, opacity: pulling ? 0.5 : 1 }} onClick={handlePull} disabled={pulling}>
                   {pulling ? 'Drawing…' : t('cards.pull')}
@@ -536,17 +581,37 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
           {/* Step 4: Show pulled cards */}
           {pulledCards && (
             <>
+              {question.trim() && (
+                <div style={{
+                  fontSize: '12px',
+                  color: 'var(--body)',
+                  fontStyle: 'italic',
+                  lineHeight: '1.5',
+                  padding: '10px 14px',
+                  background: 'var(--near-white)',
+                  borderLeft: '3px solid var(--strong)',
+                  borderRadius: '0 8px 8px 0',
+                  marginBottom: '16px',
+                }}>
+                  <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: '8px' }}>Your question</span>
+                  {question.trim()}
+                </div>
+              )}
               <div style={s.cardRow}>
                 {pulledCards.map((card, i) => (
                   <div key={i} style={s.cardSlot}>
-                    <div style={s.flipContainer}>
+                    <div
+                      style={{ ...s.flipContainer, cursor: flipped[i] ? 'pointer' : 'default' }}
+                      onClick={() => { if (flipped[i]) setSelectedCard(card); }}
+                      title={flipped[i] ? 'Click for meaning' : ''}
+                    >
                       <div style={{
                         ...s.flipInner,
                         transform: flipped[i] ? 'rotateY(180deg)' : 'rotateY(0deg)',
                       }}>
                         {/* Back face */}
                         <div style={s.flipFace}>
-                          <img src={CARD_BACK} alt="Card back" style={s.cardImg} />
+                          <img src={backFor(deck)} alt="Card back" style={s.cardImg} />
                         </div>
                         {/* Front face */}
                         <div style={{
@@ -637,6 +702,14 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
           )}
         </div>
       </div>
+
+      {selectedCard && (
+        <CardDetailPopup
+          card={selectedCard}
+          deckType={deck}
+          onClose={() => setSelectedCard(null)}
+        />
+      )}
     </div>
   );
 }

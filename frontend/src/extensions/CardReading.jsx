@@ -520,8 +520,10 @@ function ChevronIcon({ expanded }) {
 }
 
 // ── Card Detail Popup ────────────────────────────────────────────────────────
+// Exported so non-editor surfaces (Sky page, CardPullModal preview) can render
+// the same click-to-see-meaning popup without duplicating the styles.
 
-function CardDetailPopup({ card, deckType, onClose }) {
+export function CardDetailPopup({ card, deckType, onClose }) {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef(null);
   const cancelRef = useRef(false);
