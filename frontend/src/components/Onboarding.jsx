@@ -150,7 +150,7 @@ const s = {
   },
 };
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 
 export default function Onboarding({ username, onComplete }) {
   const [step, setStep] = useState(0);
@@ -177,8 +177,21 @@ export default function Onboarding({ username, onComplete }) {
     human_design: '',
   });
 
+  // Backup settings (separate from `data` because they go to /api/settings,
+  // not /api/portrait). Defaults: encourage auto-backup, but disable until a
+  // folder is actually chosen (the backend won't run a backup without one).
+  const [backup, setBackup] = useState({
+    auto_backup_enabled: true,
+    backup_location: '',
+    max_backups: '10',
+  });
+
   function set(key, val) {
     setData((prev) => ({ ...prev, [key]: val }));
+  }
+
+  function setBackupField(key, val) {
+    setBackup((prev) => ({ ...prev, [key]: val }));
   }
 
   function goTo(nextStep) {
@@ -189,15 +202,29 @@ export default function Onboarding({ username, onComplete }) {
     }, 250);
   }
 
+  // Build the settings payload from display_name + backup state. Auto-backup
+  // can only be on if a folder is set — otherwise the backend would silently
+  // do nothing and the user would think they were protected.
+  function buildSettingsPayload() {
+    const payload = {};
+    if (data.display_name) payload.display_name = data.display_name;
+    if (backup.backup_location) {
+      payload.backup_location = backup.backup_location;
+      payload.auto_backup_enabled = backup.auto_backup_enabled ? 'true' : 'false';
+      payload.max_backups = String(backup.max_backups);
+    }
+    return payload;
+  }
+
   async function saveAndComplete() {
     setSaving(true);
     try {
-      // display_name lives in settings, not portrait
-      if (data.display_name) {
+      const settingsPayload = buildSettingsPayload();
+      if (Object.keys(settingsPayload).length) {
         await apiFetch('/api/settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ display_name: data.display_name }),
+          body: JSON.stringify(settingsPayload),
         }).catch(() => {});
       }
 
@@ -232,11 +259,14 @@ export default function Onboarding({ username, onComplete }) {
   async function handleSkipCompletely() {
     setSaving(true);
     const hasData = Object.entries(data).some(([k, v]) => v && k !== 'display_name');
-    if (data.display_name && data.display_name !== username) {
+    const settingsPayload = buildSettingsPayload();
+    // Only push settings if display_name actually changed OR backup was set up
+    const hasNewName = data.display_name && data.display_name !== username;
+    if (hasNewName || backup.backup_location) {
       await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: data.display_name }),
+        body: JSON.stringify(settingsPayload),
       }).catch(() => {});
     }
     if (hasData) {
@@ -321,10 +351,21 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 6 && (
+            <BackupsStep
+              backup={backup}
+              setBackup={setBackupField}
+              onContinue={() => goTo(7)}
+              onBack={() => goTo(5)}
+              onSkipForNow={handleSkipForNow}
+              onSkipCompletely={handleSkipCompletely}
+              saving={saving}
+            />
+          )}
+          {step === 7 && (
             <DoneStep
               data={data}
               onFinish={saveAndComplete}
-              onBack={() => goTo(5)}
+              onBack={() => goTo(6)}
               saving={saving}
             />
           )}
@@ -1004,7 +1045,90 @@ function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving
   );
 }
 
-// ── Step 5: Done ─────────────────────────────────────────────────────────────
+// ── Step 6: Backups ──────────────────────────────────────────────────────────
+
+function BackupsStep({ backup, setBackup, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
+  const { t } = useLanguage();
+
+  async function pickFolder() {
+    if (!window.liminal?.pickBackupFolder) {
+      alert('Folder picker is only available in the desktop app.');
+      return;
+    }
+    const folder = await window.liminal.pickBackupFolder();
+    if (folder) {
+      setBackup('backup_location', folder);
+      // If they're committing to a folder, keep the toggle ON by default.
+      // (They can flip it off below if they only want manual backups.)
+      setBackup('auto_backup_enabled', true);
+    }
+  }
+
+  return (
+    <>
+      <BackButton onClick={onBack} />
+      <div style={s.title}>Back up your journal</div>
+      <div style={s.subtitle}>
+        Liminal stores everything on your machine — nothing is in the cloud.
+        That privacy comes with a tradeoff: if your disk fails and you don't
+        have a backup, your journal is gone. We can save an encrypted backup
+        every time you close the app.
+      </div>
+
+      <label style={s.label}>Backup folder</label>
+      {backup.backup_location ? (
+        <div style={{ ...s.astroResult, wordBreak: 'break-all' }}>
+          <span style={s.astroValue}>{backup.backup_location}</span>
+        </div>
+      ) : (
+        <div style={s.hint}>No folder selected — auto-backup will stay off.</div>
+      )}
+      <button
+        style={{
+          ...s.btn,
+          background: 'transparent',
+          color: 'var(--strong)',
+          border: 'var(--border-style)',
+        }}
+        onClick={pickFolder}
+      >
+        {backup.backup_location ? 'Change folder' : 'Pick folder'}
+      </button>
+
+      {backup.backup_location && (
+        <>
+          <label style={s.label}>Auto-backup on quit</label>
+          <select
+            style={s.input}
+            value={backup.auto_backup_enabled ? 'on' : 'off'}
+            onChange={(e) => setBackup('auto_backup_enabled', e.target.value === 'on')}
+          >
+            <option value="on">Enabled</option>
+            <option value="off">Disabled</option>
+          </select>
+
+          <label style={s.label}>Keep this many backups</label>
+          <select
+            style={s.input}
+            value={backup.max_backups}
+            onChange={(e) => setBackup('max_backups', e.target.value)}
+          >
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+          </select>
+          <div style={s.hint}>Older backups are deleted automatically.</div>
+        </>
+      )}
+
+      <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>
+      <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
+    </>
+  );
+}
+
+// ── Step 7: Done ─────────────────────────────────────────────────────────────
 
 function DoneStep({ data, onFinish, onBack, saving }) {
   const { t } = useLanguage();
