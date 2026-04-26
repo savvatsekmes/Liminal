@@ -74,12 +74,17 @@ app.use((err, req, res, next) => {
 });
 
 // ── Health check ──────────────────────────────────────────────────────────────
+// Read version from package.json once at module load — used to be hardcoded
+// and went stale across two releases.
+let HEALTH_VERSION = '0.0.0';
+try { HEALTH_VERSION = require('./package.json').version; } catch {}
+
 app.get('/api/health', (req, res) => {
   const s = require('./services/settingsService');
   res.json({
     status: 'ok',
     provider: s.get('llm_provider'),
-    version: '1.1.0',
+    version: HEALTH_VERSION,
   });
 });
 
