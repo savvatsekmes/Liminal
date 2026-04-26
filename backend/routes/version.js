@@ -51,6 +51,13 @@ router.get('/check', async (req, res) => {
       try {
         const parsed = JSON.parse(cached.data);
         if (parsed.checkedAt && Date.now() - new Date(parsed.checkedAt).getTime() < CACHE_TTL_MS) {
+          // Always recompute `current` and `hasUpdate` from the live process —
+          // a cached `current` from a prior install (e.g. v1.2.0 cached, then
+          // upgraded to v1.3.0 within the 6h window) will mis-report "you're
+          // on v1.2.0" forever until the cache expires. Only the GitHub-side
+          // fields (latest, releaseUrl, …) are safe to cache.
+          parsed.current = current;
+          parsed.hasUpdate = parsed.latest ? compareSemver(parsed.latest, current) > 0 : false;
           return res.json(parsed);
         }
       } catch {}
