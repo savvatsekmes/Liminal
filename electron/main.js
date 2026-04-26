@@ -849,10 +849,40 @@ function killChild(child) {
         stdio: 'ignore',
         windowsHide: true,
       });
+      // taskkill returns as soon as the kill signal is dispatched — Windows
+      // may keep the PID in the process table for ~100-500ms after. Without
+      // waiting here, app.exit() fires while the doomed process is still
+      // listed, which trips the NSIS-web installer's "Liminal cannot be
+      // closed" prompt because the backend runs as `Liminal.exe` (via
+      // ELECTRON_RUN_AS_NODE) and shares the executable name the installer
+      // scans for.
+      waitForProcessExit(child.pid, 2000);
     } else {
       child.kill('SIGTERM');
     }
   } catch {}
+}
+
+// Block until the given PID is gone from the Windows process table, or
+// timeoutMs elapses. The tasklist call itself takes ~50-150ms, so we don't
+// need a separate sleep between polls.
+function waitForProcessExit(pid, timeoutMs = 2000) {
+  if (process.platform !== 'win32') return;
+  const { execFileSync } = require('child_process');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const out = execFileSync(
+        'tasklist',
+        ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+        { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, encoding: 'utf-8' }
+      ).toString();
+      // Live row starts with a quoted image name; "INFO: No tasks…" means gone.
+      if (!out.startsWith('"')) return;
+    } catch {
+      return; // tasklist failed — assume the PID is unreachable, i.e. gone.
+    }
+  }
 }
 
 // ── Clipboard ───────────────────────────────────────────────────────────────
