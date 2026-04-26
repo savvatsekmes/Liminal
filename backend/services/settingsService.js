@@ -7,7 +7,7 @@
 const db = require('../database');
 
 // Keys that hold API secrets — masked in GET responses
-const SECRET_KEYS = new Set(['anthropic_api_key', 'openai_api_key', 'tavily_api_key', 'github_token']);
+const SECRET_KEYS = new Set(['anthropic_api_key', 'openai_api_key', 'tavily_api_key']);
 
 // Defaults (used when neither DB nor .env has a value)
 const DEFAULTS = {

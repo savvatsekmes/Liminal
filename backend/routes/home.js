@@ -337,7 +337,10 @@ router.get('/portrait-snippet', async (req, res) => {
   ).get(req.userId);
 
   const lang = settingsService.get('language') || 'en';
-  const hash = `${portrait.updated_at || ''}:${lang}`;
+  // 'v2' suffix in the hash forces regeneration after the gender-pronoun fix
+  // shipped — previously this prompt skipped sex/pronouns entirely so the LLM
+  // defaulted to feminine for any user (including male users).
+  const hash = `${portrait.updated_at || ''}:${lang}:v2`;
   if (cached && cached.entry_hash === hash) {
     return res.json(JSON.parse(cached.data));
   }
@@ -346,6 +349,15 @@ router.get('/portrait-snippet', async (req, res) => {
   const lines = [];
   const displayName = settingsService.getForUser('display_name', req.userId);
   if (displayName) lines.push(`Name: ${displayName}`);
+  // Gender FIRST — most important signal for pronoun choice in the snippet.
+  // Use the same masculine/feminine detection as the daily card endpoint.
+  const sex = (portrait.sex || '').toLowerCase();
+  const pron = (portrait.pronouns || '').toLowerCase();
+  const isMasc = sex.startsWith('m') || /\bhe\b|him|his/.test(pron);
+  const isFem  = sex.startsWith('f') || /\bshe\b|her/.test(pron);
+  if (isMasc) lines.push('Pronouns: he/him. ALWAYS refer to this person with masculine pronouns (he, him, his) — never she/her.');
+  else if (isFem) lines.push('Pronouns: she/her. ALWAYS refer to this person with feminine pronouns (she, her, hers) — never he/him.');
+  else if (portrait.pronouns) lines.push(`Pronouns: ${portrait.pronouns}`);
   if (portrait.mbti) lines.push(`MBTI: ${portrait.mbti}`);
   if (portrait.enneagram) lines.push(`Enneagram: ${portrait.enneagram}`);
   if (portrait.sun_sign) lines.push(`Sun: ${portrait.sun_sign}`);
@@ -359,7 +371,7 @@ router.get('/portrait-snippet', async (req, res) => {
   if (lines.length < 2) return res.json({ snippet: null });
 
   try {
-    const systemPrompt = `Write a 2-3 sentence character sketch of this person — vivid, warm, specific. Third person, present tense. No headers, no lists. Just prose that captures their essence.`;
+    const systemPrompt = `Write a 2-3 sentence character sketch of this person — vivid, warm, specific. Third person, present tense. No headers, no lists. Just prose that captures their essence. Use the pronouns specified in the user message strictly; do not default to feminine pronouns when masculine ones are given (or vice versa).`;
     const text = await llm.call(systemPrompt, lines.join('\n'), { maxTokens: 120 });
     const result = { snippet: text.trim() };
 

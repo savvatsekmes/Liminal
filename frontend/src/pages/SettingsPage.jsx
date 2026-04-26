@@ -2079,7 +2079,6 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
   }, []);
 
   // ── GitHub token (for update checks on private repos) ────────────────────
-  const [githubToken, setGithubToken] = useState('');
 
   // ── Web search / Tavily ─────────────────────────────────────────────────
   const [tavilyKey, setTavilyKey] = useState('');
@@ -2263,29 +2262,6 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
           >
             {t('settings.aboutOpenSourceNotices') || 'Open-source notices'}
           </a>
-        </div>
-
-        <div style={{ borderTop: 'var(--border-style)', marginTop: '20px', paddingTop: '16px' }}>
-          <Field
-            label={t('settings.githubToken')}
-            hint={cfg.has_github_token ? t('settings.githubTokenSet') : t('settings.githubTokenHint')}
-          >
-            <div style={s.row}>
-              <input
-                style={s.input}
-                type="password"
-                placeholder={cfg.has_github_token ? '••••••••••••••••' : 'ghp_...'}
-                value={githubToken}
-                onChange={e => setGithubToken(e.target.value)}
-                autoComplete="off"
-              />
-              <Btn primary onClick={async () => {
-                if (githubToken && !githubToken.includes('••••')) {
-                  await save({ github_token: githubToken });
-                }
-              }} disabled={saving}>{t('common.save')}</Btn>
-            </div>
-          </Field>
         </div>
 
         <div style={{ marginTop: '32px', fontSize: '11px', color: 'var(--muted)', lineHeight: 1.6 }}>

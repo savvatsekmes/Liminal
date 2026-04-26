@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Layout from './components/Layout';
 import LockScreen from './components/LockScreen';
+import UpdateBanner from './components/UpdateBanner';
 import EntryList from './components/EntryList';
 import WritingCanvas from './components/WritingCanvas';
 import MirrorPanel from './components/MirrorPanel';
@@ -231,6 +232,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
 
   return (
     <>
+    <UpdateBanner />
     {locked && <LockScreen username={username} onUnlock={() => {
       setLocked(false);
       resetLockTimer();

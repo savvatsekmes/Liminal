@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const db = require('../database');
-const s = require('../services/settingsService');
 
 // Version source of truth:
 //  - In production: Electron passes app.getVersion() via LIMINAL_APP_VERSION env var (root package.json)
@@ -59,9 +58,9 @@ router.get('/check', async (req, res) => {
   }
 
   try {
+    // Liminal's repo is public — anonymous calls work and stay well under
+    // GitHub's 60 req/hr per-IP rate limit (this endpoint caches for 6h).
     const ghHeaders = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'Liminal-App' };
-    const ghToken = s.get('github_token');
-    if (ghToken) ghHeaders['Authorization'] = `Bearer ${ghToken}`;
     const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: ghHeaders,
     });
