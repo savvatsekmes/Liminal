@@ -11,9 +11,9 @@ const { DATA_DIR } = require('../paths');
 // Returns all settings with secrets masked
 router.get('/', (req, res) => {
   const all = s.getAll();
-  // Override display_name with user-scoped value
+  // Override user-scoped keys with this user's values
   const userId = resolveUserId(req);
-  all.display_name = s.getForUser('display_name', userId);
+  for (const k of s.USER_SCOPED_KEYS) all[k] = s.getForUser(k, userId);
   // Add hasKey booleans for secrets so the UI knows they're set
   all.has_anthropic_key = s.hasSecret('anthropic_api_key');
   all.has_openai_key    = s.hasSecret('openai_api_key');
@@ -47,16 +47,18 @@ router.put('/', (req, res) => {
     }
   }
 
-  // Scope display_name per user
+  // Scope per-user keys to this user; everything else stays global
   const userId = resolveUserId(req);
-  if ('display_name' in updates) {
-    s.setForUser('display_name', updates.display_name, userId);
-    delete updates.display_name;
+  for (const k of s.USER_SCOPED_KEYS) {
+    if (k in updates) {
+      s.setForUser(k, updates[k], userId);
+      delete updates[k];
+    }
   }
 
   s.setMany(updates);
   const result = s.getAll();
-  result.display_name      = s.getForUser('display_name', userId);
+  for (const k of s.USER_SCOPED_KEYS) result[k] = s.getForUser(k, userId);
   result.has_anthropic_key = s.hasSecret('anthropic_api_key');
   result.has_openai_key    = s.hasSecret('openai_api_key');
   result.has_tavily_key    = s.hasSecret('tavily_api_key');
@@ -597,12 +599,12 @@ function buildExportData(userId) {
   const settingsRows = db.prepare('SELECT key, value FROM settings').all();
   const settingsObj = {};
   for (const { key, value } of settingsRows) {
-    // Skip user-scoped keys from export — export the current user's value as the plain key
+    // Skip user-scoped keys from export — they're injected as plain keys below
     if (key.includes('::')) continue;
     settingsObj[key] = value;
   }
-  // Export the current user's scoped display_name as plain "display_name"
-  settingsObj.display_name = s.getForUser('display_name', userId);
+  // Inject the current user's value for each user-scoped key as a plain key
+  for (const k of s.USER_SCOPED_KEYS) settingsObj[k] = s.getForUser(k, userId);
 
   // Export only the current user (not all users)
   const user = db.prepare(`
@@ -945,16 +947,17 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
   }
 
   // 12. Settings — clear and replace, but preserve all user-scoped keys
-  //     (display_name::N) so a restore doesn't overwrite another user's name.
+  //     (key::N) so a restore doesn't overwrite another user's settings.
   if (data.settings && typeof data.settings === 'object') {
     // Preserve all user-scoped settings before wiping
     const scopedRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE '%::%'").all();
     db.prepare('DELETE FROM settings').run();
     for (const [key, value] of Object.entries(data.settings)) {
       try {
-        // Import the backup's display_name as the restoring user's scoped key
-        if (key === 'display_name') {
-          s.setForUser('display_name', value, userId);
+        // Backup's plain user-scoped keys (display_name, lock_timeout_minutes, …)
+        // become the restoring user's per-user values
+        if (s.USER_SCOPED_KEYS.has(key)) {
+          s.setForUser(key, value, userId);
         } else {
           s.set(key, value);
         }
@@ -963,7 +966,13 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     }
     // Restore all user-scoped keys that weren't for the restoring user
     for (const { key, value } of scopedRows) {
-      if (key === `display_name::${userId}`) continue; // already set from backup
+      const sep = key.indexOf('::');
+      if (sep > 0) {
+        const baseKey = key.slice(0, sep);
+        const ownerId = key.slice(sep + 2);
+        // Skip rows we already overwrote from the backup for THIS user
+        if (s.USER_SCOPED_KEYS.has(baseKey) && String(ownerId) === String(userId)) continue;
+      }
       s.set(key, value);
     }
   }

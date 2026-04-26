@@ -36,8 +36,11 @@ const DEFAULTS = {
   max_backups:               '10',
 };
 
-// Keys that are scoped per-user (stored as "key::userId" in the DB)
-const USER_SCOPED_KEYS = new Set(['display_name']);
+// Keys that are scoped per-user (stored as "key::userId" in the DB).
+// Each user gets their own value; `getForUser` falls back to the global key
+// (or DEFAULTS) if the user hasn't set their own — so existing global values
+// stay sensible defaults after a key is moved here.
+const USER_SCOPED_KEYS = new Set(['display_name', 'lock_timeout_minutes']);
 
 // ── Core get/set ─────────────────────────────────────────────────────────────
 
@@ -129,4 +132,4 @@ function maskSecret(value) {
   return value.slice(0, 4) + '••••••••' + value.slice(-4);
 }
 
-module.exports = { get, set, setMany, getAll, hasSecret, SECRET_KEYS, getForUser, setForUser };
+module.exports = { get, set, setMany, getAll, hasSecret, SECRET_KEYS, USER_SCOPED_KEYS, getForUser, setForUser };
