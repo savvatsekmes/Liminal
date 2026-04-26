@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '../utils/api';
 
 // Top-right pill that surfaces when GitHub has a newer release than the
-// installed version. Click → opens release page in default browser. The ×
+// installed version. Click → starts downloading the new stub installer
+// directly (falls back to the release page if the API didn't return an
+// installer asset, e.g. for non-Windows or in-development builds). The ×
 // dismisses the pill for that specific version (persisted in localStorage)
 // so a future v1.5.0 still notifies even if v1.4.0 was dismissed.
 //
@@ -29,7 +31,7 @@ export default function UpdateBanner() {
   if (!info || dismissed) return null;
 
   const handleClick = () => {
-    window.open(info.releaseUrl, '_blank', 'noopener');
+    window.open(info.installerUrl || info.releaseUrl, '_blank', 'noopener');
   };
 
   const handleDismiss = (e) => {
@@ -41,7 +43,7 @@ export default function UpdateBanner() {
   return (
     <div
       onClick={handleClick}
-      title={`v${info.latest} is available — click to open release page`}
+      title={`v${info.latest} is available — click to download`}
       style={{
         position: 'fixed',
         top: '12px',

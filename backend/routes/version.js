@@ -68,11 +68,17 @@ router.get('/check', async (req, res) => {
     const data = await r.json();
 
     const latest = (data.tag_name || '').replace(/^v/, '');
+    // Direct download URL for the Windows stub installer, so the in-app
+    // banner can hand the user a single-click download instead of bouncing
+    // them through the GitHub release page. Looked up by extension so the
+    // version-bearing filename (Liminal.Web.Setup.<v>.exe) doesn't matter.
+    const installerAsset = (data.assets || []).find(a => a.name?.endsWith('.exe'));
     const result = {
       current,
       latest: latest || null,
       hasUpdate: latest ? compareSemver(latest, current) > 0 : false,
       releaseUrl: data.html_url || null,
+      installerUrl: installerAsset?.browser_download_url || null,
       releaseName: data.name || data.tag_name || null,
       publishedAt: data.published_at || null,
       checkedAt: new Date().toISOString(),
