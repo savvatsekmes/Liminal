@@ -90,6 +90,19 @@ hiddenimports += [
     'pydantic.deprecated.decorator',
 ]
 
+# Chatterbox model classes — tts_server.py loads these via try/except so
+# PyInstaller's static analysis can miss the optional ones (Turbo,
+# Multilingual) and the bundle silently falls back to Original 500M only.
+# collect_all('chatterbox') above SHOULD pick these up, but listing them
+# explicitly is cheap insurance against future PyInstaller versions or
+# chatterbox repackagings that change the discovery surface.
+hiddenimports += [
+    'chatterbox.tts',
+    'chatterbox.tts_turbo',
+    'chatterbox.mtl_tts',
+    'chatterbox.vc',
+]
+
 block_cipher = None
 
 a = Analysis(
