@@ -47,8 +47,8 @@ __pycache__/
 venv/
 .venv/
 
-# Bundled TTS voices (shipped via installer, too large for git)
-backend/default-voices/
+# Personal voice clones — local-only, never ship to the public build
+backend/default-voices/For_Savva_Only/
 
 # Personal data exports
 notion_import_data.json
