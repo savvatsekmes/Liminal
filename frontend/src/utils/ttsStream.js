@@ -93,7 +93,11 @@ export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
   }
 
   async function fetchAudio(sentence) {
-    const res = await fetch('/api/tts/speak', {
+    // apiFetch (not plain fetch) so the Authorization header rides along —
+    // the backend's soft-auth middleware reads it to bind the per-user
+    // settings context, which is how `chatterbox_voice` resolves to the
+    // user's actual pick instead of the global default.
+    const res = await apiFetch('/api/tts/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

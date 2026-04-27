@@ -4,7 +4,33 @@ const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
+const jwt = require('jsonwebtoken');
 const { DATA_DIR } = require('../paths');
+const s = require('../services/settingsService');
+
+// Soft-auth: this router doesn't use requireAuth (LAN/mobile browser
+// clients may not have a JWT, and we want them to fall back to the
+// global default rather than 401). But when a JWT IS present, bind the
+// per-user settings context so s.get('chatterbox_voice'),
+// s.get('language'), etc. resolve to THIS user's saved values instead
+// of the bare-key global. Without this, picking a voice in Settings
+// wrote `chatterbox_voice::<userId>` but /api/tts/speak read the global
+// key and ignored the choice.
+router.use((req, res, next) => {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    try {
+      const { getSecret } = require('../middleware/auth');
+      const decoded = jwt.verify(header.slice(7), getSecret());
+      if (decoded?.userId) {
+        return s.runWithUserContext(decoded.userId, () => next());
+      }
+    } catch {
+      // Invalid token — fall through to anonymous, same as no header.
+    }
+  }
+  next();
+});
 
 function getChatterboxUrl() {
   return require('../services/settingsService').get('chatterbox_url') || 'http://localhost:8100';
