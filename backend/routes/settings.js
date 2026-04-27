@@ -7,14 +7,26 @@ const s = require('../services/settingsService');
 const llm = require('../services/llmService');
 const { DATA_DIR } = require('../paths');
 
+// Soft-auth: this router doesn't use requireAuth (some flows like restore
+// run with the user identified manually via resolveUserId), but we still
+// want s.get/s.set inside these handlers to use the correct per-user
+// namespace. Read the JWT if present and bind the user context for the
+// remainder of the request.
+router.use((req, res, next) => {
+  const userId = resolveUserId(req);
+  if (userId) {
+    s.runWithUserContext(userId, () => next());
+  } else {
+    next();
+  }
+});
+
 // ── GET /api/settings ─────────────────────────────────────────────────────────
 // Returns all settings with secrets masked
 router.get('/', (req, res) => {
+  // Auth middleware has already established the per-user settings context,
+  // so getAll() and hasSecret() return this user's values automatically.
   const all = s.getAll();
-  // Override user-scoped keys with this user's values
-  const userId = resolveUserId(req);
-  for (const k of s.USER_SCOPED_KEYS) all[k] = s.getForUser(k, userId);
-  // Add hasKey booleans for secrets so the UI knows they're set
   all.has_anthropic_key = s.hasSecret('anthropic_api_key');
   all.has_openai_key    = s.hasSecret('openai_api_key');
   all.has_tavily_key    = s.hasSecret('tavily_api_key');
@@ -47,18 +59,10 @@ router.put('/', (req, res) => {
     }
   }
 
-  // Scope per-user keys to this user; everything else stays global
-  const userId = resolveUserId(req);
-  for (const k of s.USER_SCOPED_KEYS) {
-    if (k in updates) {
-      s.setForUser(k, updates[k], userId);
-      delete updates[k];
-    }
-  }
-
+  // Auth middleware has set the per-user context, so setMany writes every
+  // key under this user's namespace automatically. No special-casing needed.
   s.setMany(updates);
   const result = s.getAll();
-  for (const k of s.USER_SCOPED_KEYS) result[k] = s.getForUser(k, userId);
   result.has_anthropic_key = s.hasSecret('anthropic_api_key');
   result.has_openai_key    = s.hasSecret('openai_api_key');
   result.has_tavily_key    = s.hasSecret('tavily_api_key');
@@ -596,15 +600,18 @@ function buildExportData(userId) {
     ).all(t.id),
   }));
 
-  const settingsRows = db.prepare('SELECT key, value FROM settings').all();
+  // Flatten this user's settings to plain keys: globals first (as fallback),
+  // then this user's per-user values override them. Restoring this on the
+  // other end will re-write everything as the importing user's per-user
+  // values via setMany() in the user-aware context.
   const settingsObj = {};
-  for (const { key, value } of settingsRows) {
-    // Skip user-scoped keys from export — they're injected as plain keys below
-    if (key.includes('::')) continue;
-    settingsObj[key] = value;
+  const globalRows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE '%::%'").all();
+  for (const { key, value } of globalRows) settingsObj[key] = value;
+  const userRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE ?").all(`%::${userId}`);
+  for (const { key, value } of userRows) {
+    const baseKey = key.slice(0, key.indexOf('::'));
+    settingsObj[baseKey] = value;
   }
-  // Inject the current user's value for each user-scoped key as a plain key
-  for (const k of s.USER_SCOPED_KEYS) settingsObj[k] = s.getForUser(k, userId);
 
   // Export only the current user (not all users)
   const user = db.prepare(`
@@ -946,34 +953,17 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     }
   }
 
-  // 12. Settings — clear and replace, but preserve all user-scoped keys
-  //     (key::N) so a restore doesn't overwrite another user's settings.
+  // 12. Settings — replace this user's settings + leave global / other users
+  //     untouched. Auth middleware put us in user context, so s.set writes
+  //     each restored value under <key>::<userId> automatically.
   if (data.settings && typeof data.settings === 'object') {
-    // Preserve all user-scoped settings before wiping
-    const scopedRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE '%::%'").all();
-    db.prepare('DELETE FROM settings').run();
+    // Wipe just this user's per-user rows so restore is a clean replace.
+    db.prepare("DELETE FROM settings WHERE key LIKE ?").run(`%::${userId}`);
     for (const [key, value] of Object.entries(data.settings)) {
       try {
-        // Backup's plain user-scoped keys (display_name, lock_timeout_minutes, …)
-        // become the restoring user's per-user values
-        if (s.USER_SCOPED_KEYS.has(key)) {
-          s.setForUser(key, value, userId);
-        } else {
-          s.set(key, value);
-        }
+        s.set(key, value); // writes <key>::<userId> via the user context
         counts.settings = (counts.settings || 0) + 1;
       } catch { counts.skipped++; }
-    }
-    // Restore all user-scoped keys that weren't for the restoring user
-    for (const { key, value } of scopedRows) {
-      const sep = key.indexOf('::');
-      if (sep > 0) {
-        const baseKey = key.slice(0, sep);
-        const ownerId = key.slice(sep + 2);
-        // Skip rows we already overwrote from the backup for THIS user
-        if (s.USER_SCOPED_KEYS.has(baseKey) && String(ownerId) === String(userId)) continue;
-      }
-      s.set(key, value);
     }
   }
 

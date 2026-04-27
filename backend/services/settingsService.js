@@ -2,9 +2,31 @@
  * Settings service — DB-first key/value store with .env fallback.
  * All user-configurable options live here so the UI can change them live
  * without touching .env.
+ *
+ * Per-user isolation — every key is per-user automatically.
+ *
+ * On the way in (set/setMany), if we're inside an authenticated request,
+ * the value lands under `<key>::<userId>` instead of the bare key. So
+ * Account A changing their voice doesn't touch Account B's voice.
+ *
+ * On the way out (get/getAll), we look up `<key>::<userId>` first and
+ * fall back to the bare key (acts as a default). This means existing
+ * pre-refactor global values become defaults for users who haven't yet
+ * customised that setting — no migration needed.
+ *
+ * Outside a request context (startup tasks, background jobs without an
+ * inherited context) the bare key is used directly, so global defaults
+ * still work for non-user-scoped operations.
+ *
+ * Auth middleware wraps `next()` in `runWithUserContext(userId, …)`, so
+ * any setting reads/writes during the request automatically use the
+ * right user — no explicit `userId` parameter threading required.
  */
 
+const { AsyncLocalStorage } = require('node:async_hooks');
 const db = require('../database');
+
+const userContext = new AsyncLocalStorage();
 
 // Keys that hold API secrets — masked in GET responses
 const SECRET_KEYS = new Set(['anthropic_api_key', 'openai_api_key', 'tavily_api_key']);
@@ -36,95 +58,103 @@ const DEFAULTS = {
   max_backups:               '10',
 };
 
-// Keys that are scoped per-user (stored as "key::userId" in the DB).
-// Each user gets their own value; `getForUser` falls back to the global key
-// (or DEFAULTS) if the user hasn't set their own — so existing global values
-// stay sensible defaults after a key is moved here.
-const USER_SCOPED_KEYS = new Set(['display_name', 'lock_timeout_minutes']);
+// ── User context (per-request) ───────────────────────────────────────────────
+
+/** Bind userId into the async context so all settings reads/writes during
+ *  the wrapped fn use that user's namespace. Auth middleware calls this. */
+function runWithUserContext(userId, fn) {
+  return userContext.run({ userId }, fn);
+}
+
+function getCurrentUserId() {
+  return userContext.getStore()?.userId ?? null;
+}
 
 // ── Core get/set ─────────────────────────────────────────────────────────────
 
 function get(key) {
+  // Prefer this user's value when we're inside a request context.
+  const userId = getCurrentUserId();
+  if (userId) {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(`${key}::${userId}`);
+    if (row) return row.value;
+  }
+  // Fall back to the bare key (legacy global value), then .env, then DEFAULTS.
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   if (row) return row.value;
-  // .env fallback
   const envKey = key.toUpperCase();
   if (process.env[envKey]) return process.env[envKey];
   return DEFAULTS[key] ?? '';
 }
 
-/** Get a user-scoped setting. Falls back to global key for backwards compat. */
+/** Explicit user lookup — used by code paths that operate on a specific
+ *  user without going through the request context (rare). */
 function getForUser(key, userId) {
-  if (userId && USER_SCOPED_KEYS.has(key)) {
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(`${key}::${userId}`);
-    if (row) return row.value;
-  }
-  return get(key);
+  return userContext.run({ userId }, () => get(key));
 }
 
-/** Set a user-scoped setting. */
+/** Explicit user write — same shape as getForUser. */
 function setForUser(key, value, userId) {
-  if (userId && USER_SCOPED_KEYS.has(key)) {
-    set(`${key}::${userId}`, value);
-    return;
-  }
-  set(key, value);
+  return userContext.run({ userId }, () => set(key, value));
 }
 
 function set(key, value) {
+  const userId = getCurrentUserId();
+  const writeKey = userId ? `${key}::${userId}` : key;
   db.prepare(`
     INSERT INTO settings (key, value, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-  `).run(key, String(value));
+  `).run(writeKey, String(value));
 }
 
 function setMany(obj) {
+  const userId = getCurrentUserId();
   const upsert = db.prepare(`
     INSERT INTO settings (key, value, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
   `);
   const tx = db.transaction((pairs) => {
-    for (const [k, v] of pairs) upsert.run(k, String(v ?? ''));
+    for (const [k, v] of pairs) {
+      const writeKey = userId ? `${k}::${userId}` : k;
+      upsert.run(writeKey, String(v ?? ''));
+    }
   });
   tx(Object.entries(obj));
 }
 
-/** Return all settings, masking secrets. */
+/** Return all settings (masked for secrets) for the current user. Iterates
+ *  DEFAULTS via get() so per-user values + fallbacks are picked up uniformly. */
 function getAll() {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
-  const result = { ...DEFAULTS };
-
+  const result = {};
+  for (const key of Object.keys(DEFAULTS)) {
+    const v = get(key);
+    result[key] = SECRET_KEYS.has(key) ? maskSecret(v) : v;
+  }
+  // Also expose any non-DEFAULTS rows that exist for this user (or globally
+  // as a last resort) — covers legacy keys and one-off settings the UI may
+  // still expect. Skip user-scoped namespace rows that aren't ours.
+  const userId = getCurrentUserId();
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE '%::%'").all();
   for (const { key, value } of rows) {
+    if (key in result) continue;
     result[key] = SECRET_KEYS.has(key) ? maskSecret(value) : value;
   }
-
-  // Fill in any DEFAULTS not yet in DB
-  for (const [key, def] of Object.entries(DEFAULTS)) {
-    if (!(key in result)) result[key] = def;
-  }
-
-  // Also check .env for secrets not yet saved to DB
-  for (const secretKey of SECRET_KEYS) {
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(secretKey);
-    if (!row) {
-      const envKey = secretKey.toUpperCase();
-      if (process.env[envKey]) {
-        result[secretKey] = maskSecret(process.env[envKey]);
-      }
+  if (userId) {
+    const userRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE ?").all(`%::${userId}`);
+    for (const { key, value } of userRows) {
+      const baseKey = key.slice(0, key.indexOf('::'));
+      if (baseKey in result || baseKey in DEFAULTS) continue; // already handled
+      result[baseKey] = SECRET_KEYS.has(baseKey) ? maskSecret(value) : value;
     }
   }
-
   return result;
 }
 
 /** True if a secret key has a value (either DB or .env) — without exposing it. */
 function hasSecret(key) {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-  if (row && row.value) return true;
-  const envKey = key.toUpperCase();
-  return !!(process.env[envKey]);
+  return !!get(key);
 }
 
 function maskSecret(value) {
@@ -132,4 +162,7 @@ function maskSecret(value) {
   return value.slice(0, 4) + '••••••••' + value.slice(-4);
 }
 
-module.exports = { get, set, setMany, getAll, hasSecret, SECRET_KEYS, USER_SCOPED_KEYS, getForUser, setForUser };
+module.exports = {
+  get, set, setMany, getAll, hasSecret, SECRET_KEYS,
+  getForUser, setForUser, runWithUserContext,
+};

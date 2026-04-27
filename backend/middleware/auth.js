@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { runWithUserContext } = require('../services/settingsService');
 
 // Fresh per-process JWT secret. Intentionally NOT persisted: rotating the
 // secret on every backend restart invalidates all existing tokens, so closing
@@ -23,7 +24,10 @@ function requireAuth(req, res, next) {
     const decoded = jwt.verify(token, getSecret());
     req.userId = decoded.userId;
     req.username = decoded.username;
-    next();
+    // Run the rest of the handler chain inside this user's settings context
+    // so any s.get/s.set during the request automatically uses the per-user
+    // namespace (e.g. chatterbox_voice::5 instead of the global key).
+    runWithUserContext(decoded.userId, () => next());
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
