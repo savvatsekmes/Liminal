@@ -998,7 +998,7 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
     }
   }
 
-  const selectedVoice = cfg.chatterbox_voice || 'Abigail.wav';
+  const selectedVoice = cfg.chatterbox_voice || 'Iris.wav';
 
   return (
     <Section title={t('settings.voiceAndTts')}>

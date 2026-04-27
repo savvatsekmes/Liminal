@@ -144,7 +144,7 @@ router.post('/test-tts', async (req, res) => {
       body: JSON.stringify({
         model: 'chatterbox',
         input: 'Liminal is listening. Your voice is ready and working.',
-        voice: voice || s.get('chatterbox_voice') || 'Abigail.wav',
+        voice: voice || s.get('chatterbox_voice') || 'Iris.wav',
         exaggeration: parseFloat(s.get('chatterbox_exaggeration') || '0.6'),
         cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.10'),
       }),

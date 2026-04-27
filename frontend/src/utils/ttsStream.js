@@ -28,7 +28,7 @@ export function clearArchetypeVoiceCache() {
  * @param {string} text - Full text to speak
  * @param {React.MutableRefObject} audioRef - Ref to store current Audio for cancellation
  * @param {React.MutableRefObject} cancelRef - Ref boolean to signal cancellation
- * @param {object} opts - { exaggeration: 0.5, archetype: 'Zen', voice: 'Abigail.wav' }
+ * @param {object} opts - { exaggeration: 0.5, archetype: 'Zen', voice: 'Iris.wav' }
  * @returns {Promise<void>} Resolves when done or cancelled
  */
 export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {

@@ -56,7 +56,7 @@ async function isChatterboxOnline() {
 function getTtsDefaults() {
   const s = require('../services/settingsService');
   return {
-    voice:       s.get('chatterbox_voice') || 'Abigail.wav',
+    voice:       s.get('chatterbox_voice') || 'Iris.wav',
     exaggeration: parseFloat(s.get('chatterbox_exaggeration') || '0.6'),
     cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.10'),
     temperature:  parseFloat(s.get('chatterbox_temperature')  || '1.3'),
