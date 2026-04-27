@@ -186,6 +186,10 @@ export default function Onboarding({ username, onComplete }) {
     max_backups: '10',
   });
 
+  // Avatar URL after upload (the actual file is on the server immediately —
+  // this state just tracks what to render in the preview circle).
+  const [avatarUrl, setAvatarUrl] = useState(null);
+
   function set(key, val) {
     setData((prev) => ({ ...prev, [key]: val }));
   }
@@ -312,6 +316,8 @@ export default function Onboarding({ username, onComplete }) {
             <WhoYouAreStep
               data={data}
               set={set}
+              avatarUrl={avatarUrl}
+              onAvatarChange={setAvatarUrl}
               onContinue={() => goTo(3)}
               onBack={() => goTo(1)}
               onSkipForNow={handleSkipForNow}
@@ -462,8 +468,37 @@ function WelcomeStep({ onContinue }) {
 
 // ── Step 1: Who You Are ──────────────────────────────────────────────────────
 
-function WhoYouAreStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
+function WhoYouAreStep({ data, set, avatarUrl, onAvatarChange, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
   const { t } = useLanguage();
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const avatarInputRef = useRef(null);
+
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarError('');
+    setUploadingAvatar(true);
+    try {
+      const form = new FormData();
+      form.append('avatar', file);
+      const res = await apiFetch('/api/auth/avatar', { method: 'POST', body: form });
+      const result = await res.json();
+      if (result?.avatar_url) {
+        // Cache-bust so the preview updates if the same path is reused.
+        onAvatarChange(`${result.avatar_url}?t=${Date.now()}`);
+      } else if (result?.error) {
+        setAvatarError(result.error);
+      }
+    } catch (err) {
+      setAvatarError('Upload failed. Try a smaller image (under 5 MB).');
+    } finally {
+      setUploadingAvatar(false);
+      // Reset input so the same file can be selected again if needed.
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  }
+
   return (
     <>
       <BackButton onClick={onBack} />
@@ -471,6 +506,71 @@ function WhoYouAreStep({ data, set, onContinue, onBack, onSkipForNow, onSkipComp
       <div style={s.subtitle}>
         {t('onboarding.whoYouAreSubtitle')}
       </div>
+
+      <label style={s.label}>Profile photo</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt=""
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              objectFit: 'cover',
+              border: 'var(--border-style)',
+              flexShrink: 0,
+            }}
+          />
+        ) : (
+          <div style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: '50%',
+            background: 'var(--panel-bg)',
+            border: 'var(--border-style)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '20px',
+            color: 'var(--muted)',
+            flexShrink: 0,
+          }}>
+            ✦
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => avatarInputRef.current?.click()}
+          disabled={uploadingAvatar}
+          style={{
+            padding: '8px 14px',
+            fontSize: '12px',
+            fontWeight: '500',
+            background: 'transparent',
+            color: 'var(--strong)',
+            border: 'var(--border-style)',
+            borderRadius: '2px',
+            cursor: uploadingAvatar ? 'default' : 'pointer',
+            fontFamily: 'var(--font)',
+            opacity: uploadingAvatar ? 0.6 : 1,
+          }}
+        >
+          {uploadingAvatar ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Upload photo'}
+        </button>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleAvatarUpload}
+        />
+      </div>
+      {avatarError ? (
+        <div style={{ ...s.hint, color: '#c44', fontStyle: 'normal' }}>{avatarError}</div>
+      ) : (
+        <div style={s.hint}>{t('common.optional')}</div>
+      )}
 
       <label style={s.label}>{t('onboarding.preferredName')}</label>
       <input

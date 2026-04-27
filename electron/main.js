@@ -1032,8 +1032,14 @@ async function performBackup(backupDir, maxBackups) {
     throw new Error(`Backup request failed (${res.status}): ${errText}`);
   }
 
-  // Write to user-specific subfolder inside backup dir
-  const userDir = sessionUsername ? path.join(backupDir, sessionUsername) : backupDir;
+  // Nest under <backupDir>/Liminal_Backup/<username>/ so picking a generic
+  // folder (Documents, Dropbox, etc.) doesn't dump .liminal files alongside
+  // the user's other content. The Liminal_Backup wrapper keeps everything
+  // Liminal-related in one tidy place; the per-user subfolder isolates
+  // accounts on shared machines.
+  const userDir = sessionUsername
+    ? path.join(backupDir, 'Liminal_Backup', sessionUsername)
+    : path.join(backupDir, 'Liminal_Backup');
   fs.mkdirSync(userDir, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `liminal-backup-${ts}.liminal`;

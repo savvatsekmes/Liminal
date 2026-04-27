@@ -439,6 +439,15 @@ export default function App() {
   }
 
   function handleOnboardingComplete() {
+    // Re-fetch /me so any avatar uploaded during onboarding shows in the
+    // header without waiting for the next app launch.
+    apiFetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.avatar_url) setAvatarUrl(d.avatar_url);
+        else if (d?.user_id) setAvatarUrl(`/api/auth/avatar/${d.user_id}?t=${Date.now()}`);
+      })
+      .catch(() => {});
     setAuthStatus('ok');
   }
 
