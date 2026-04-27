@@ -3,7 +3,7 @@
   "version": "1.3.0",
   "description": "Liminal — personal AI journaling desktop app",
   "author": "Savva Tsekmes",
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
