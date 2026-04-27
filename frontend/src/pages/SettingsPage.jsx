@@ -953,6 +953,8 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
   const [gpus, setGpus] = useState(null);
   const [pendingTtsGpu, setPendingTtsGpu] = useState(null);
   const [ttsPinStatus, setTtsPinStatus] = useState(null);
+  const [pendingTtsModel, setPendingTtsModel] = useState(null);
+  const [ttsModelPinStatus, setTtsModelPinStatus] = useState(null);
   const audioRef = useRef(null);
 
   useEffect(() => {
@@ -998,7 +1000,7 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
     }
   }
 
-  const selectedVoice = cfg.chatterbox_voice || 'Iris.wav';
+  const selectedVoice = cfg.chatterbox_voice || 'Imogen.wav';
 
   return (
     <Section title={t('settings.voiceAndTts')}>
@@ -1102,6 +1104,55 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
               )}
             </Field>
           )}
+
+          <Field
+            label={t('settings.chatterboxVersion') || 'Chatterbox Version'}
+            hint="Used when reading English text. Multilingual model is automatically used for other languages."
+          >
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select
+                style={{ ...s.select, flex: 1 }}
+                value={pendingTtsModel ?? (cfg.tts_model || 'turbo')}
+                onChange={e => setPendingTtsModel(e.target.value)}
+                disabled={ttsModelPinStatus === 'applying'}
+              >
+                <option value="turbo">Chatterbox Turbo — faster, English only</option>
+                <option value="original">Chatterbox — full quality, English only</option>
+              </select>
+              <Btn
+                disabled={ttsModelPinStatus === 'applying'}
+                onClick={async () => {
+                  const chosen = pendingTtsModel ?? (cfg.tts_model || 'turbo');
+                  setTtsModelPinStatus('applying');
+                  try {
+                    const r = await apiFetch('/api/tts/pin-model', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ model: chosen }),
+                    });
+                    const data = await r.json();
+                    if (!r.ok) {
+                      setTtsModelPinStatus({ ok: false, message: data.error || `HTTP ${r.status}` });
+                      return;
+                    }
+                    set('tts_model', chosen);
+                    await save({ tts_model: chosen });
+                    setTtsModelPinStatus({ ok: true, message: data.message || 'Applied.' });
+                    setPendingTtsModel(null);
+                  } catch (err) {
+                    setTtsModelPinStatus({ ok: false, message: err.message });
+                  }
+                }}
+              >
+                {ttsModelPinStatus === 'applying' ? 'Applying…' : 'Set'}
+              </Btn>
+            </div>
+            {ttsModelPinStatus && ttsModelPinStatus !== 'applying' && (
+              <div style={{ ...s.sublabel, color: ttsModelPinStatus.ok ? 'var(--muted)' : '#c54' }}>
+                {ttsModelPinStatus.message}
+              </div>
+            )}
+          </Field>
 
           <Field label={t('settings.voiceModel') || 'Voice Model'}>
             <select

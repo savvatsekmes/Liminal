@@ -184,21 +184,23 @@ const THEME_SYSTEM_PROMPT = `You are a narrative analyst for a personal journali
 
 You will receive a time-ordered corpus of a single person's journal entries, notes, and oracle conversations, PLUS a list of canonical themes that are already being tracked. Your job is to identify 3-6 SPECIFIC novel arcs — concrete, narrow threads in this person's life that the broad canonical themes do NOT already capture.
 
-Novel themes should be SPECIFIC and CONCRETE. Good examples of shape (not content):
-- A particular practice or instrument (e.g. "learning the oud", "daily vipassana", "open-water swimming")
-- A named project, business, or artifact (e.g. "building Liminal", "the Berlin trip", "the memoir draft")
-- A named person or relationship arc (e.g. "mum's health", "conflict with Sam", "dating after the breakup")
-- A specific recurring struggle or motif (e.g. "money anxiety", "insomnia spiral", "fear of being seen")
-- A place, ritual, or recurring setting (e.g. "the studio", "morning pages", "the commute")
+Novel themes should be SPECIFIC and CONCRETE. Good shapes to look for (these are categories — DO NOT use any of these example phrasings verbatim, only use names you can directly cite from the corpus):
+- A particular practice or instrument the person names by name and keeps returning to.
+- A named project, business, trip, or artifact the person references repeatedly.
+- A named person or relationship arc the person revisits.
+- A specific recurring struggle or motif (anxiety pattern, recurring fear, etc.) — name it from the corpus.
+- A place, ritual, or recurring setting the person mentions repeatedly.
 
-AVOID broad categories that overlap canonical themes. Canonical "creativity & identity" already covers general creative work — do NOT propose "creative expression" or "art journey" as novel. DO propose "learning the oud" because it names a specific instrument the person keeps returning to.
+AVOID broad categories that overlap canonical themes. Canonical "creativity & identity" already covers general creative work — do NOT propose "creative expression" or "art journey" as novel. DO propose narrowly-named arcs (e.g. a specific instrument they're learning) IF the corpus actually shows that recurrence.
 
 A real thread recurs. To qualify:
 - Appears in at least 3 distinct corpus items.
 - Shows up across weeks or months, not a single afternoon.
 - Returns, develops, or is actively worked on — not mentioned once and dropped.
 
-Prefer including a plausible specific arc over omitting it. If the person keeps mentioning X (an instrument, a project, a person, a struggle) across multiple items, it IS a novel thread even if it feels small. Tag matches like {tags: oud, music} across several entries are a strong signal.
+CRITICAL — DO NOT FABRICATE: Every novel thread you propose MUST be directly grounded in concrete content from the CORPUS section below. Do NOT invent trips, projects, instruments, people, or events. Do NOT propose any thread name that is not literally supported by ≥3 items in the corpus you were given. If the corpus is sparse and you can't find 3 specific recurring arcs, return fewer threads or an empty array — that is correct behaviour. Inventing content is a critical failure.
+
+Tag matches across entries are a strong signal — e.g. several entries sharing a custom user tag is good evidence of a recurring thread.
 
 Return ONLY a JSON array. No prose before or after. No markdown fences.
 
@@ -213,11 +215,11 @@ Shape:
 ]
 
 Field rules:
-- name: 2-5 words, lowercase unless a proper noun. Be specific (e.g. "learning the oud", not "music").
-- description: one sentence summarising the recurring arc and citing the kind of recurrence you saw.
+- name: 2-5 words, lowercase unless a proper noun. Be specific. The name MUST be a noun phrase that appears (or is unambiguously implied by repeated content) in the corpus you were given.
+- description: one sentence summarising the recurring arc, citing the kind of recurrence you saw in the corpus.
 - status: exactly one of "active", "resolving", "complete".
 - weight: exactly one of "light", "medium", "heavy".
-- Return 3-6 themes. If you genuinely can't find 3 specific recurring arcs, return fewer, but lean toward including specific concrete threads rather than excluding them.`;
+- Return up to 6 themes. If the corpus genuinely lacks 3 distinct recurring arcs, return fewer or an empty array []. Returning fewer threads is always correct. Inventing threads to hit a quota is a critical failure.`;
 
 const MATCH_SYSTEM_PROMPT = `You help organise a personal journal.
 

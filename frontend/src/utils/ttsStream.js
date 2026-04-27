@@ -28,7 +28,7 @@ export function clearArchetypeVoiceCache() {
  * @param {string} text - Full text to speak
  * @param {React.MutableRefObject} audioRef - Ref to store current Audio for cancellation
  * @param {React.MutableRefObject} cancelRef - Ref boolean to signal cancellation
- * @param {object} opts - { exaggeration: 0.5, archetype: 'Zen', voice: 'Iris.wav' }
+ * @param {object} opts - { exaggeration: 0.5, archetype: 'Zen', voice: 'Imogen.wav' }
  * @returns {Promise<void>} Resolves when done or cancelled
  */
 export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
@@ -83,6 +83,15 @@ export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
     return;
   }
 
+  // Resolve language: explicit opts.language wins, otherwise read the current
+  // UI language from localStorage (LanguageContext mirrors `lang` there). The
+  // backend's TTS route runs without auth so it can't see the per-user setting,
+  // so we always carry the language explicitly.
+  let resolvedLang = opts.language;
+  if (!resolvedLang) {
+    try { resolvedLang = localStorage.getItem('lang') || undefined; } catch {}
+  }
+
   async function fetchAudio(sentence) {
     const res = await fetch('/api/tts/speak', {
       method: 'POST',
@@ -91,7 +100,7 @@ export async function streamSpeak(text, audioRef, cancelRef, opts = {}) {
         text: sentence,
         exaggeration: opts.exaggeration ?? 0.5,
         ...(resolvedVoice ? { voice: resolvedVoice } : {}),
-        ...(opts.language ? { language: opts.language } : {}),
+        ...(resolvedLang ? { language: resolvedLang } : {}),
       }),
     });
     if (!res.ok) throw new Error('TTS failed');

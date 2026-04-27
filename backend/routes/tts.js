@@ -56,7 +56,7 @@ async function isChatterboxOnline() {
 function getTtsDefaults() {
   const s = require('../services/settingsService');
   return {
-    voice:       s.get('chatterbox_voice') || 'Iris.wav',
+    voice:       s.get('chatterbox_voice') || 'Imogen.wav',
     exaggeration: parseFloat(s.get('chatterbox_exaggeration') || '0.6'),
     cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.10'),
     temperature:  parseFloat(s.get('chatterbox_temperature')  || '1.3'),
@@ -228,9 +228,6 @@ function preprocessText(text) {
 // the new device on its next load. TTS reads tts_device from SQLite at spawn,
 // so a simple kill + respawn via Electron's control server is enough.
 router.post('/pin-gpu', async (req, res) => {
-  if (process.platform !== 'win32') {
-    return res.status(501).json({ error: 'pin-gpu currently supports Windows only' });
-  }
   const { gpuName } = req.body || {};
   if (!gpuName) return res.status(400).json({ error: 'gpuName is required' });
   try {
@@ -239,7 +236,12 @@ router.post('/pin-gpu', async (req, res) => {
 
     // Kill the TTS server; Electron's child-exit handler nulls ttsProc so the
     // next /tts/ensure respawns with the new tts_device value read from SQLite.
-    spawnSync('taskkill', ['/f', '/t', '/im', 'tts_server.exe'], { stdio: 'ignore', windowsHide: true });
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/f', '/t', '/im', 'tts_server.exe'], { stdio: 'ignore', windowsHide: true });
+    } else {
+      // macOS/Linux: matches both the PyInstaller binary and `python tts_server.py` dev mode.
+      spawnSync('pkill', ['-f', 'tts_server'], { stdio: 'ignore' });
+    }
 
     await new Promise(r => setTimeout(r, 500));
 
@@ -252,6 +254,40 @@ router.post('/pin-gpu', async (req, res) => {
       message: ok
         ? `TTS restarted on ${gpuName === 'auto' ? 'auto' : gpuName}.`
         : `Setting saved. TTS will use ${gpuName} on next speak.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tts/pin-model { model: 'turbo' | 'original' }
+// English-only preference. Non-English text always uses the multilingual model
+// regardless. Same kill+respawn flow as pin-gpu — TTS reads tts_model from SQLite
+// at spawn so we don't need IPC, just a clean restart.
+router.post('/pin-model', async (req, res) => {
+  const { model } = req.body || {};
+  if (!['turbo', 'original'].includes(model)) {
+    return res.status(400).json({ error: "model must be 'turbo' or 'original'" });
+  }
+  try {
+    const s = require('../services/settingsService');
+    s.set('tts_model', model);
+
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/f', '/t', '/im', 'tts_server.exe'], { stdio: 'ignore', windowsHide: true });
+    } else {
+      spawnSync('pkill', ['-f', 'tts_server'], { stdio: 'ignore' });
+    }
+    await new Promise(r => setTimeout(r, 500));
+
+    const ok = await ensureTtsViaControl();
+    res.json({
+      ok: true,
+      model,
+      respawned: ok,
+      message: ok
+        ? `TTS restarted with ${model === 'turbo' ? 'Chatterbox Turbo' : 'Chatterbox'}.`
+        : `Setting saved. TTS will use ${model} on next speak.`,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

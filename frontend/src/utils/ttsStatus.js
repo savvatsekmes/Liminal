@@ -34,11 +34,15 @@ async function check() {
     const res = await fetch('/api/tts/status');
     const data = await res.json();
     if (data.online) {
-      online = true;
-      notify();
+      if (!online) { online = true; notify(); }
       return true;
     }
   } catch {}
+  // Server didn't confirm online — clear the cached flag so callers don't
+  // skip the load path on a stale "true". Without this, killing an orphan
+  // TTS externally (or a crash) leaves the frontend believing the server
+  // is up; subsequent speaks wait silently with no loading toast.
+  if (online) { online = false; notify(); }
   return false;
 }
 
@@ -69,7 +73,10 @@ export function useTtsOnline() {
  * Returns true if online, false if timed out.
  */
 export async function waitForChatterbox(timeoutMs = 45000) {
-  if (online) return true;
+  // Confirm with a fresh probe before trusting the cached flag — the server
+  // can disappear between sessions (orphan kill, crash, idle-release) without
+  // the frontend hearing about it.
+  if (online && (await check())) return true;
 
   loading = true;
   notifyLoading();

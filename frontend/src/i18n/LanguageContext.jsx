@@ -66,6 +66,7 @@ export function LanguageProvider({ children, initialLang = 'en' }) {
 
   const setLanguage = useCallback(async (code) => {
     setLangState(code);
+    try { localStorage.setItem('lang', code); } catch {}
     await loadLang(code);
     // Persist to backend
     apiFetch('/api/settings', {
@@ -81,6 +82,7 @@ export function LanguageProvider({ children, initialLang = 'en' }) {
   // captures only the first value and the UI stays in English forever.
   useEffect(() => {
     setLangState(initialLang);
+    try { localStorage.setItem('lang', initialLang); } catch {}
     if (initialLang !== 'en') loadLang(initialLang);
     else setStrings(en);
   }, [initialLang]);

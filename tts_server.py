@@ -139,14 +139,23 @@ if perth.PerthImplicitWatermarker is None:
     perth.PerthImplicitWatermarker = perth.DummyWatermarker
 
 # ── Load model ────────────────────────────────────────────────────────────────
-# Two model classes: English-only ChatterboxTTS (fast path, all current
-# optimisations) and ChatterboxMultilingualTTS (23 languages, no perf history).
-# Only one is ever resident in VRAM — they swap on language change. The lock
-# serialises swap requests so two simultaneous TTS calls in different languages
-# can't both try to load at once.
+# Three model classes available from upstream chatterbox-tts:
+#   - ChatterboxTTS         (Original, English, 500M)
+#   - ChatterboxTurboTTS    (Turbo, English, 350M, ~3× faster on Mac MPS)
+#   - ChatterboxMultilingualTTS (23 languages, 500M)
+# Only one is ever resident in VRAM — they swap on language change or user
+# preference change. The lock serialises swap requests so two simultaneous TTS
+# calls in different languages can't both try to load at once.
 
 import gc, threading
 from chatterbox.tts import ChatterboxTTS
+try:
+    from chatterbox.tts_turbo import ChatterboxTurboTTS
+    _TURBO_AVAILABLE = True
+except ImportError as e:
+    log.warning(f"Chatterbox Turbo not available ({e}) — defaulting English to Original")
+    ChatterboxTurboTTS = None
+    _TURBO_AVAILABLE = False
 try:
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS, SUPPORTED_LANGUAGES
     _MTL_AVAILABLE = True
@@ -157,10 +166,44 @@ except ImportError as e:
     _MTL_AVAILABLE = False
 
 _model_lock = threading.RLock()  # RLock: _do_generate holds it while calling ensure_model, which also acquires it
-_current_kind = None  # "en" or "mtl"
+_current_kind = None  # "original" | "turbo" | "multilingual"
 model = None
 
+def _read_tts_model_setting() -> str:
+    """Read tts_model from SQLite settings; default 'turbo'.
+    Only 'turbo' and 'original' are valid — multilingual is auto-selected per language."""
+    if not DB_PATH.exists():
+        return "turbo"
+    try:
+        con = sqlite3.connect(str(DB_PATH))
+        row = con.execute("SELECT value FROM settings WHERE key='tts_model'").fetchone()
+        con.close()
+        if row and row[0] in ("turbo", "original"):
+            return row[0]
+    except Exception:
+        pass
+    return "turbo"
+
+def resolve_model_kind(language: str) -> str:
+    """Pick the model class based on requested language and tts_model setting.
+    Non-English always uses multilingual; English honours user preference (default Turbo)."""
+    lang = (language or "en").lower()
+    if lang != "en" and lang in SUPPORTED_LANGUAGES:
+        return "multilingual" if _MTL_AVAILABLE else "original"
+    # English (or unsupported language falling back to English)
+    pref = _read_tts_model_setting()
+    if pref == "turbo" and _TURBO_AVAILABLE:
+        return "turbo"
+    return "original"
+
 def _apply_bf16(m):
+    # Tested on MPS: bf16 cast made synthesis ~40% slower because chatterbox uses
+    # ops without native bf16 MPS kernels, forcing constant bf16↔fp32 conversions.
+    # fp16 on MPS also fails: t3 has residuals / input embeds that stay fp32 in
+    # upstream chatterbox code, and MPS's mps.add op refuses mixed dtypes
+    # ("requires the same element type for all operands"), aborting the process.
+    # Casting the whole model (rather than just t3) is unsafe for s3gen/ve.
+    # CUDA-only for now; MPS stays fp32.
     if DEVICE.startswith("cuda") and not COMPAT_MODE and torch.cuda.is_bf16_supported():
         try:
             m.t3.to(torch.bfloat16)
@@ -169,9 +212,17 @@ def _apply_bf16(m):
         except Exception as e:
             log.warning(f"BFloat16 not applied: {e}")
 
+_KIND_TO_CLASS = {
+    "original": ChatterboxTTS,
+    "turbo": ChatterboxTurboTTS,
+    "multilingual": ChatterboxMultilingualTTS,
+}
+
 def _load(kind):
-    cls = ChatterboxTTS if kind == "en" else ChatterboxMultilingualTTS
-    log.info(f"Loading {cls.__name__} on {DEVICE} (first run downloads ~1 GB)…")
+    cls = _KIND_TO_CLASS[kind]
+    if cls is None:
+        raise RuntimeError(f"Model class for kind '{kind}' is not available in this build")
+    log.info(f"Loading {cls.__name__} on {DEVICE} (first run downloads model weights)…")
     if COMPAT_MODE:
         with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
             m = cls.from_pretrained(device=DEVICE)
@@ -183,11 +234,14 @@ def _load(kind):
     return m
 
 def ensure_model(kind):
-    """Swap loaded model if needed. kind is 'en' or 'mtl'."""
+    """Swap loaded model if needed. kind is 'original' | 'turbo' | 'multilingual'."""
     global model, _current_kind
-    if kind == "mtl" and not _MTL_AVAILABLE:
-        log.warning("Multilingual requested but not available — staying on English")
-        kind = "en"
+    if kind == "multilingual" and not _MTL_AVAILABLE:
+        log.warning("Multilingual requested but not available — falling back to Original")
+        kind = "original"
+    if kind == "turbo" and not _TURBO_AVAILABLE:
+        log.warning("Turbo requested but not available — falling back to Original")
+        kind = "original"
     with _model_lock:
         if _current_kind == kind and model is not None:
             return model
@@ -207,8 +261,8 @@ def ensure_model(kind):
         _current_kind = kind
         return model
 
-# Warm-start with the English model — keeps existing fast path on launch
-ensure_model("en")
+# Warm-start with the user's preferred English model — keeps the common case fast
+ensure_model(resolve_model_kind("en"))
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -278,42 +332,26 @@ def split_into_chunks(text: str) -> list[str]:
     return [c for c in chunks if c.strip()]
 
 
-# cudagraphs-manual is the faster branch default but fails on many PyTorch/CUDA
-# version combos with cudaErrorStreamCaptureInvalidated during capture.
-# "eager" is stable; bfloat16 on both t3+conds.t3 still gives a speed boost.
-_T3_PARAMS = {"generate_token_backend": "eager"} if DEVICE.startswith("cuda") else {}
-
 def _do_generate(text, voice_path, exaggeration, cfg_weight, temperature, language="en"):
     lang = (language or "en").lower()
     if lang != "en" and lang not in SUPPORTED_LANGUAGES:
         log.warning(f"Unsupported language '{lang}', falling back to English")
         lang = "en"
-    kind = "en" if lang == "en" else "mtl"
+    kind = resolve_model_kind(lang)
     # Hold the lock across ensure_model AND generate — otherwise a second request
     # can swap the model out from under a generation in flight and free its CUDA
     # memory, crashing the first request and wedging the server.
     with _model_lock:
         m = ensure_model(kind)
-        extra = {} if kind == "en" else {"language_id": lang}
-        t3_params = _T3_PARAMS if kind == "en" else {}
-        try:
-            return m.generate(
-                text,
-                audio_prompt_path=voice_path,
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight,
-                temperature=temperature,
-                t3_params=t3_params,
-                **extra,
-            )
-        except TypeError:
-            return m.generate(
-                text,
-                audio_prompt_path=voice_path,
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight,
-                **extra,
-            )
+        kwargs = dict(
+            audio_prompt_path=voice_path,
+            exaggeration=exaggeration,
+            cfg_weight=cfg_weight,
+            temperature=temperature,
+        )
+        if kind == "multilingual":
+            kwargs["language_id"] = lang
+        return m.generate(text, **kwargs)
 
 def generate_chunk(text, voice_path, exaggeration, cfg_weight, temperature, language="en"):
     if COMPAT_MODE:

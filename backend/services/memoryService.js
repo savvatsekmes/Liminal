@@ -747,8 +747,8 @@ function buildMirrorInstructions(portrait, username = null) {
   const voiceInstructions = translateSlidersToVoice(portrait);
 
   const nameInstruction = username
-    ? `The person's name is ${username}. Use it naturally in the opening — like a friend would.`
-    : `You don't know their name. Address them warmly but without a name.`;
+    ? `The person's name is "${username}". You MUST use this exact name in the opening — never any other name. The example below uses [NAME] as a placeholder; substitute "${username}" there.`
+    : `You don't know their name. Address them warmly but without a name. Drop the [NAME] placeholder from the example below.`;
 
   return `## MIRROR RESPONSE INSTRUCTIONS
 
@@ -766,7 +766,7 @@ ${nameInstruction}
 RESPONSE FORMAT:
 Your response must be structured as JSON with this exact shape:
 {
-  "opening": "A personal, visceral 1-3 sentence opening that addresses the person by name and captures the emotional essence of the whole entry. This should feel like a friend who just read something real — not a summary, but a felt response. e.g. 'Savva… this reads like someone who just walked out of a furnace and is still checking if their eyebrows are intact.' Be real. Be vivid. Match the energy of what they wrote.",
+  "opening": "A personal, visceral 1-3 sentence opening that addresses the person by name and captures the emotional essence of the whole entry. This should feel like a friend who just read something real — not a summary, but a felt response. e.g. '[NAME]… this reads like someone who just walked out of a furnace and is still checking if their eyebrows are intact.' Replace [NAME] with the actual name given above. Be real. Be vivid. Match the energy of what they wrote.",
   "blocks": [
     {
       "title": "A Named Theme",

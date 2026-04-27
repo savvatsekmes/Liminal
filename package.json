@@ -7,7 +7,10 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dist": "electron-builder --prepackaged dist-installers/win-unpacked --win nsis-web"
+    "dist": "electron-builder --prepackaged dist-installers/win-unpacked --win nsis-web",
+    "rebuild:backend": "npx --yes @electron/rebuild --module-dir backend --types prod",
+    "predist:mac": "npm run rebuild:backend",
+    "dist:mac": "electron-builder --mac dmg --arm64"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
@@ -23,6 +26,40 @@
     "directories": {
       "output": "dist-installers",
       "buildResources": "electron"
+    },
+    "afterSign": "scripts/mac-adhoc-sign.js",
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": ["**/*", "!data/**", "data/*.js", "!default-voices/For_Savva_Only/**", "!.env"]
+      },
+      {
+        "from": "frontend/dist",
+        "to": "frontend/dist"
+      },
+      {
+        "from": "dist/tts_server",
+        "to": "tts_server"
+      }
+    ],
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] }
+      ],
+      "icon": "electron/icons/icon.icns",
+      "category": "public.app-category.lifestyle",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Liminal ${version}",
+      "icon": "electron/icons/icon.icns"
     },
     "win": {
       "icon": "electron/icons/icon.ico",

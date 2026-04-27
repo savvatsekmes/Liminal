@@ -46,6 +46,8 @@ __pycache__/
 *.pyo
 venv/
 .venv/
+.venv-tts/
+.venv-turbo/
 
 # Personal voice clones — local-only, never ship to the public build
 backend/default-voices/For_Savva_Only/

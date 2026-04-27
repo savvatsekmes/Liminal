@@ -767,6 +767,8 @@ export default {
   'settings.gpuForOllamaHint': 'Set CUDA_VISIBLE_DEVICES before starting Ollama to restrict it to a specific GPU.',
   'settings.gpuForTts': 'GPU for TTS',
   'settings.gpuForTtsHint': 'Which device Chatterbox runs on. Restart TTS server after changing.',
+  'settings.chatterboxVersion': 'Chatterbox Version',
+  'settings.chatterboxVersionHint': 'Used when reading English text. Multilingual model is automatically used for other languages.',
   'settings.recommendedModels': 'Recommended models',
   'settings.selectModel': 'Select a model\u2026',
   'settings.installed': 'Installed',

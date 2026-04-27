@@ -40,7 +40,7 @@ const DEFAULTS = {
   ollama_model:              'llama3.1',
   ollama_think:              'false',
   chatterbox_url:            'http://localhost:8100',
-  chatterbox_voice:          'Iris.wav',
+  chatterbox_voice:          'Imogen.wav',
   chatterbox_exaggeration:   '0.6',
   chatterbox_cfg_weight:     '0.10',
   chatterbox_temperature:    '1.3',

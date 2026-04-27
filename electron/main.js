@@ -60,7 +60,7 @@ const TTS_DIR      = isDev ? REPO_ROOT                              : path.join(
 // Dev override: keep the per-user-encryption test run fully isolated from the
 // real installed app's data dir so test registrations never touch the
 // production journal. Must happen before anything else reads getPath('userData').
-if (isDev) {
+if (isDev && !process.env.LIMINAL_USE_PROD_DATA) {
   const appDataRoot = process.env.APPDATA
     || (process.platform === 'darwin'
           ? path.join(os.homedir(), 'Library', 'Application Support')
@@ -172,45 +172,49 @@ function healthCheckTts(timeoutMs = 1000) {
   });
 }
 
+// Single-flight guard: concurrent /tts/ensure calls (frontend status poll +
+// speak request + remote client warmup) used to each kill+respawn the still-
+// booting TTS server because the 1s health check raced the Turbo MPS load.
+// Now they all await the same promise.
+let ttsStartingPromise = null;
+
 async function ensureTtsRunning() {
-  // Trust the cached handle only if it's alive AND responding. A crash fires
-  // the 'exit' handler which nulls ttsProc, but there's a narrow race where
-  // the next request arrives before that event dispatches — the health check
-  // closes that gap. Without it, a crashed Chatterbox stays "not reachable"
-  // until the app is restarted.
+  if (ttsStartingPromise) return ttsStartingPromise;
+  // Trust the OS process state. The child_process 'exit' handler nulls
+  // ttsProc when Python actually crashes, and `killed` is only true if WE
+  // called .kill() — so a non-null, non-killed handle means the process is
+  // genuinely alive. A failed health check on an alive process almost always
+  // means it's busy loading a model (Turbo→Multilingual swap is ~10–30s on
+  // Mac MPS, longer on first-time download). Killing it there triggers a
+  // full respawn + redownload cycle. Instead we let the real TTS request
+  // proceed; if Python is truly hung, the speak fetch will time out at the
+  // HTTP layer and the user can retry, by which point the exit handler
+  // would have nulled ttsProc.
   if (ttsProc && !ttsProc.killed) {
-    if (await healthCheckTts(1000)) {
-      resetTtsIdleTimer();
-      return;
-    }
-    // Zombie — kill and fall through to respawn.
-    try { killChild(ttsProc); } catch {}
-    ttsProc = null;
+    if (await healthCheckTts(2000)) resetTtsIdleTimer();
+    return;
   }
-  ttsProc = spawnTts();
-  if (!ttsProc) throw new Error('TTS server could not be started');
-  markTtsActivity();
-  // If the window is already hidden when TTS spawns (e.g. --hidden auto-start
-  // + remote browser user), start the idle countdown so we don't hold VRAM
-  // indefinitely when that user walks away.
-  scheduleTtsHiddenIdleCheck();
-  // Wait for TTS to become healthy
-  const deadline = Date.now() + 30000;
-  return new Promise((resolve, reject) => {
-    const tick = () => {
-      const req = http.get(
-        { host: '127.0.0.1', port: TTS_PORT, path: '/v1/models', timeout: 1000 },
-        (res) => { if (res.statusCode === 200) return resolve(); retry(); }
-      );
-      req.on('error', retry);
-      req.on('timeout', () => { req.destroy(); retry(); });
-    };
-    const retry = () => {
-      if (Date.now() > deadline) return reject(new Error('TTS health check timed out'));
-      setTimeout(tick, 500);
-    };
-    tick();
-  });
+  ttsStartingPromise = (async () => {
+    try {
+      ttsProc = spawnTts();
+      if (!ttsProc) throw new Error('TTS server could not be started');
+      markTtsActivity();
+      scheduleTtsHiddenIdleCheck();
+      // Mac MPS Turbo cold-load is ~10s; a multilingual swap on top can push
+      // first-healthy past 30s. 90s leaves headroom without ever appearing
+      // hung to the user (frontend shows a spinner during this).
+      const deadline = Date.now() + 90000;
+      while (Date.now() < deadline) {
+        if (ttsProc && ttsProc.killed) throw new Error('TTS server exited during startup');
+        if (await healthCheckTts(2000)) return;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      throw new Error('TTS health check timed out');
+    } finally {
+      ttsStartingPromise = null;
+    }
+  })();
+  return ttsStartingPromise;
 }
 
 function logFile(name) {
@@ -288,6 +292,43 @@ function startControlServer() {
   return controlServerPort;
 }
 
+// Cross-platform: return the PID of the listener on `port`, or null.
+// Windows: parse `netstat -ano -p TCP`. macOS/Linux: `lsof -nP -iTCP:port -sTCP:LISTEN -t`.
+function findPidOnPort(port) {
+  const { execFileSync } = require('child_process');
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true });
+      const line = out.split('\n').find(
+        (l) => /LISTENING/.test(l) && new RegExp(`:${port}\\b`).test(l)
+      );
+      if (!line) return null;
+      const parts = line.trim().split(/\s+/);
+      const pid = parseInt(parts[parts.length - 1], 10);
+      return Number.isFinite(pid) && pid > 0 ? pid : null;
+    } else {
+      const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const pid = parseInt(out.trim().split('\n')[0], 10);
+      return Number.isFinite(pid) && pid > 0 ? pid : null;
+    }
+  } catch { return null; }
+}
+
+// Cross-platform forceful kill by PID.
+function killPid(pid) {
+  const { execFileSync } = require('child_process');
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
+    } else {
+      execFileSync('kill', ['-9', String(pid)], { stdio: 'ignore' });
+    }
+  } catch {}
+}
+
 // If a previous backend survived (Electron crash, Task Manager kill, power loss
 // before before-quit completed) it still holds :3001 with the user's session
 // keys decrypted in memory. Without this, our new spawnBackend hits EADDRINUSE
@@ -316,29 +357,9 @@ async function killOrphanBackend() {
   try { parsed = JSON.parse(initial.body); } catch {}
   if (!parsed || parsed.status !== 'ok') return;
 
-  let orphanPid = null;
-  try {
-    const { execFileSync } = require('child_process');
-    const out = execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true });
-    const line = out.split('\n').find(
-      (l) => /LISTENING/.test(l) && new RegExp(`:${BACKEND_PORT}\\b`).test(l)
-    );
-    if (line) {
-      const parts = line.trim().split(/\s+/);
-      const pid = parseInt(parts[parts.length - 1], 10);
-      if (Number.isFinite(pid) && pid > 0) orphanPid = pid;
-    }
-  } catch {}
-
+  const orphanPid = findPidOnPort(BACKEND_PORT);
   if (!orphanPid) return;
-
-  try {
-    const { execFileSync } = require('child_process');
-    execFileSync('taskkill', ['/pid', String(orphanPid), '/t', '/f'], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-  } catch {}
+  killPid(orphanPid);
 
   // Wait for the port to actually release before spawnBackend tries to bind.
   for (let i = 0; i < 15; i++) {
@@ -350,6 +371,63 @@ async function killOrphanBackend() {
   try {
     fs.appendFileSync(path.join(USER_DATA, 'backend.log'),
       `[${new Date().toISOString()}] Killed orphan backend pid=${orphanPid} on :${BACKEND_PORT}\n`);
+  } catch {}
+}
+
+// Same problem for TTS: a previous tts_server (PyInstaller binary in prod,
+// `python tts_server.py` in dev) can survive an Electron crash and hold :8100.
+// New spawns then fail to bind with EADDRINUSE — frontend reports "not
+// reachable" while leaked multiprocessing workers pile up.
+//
+// We kill the listener AND any leaked tts_server siblings (PyInstaller spawns
+// multiple multiprocessing helpers; killing only the parent leaves the children
+// clinging to GPU memory). On macOS/Linux, `pkill -9 -f tts_server` sweeps the
+// whole process group in one go.
+async function killOrphanTts() {
+  const orphanPid = findPidOnPort(TTS_PORT);
+  if (!orphanPid) return;
+
+  // Confirm it's our TTS by process name before killing — never assume the
+  // port is ours. On Win the bundled binary is `tts_server.exe`; on POSIX it's
+  // `tts_server` (PyInstaller) or `python` running tts_server.py (dev).
+  let isOurs = false;
+  try {
+    const { execFileSync } = require('child_process');
+    if (process.platform === 'win32') {
+      const out = execFileSync('tasklist', ['/FI', `PID eq ${orphanPid}`, '/FO', 'CSV', '/NH'],
+        { encoding: 'utf8', windowsHide: true });
+      isOurs = /tts_server/i.test(out);
+    } else {
+      const out = execFileSync('ps', ['-p', String(orphanPid), '-o', 'command='],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      isOurs = /tts_server/i.test(out);
+    }
+  } catch {}
+
+  if (!isOurs) return;
+
+  // Sweep — on POSIX, pkill catches the parent + multiprocessing workers in one
+  // shot. On Windows, taskkill /t /f does the same via the parent PID's tree.
+  try {
+    const { execFileSync } = require('child_process');
+    if (process.platform === 'win32') {
+      killPid(orphanPid);
+      execFileSync('taskkill', ['/f', '/im', 'tts_server.exe'],
+        { stdio: 'ignore', windowsHide: true });
+    } else {
+      execFileSync('pkill', ['-9', '-f', 'tts_server'], { stdio: 'ignore' });
+    }
+  } catch {}
+
+  // Wait for the port to release.
+  for (let i = 0; i < 15; i++) {
+    if (!findPidOnPort(TTS_PORT)) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  try {
+    fs.appendFileSync(path.join(USER_DATA, 'tts_server.log'),
+      `[${new Date().toISOString()}] Killed orphan TTS pid=${orphanPid} on :${TTS_PORT}\n`);
   } catch {}
 }
 
@@ -535,6 +613,12 @@ async function createWindow() {
 
   await mainWindow.loadURL(`http://127.0.0.1:${BACKEND_PORT}/`);
 
+  // macOS renders Electron content noticeably larger than Windows for the same
+  // CSS sizes — 90% brings the two platforms to roughly the same visual density.
+  if (process.platform === 'darwin') {
+    mainWindow.webContents.setZoomFactor(0.9);
+  }
+
   // Register a reliable DevTools shortcut. Electron's default Ctrl+Shift+I is
   // sometimes swallowed by the autoHideMenuBar config; a globalShortcut bypasses
   // the menu accelerator path entirely.
@@ -614,7 +698,7 @@ const launchedHidden = process.argv.includes('--hidden')
   || (process.platform === 'win32' && app.getLoginItemSettings().wasOpenedAsHidden);
 
 app.whenReady().then(async () => {
-  await killOrphanBackend();
+  await Promise.all([killOrphanBackend(), killOrphanTts()]);
   backendProc = spawnBackend();
   // TTS is NOT started on boot — spawned on-demand to save VRAM
 

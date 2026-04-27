@@ -70,6 +70,19 @@ router.post('/', async (req, res) => {
       blocks = parsed.blocks || [];
       opening = parsed.opening || null;
     }
+    // JSON.parse failed (or returned no blocks) — try the salvage path. Catches
+    // common LLM malformations like the "blocks" array being unclosed before
+    // top-level keys appear: e.g. `{"blocks":[...,"closing":"..."}}` instead of
+    // `{"blocks":[...],"closing":"..."}`. Extracts opening + blocks structurally
+    // so the user gets a proper reflection instead of seeing raw JSON.
+    if (!blocks.length) {
+      const salvaged = salvageReflection(rawResponse);
+      if (salvaged && salvaged.blocks.length) {
+        console.warn(`[reflect] salvaged ${salvaged.blocks.length} blocks from malformed JSON`);
+        blocks = salvaged.blocks;
+        opening = opening || salvaged.opening;
+      }
+    }
     // Final fallback: treat the whole response as a single prose block
     if (!blocks.length) {
       blocks = [{ title: 'Reflection', body: rawResponse, quote: null, archetype: singleArchetype || 'Auto' }];
@@ -450,6 +463,64 @@ function extractJsonObject(raw) {
   return null;
 }
 
+// Last-resort structural extraction when extractJsonObject can't recover.
+// Pulls top-level "opening" plus each {"title":..., "body":..., ...} block
+// independently via brace-matching, so even if the surrounding JSON is broken
+// (e.g. unclosed array, misplaced top-level keys inside the array) we still
+// reconstruct a usable reflection instead of dumping raw JSON to the user.
+function salvageReflection(raw) {
+  if (!raw) return null;
+  const result = { opening: null, blocks: [] };
+
+  // Pull top-level "opening" via regex, decoding escapes via JSON.parse.
+  const openingMatch = raw.match(/"opening"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  if (openingMatch) {
+    try { result.opening = JSON.parse('"' + openingMatch[1] + '"'); } catch {}
+  }
+
+  // Walk the string finding each `{ "title": ... }` object via brace-matching.
+  // Skip braces inside string literals (same logic as extractJsonObject).
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] !== '{') continue;
+    if (!/^\{\s*"title"\s*:/.test(raw.slice(i, Math.min(i + 50, raw.length)))) continue;
+
+    let depth = 0, inStr = false, escape = false, end = -1;
+    for (let j = i; j < raw.length; j++) {
+      const ch = raw[j];
+      if (inStr) {
+        if (escape) { escape = false; continue; }
+        if (ch === '\\') { escape = true; continue; }
+        if (ch === '"') { inStr = false; }
+        continue;
+      }
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) { end = j + 1; break; }
+      }
+    }
+    if (end === -1) continue;
+
+    const candidate = raw.slice(i, end);
+    let block = null;
+    try { block = JSON.parse(candidate); }
+    catch { try { block = JSON.parse(repairLlmJson(candidate)); } catch {} }
+
+    if (block && typeof block.title === 'string' && typeof block.body === 'string') {
+      result.blocks.push({
+        title: block.title,
+        body: block.body,
+        quote: block.quote || null,
+        archetype: block.archetype || 'Auto',
+      });
+      i = end - 1;
+    }
+  }
+
+  return result;
+}
+
 function repairLlmJson(s) {
   let out = '';
   let inStr = false;
@@ -664,3 +735,4 @@ async function attachEcho(blocks, currentText, currentEntryId, userId) {
 }
 
 module.exports = router;
+module.exports.__test__ = { extractJsonObject, salvageReflection, repairLlmJson };
