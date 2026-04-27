@@ -451,7 +451,19 @@ export default function App() {
     setAuthStatus('ok');
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    // If auto-backup is enabled, fire one before tearing down the session —
+    // otherwise the user's session-decrypted data is the only window we have
+    // to write a complete backup. Mirrors the before-quit auto-backup flow.
+    try {
+      const settingsRes = await apiFetch('/api/settings');
+      const settings = await settingsRes.json();
+      if (settings.auto_backup_enabled === 'true' && (settings.backup_location || '').trim()) {
+        setBackupSplash(true);
+        try { await window.liminal?.triggerBackup?.(); } catch {}
+        setBackupSplash(false);
+      }
+    } catch {}
     clearStoredToken();
     setAuthStatus('gate');
     setUsername('');
