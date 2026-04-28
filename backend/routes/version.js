@@ -75,11 +75,14 @@ router.get('/check', async (req, res) => {
     const data = await r.json();
 
     const latest = (data.tag_name || '').replace(/^v/, '');
-    // Direct download URL for the Windows stub installer, so the in-app
+    // Direct download URL for the platform's installer, so the in-app
     // banner can hand the user a single-click download instead of bouncing
     // them through the GitHub release page. Looked up by extension so the
-    // version-bearing filename (Liminal.Web.Setup.<v>.exe) doesn't matter.
-    const installerAsset = (data.assets || []).find(a => a.name?.endsWith('.exe'));
+    // version-bearing filename doesn't matter.
+    const isMac = process.platform === 'darwin';
+    const installerAsset = (data.assets || []).find(a =>
+      isMac ? /-arm64\.dmg$/.test(a.name || '') : a.name?.endsWith('.exe')
+    );
     const result = {
       current,
       latest: latest || null,

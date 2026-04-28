@@ -2277,11 +2277,10 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
             {info.releaseName && info.releaseName !== `v${info.latest}` && (
               <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>{info.releaseName}</div>
             )}
-            {info.releaseUrl && (
+            {(info.installerUrl || info.releaseUrl) && (
               <a
-                href={info.releaseUrl}
-                target="_blank"
-                rel="noreferrer"
+                href={info.installerUrl || info.releaseUrl}
+                {...(info.installerUrl ? { download: '' } : { target: '_blank', rel: 'noreferrer' })}
                 style={{
                   display: 'inline-block',
                   padding: '7px 14px',
