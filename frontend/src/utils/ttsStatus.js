@@ -54,6 +54,21 @@ export function isChatterboxOnline() {
   return online;
 }
 
+/** Show the "Loading Chatterbox into VRAM…" toast while `asyncFn` runs.
+ * Used by call sites that trigger a model swap without going through
+ * waitForChatterbox (e.g. /api/tts/preload after a Set click or language
+ * change). Returns whatever asyncFn returns. */
+export async function withLoadingToast(asyncFn) {
+  loading = true;
+  notifyLoading();
+  try {
+    return await asyncFn();
+  } finally {
+    loading = false;
+    notifyLoading();
+  }
+}
+
 /**
  * React hook — returns true once Chatterbox comes online.
  */

@@ -138,6 +138,35 @@ import perth
 if perth.PerthImplicitWatermarker is None:
     perth.PerthImplicitWatermarker = perth.DummyWatermarker
 
+# ── Patch librosa.load + librosa.resample to always return fp32 ──────────────
+# librosa returns fp64 in some setups (depending on numpy/scipy/librosa
+# version interactions). On CUDA, fp64 propagates from the loaded audio
+# through every downstream layer (voice_encoder LSTM, FSMN conv,
+# mel-spectrogram matmul, t3 transformer, s3gen) and crashes mixed-dtype
+# ops. MPS auto-demotes silently — invisible on Mac, fatal on Windows.
+# Monkey-patching at the module level catches every chatterbox call
+# (Original, Turbo, Multilingual) since they all import `librosa` and use
+# the qualified `librosa.load(...)` / `librosa.resample(...)` form.
+# The chatterbox/s3tokenizer source files we edited locally have similar
+# defensive casts, but THIS is the source-portable fix that ships with
+# Liminal — a fresh `pip install chatterbox-tts==0.1.7` will work because
+# this patch runs before any chatterbox audio loading.
+import librosa as _liminal_librosa
+_liminal_orig_load = _liminal_librosa.load
+_liminal_orig_resample = _liminal_librosa.resample
+def _liminal_load_fp32(*args, **kwargs):
+    arr, sr = _liminal_orig_load(*args, **kwargs)
+    if hasattr(arr, "dtype") and str(arr.dtype) != "float32":
+        arr = arr.astype("float32", copy=False)
+    return arr, sr
+def _liminal_resample_fp32(*args, **kwargs):
+    out = _liminal_orig_resample(*args, **kwargs)
+    if hasattr(out, "dtype") and str(out.dtype) != "float32":
+        out = out.astype("float32", copy=False)
+    return out
+_liminal_librosa.load = _liminal_load_fp32
+_liminal_librosa.resample = _liminal_resample_fp32
+
 # ── Load model ────────────────────────────────────────────────────────────────
 # Three model classes available from upstream chatterbox-tts:
 #   - ChatterboxTTS         (Original, English, 500M)
@@ -171,14 +200,17 @@ model = None
 
 def _read_tts_model_setting() -> str:
     """Read tts_model from SQLite settings; default 'turbo'.
-    Only 'turbo' and 'original' are valid — multilingual is auto-selected per language."""
+    Valid values: 'turbo', 'original', 'multilingual'. Multilingual is also
+    auto-selected for non-English requests; explicit 'multilingual' here lets
+    a user pick the multilingual model even for English (e.g. for testing or
+    consistency across language switches)."""
     if not DB_PATH.exists():
         return "turbo"
     try:
         con = sqlite3.connect(str(DB_PATH))
         row = con.execute("SELECT value FROM settings WHERE key='tts_model'").fetchone()
         con.close()
-        if row and row[0] in ("turbo", "original"):
+        if row and row[0] in ("turbo", "original", "multilingual"):
             return row[0]
     except Exception:
         pass
@@ -186,7 +218,8 @@ def _read_tts_model_setting() -> str:
 
 def resolve_model_kind(language: str) -> str:
     """Pick the model class based on requested language and tts_model setting.
-    Non-English always uses multilingual; English honours user preference (default Turbo)."""
+    Non-English always uses multilingual; English honours user preference
+    (default Turbo, but multilingual / original also allowed)."""
     lang = (language or "en").lower()
     if lang != "en" and lang in SUPPORTED_LANGUAGES:
         return "multilingual" if _MTL_AVAILABLE else "original"
@@ -194,23 +227,122 @@ def resolve_model_kind(language: str) -> str:
     pref = _read_tts_model_setting()
     if pref == "turbo" and _TURBO_AVAILABLE:
         return "turbo"
+    if pref == "multilingual" and _MTL_AVAILABLE:
+        return "multilingual"
     return "original"
 
 def _apply_bf16(m):
-    # Tested on MPS: bf16 cast made synthesis ~40% slower because chatterbox uses
-    # ops without native bf16 MPS kernels, forcing constant bf16↔fp32 conversions.
-    # fp16 on MPS also fails: t3 has residuals / input embeds that stay fp32 in
-    # upstream chatterbox code, and MPS's mps.add op refuses mixed dtypes
-    # ("requires the same element type for all operands"), aborting the process.
-    # Casting the whole model (rather than just t3) is unsafe for s3gen/ve.
-    # CUDA-only for now; MPS stays fp32.
-    if DEVICE.startswith("cuda") and not COMPAT_MODE and torch.cuda.is_bf16_supported():
-        try:
-            m.t3.to(torch.bfloat16)
-            torch.cuda.empty_cache()
-            log.info("BFloat16 enabled on t3")
-        except Exception as e:
-            log.warning(f"BFloat16 not applied: {e}")
+    # bf16 cast on t3 was previously enabled on CUDA for VRAM savings — disabled
+    # 2026-04-28 because newer chatterbox-tts 0.1.7 wheels (the dual-mode T3 with
+    # GPT2/Llama dispatch + new BFloat16 logic) don't propagate the cast through
+    # to input embeddings, producing
+    #   "mat1 and mat2 must have the same dtype, but got Float and BFloat16"
+    # on every generation. Same MPS-side reasoning applies: chatterbox's t3 has
+    # residuals / input embeds that stay fp32, and matmul refuses mixed dtypes.
+    # fp32 costs ~1-2 GB extra VRAM on a 4090 vs bf16 — irrelevant for users with
+    # modern GPUs. Re-enable when chatterbox's own bf16 path is internally
+    # consistent (or when we patch the casts ourselves).
+    pass
+
+def _force_fp32_on_cuda(m):
+    """Demote every fp64 tensor reachable from m to float32 — params,
+    buffers, and plain attributes. Plus monkey-patch F.conv1d/linear/matmul
+    so any fp64 weights that escape this pass get coerced at call time.
+
+    chatterbox+s3tokenizer have fp64 weights/buffers in places (mel_filters,
+    FSMN conv layers, RoPE freqs_cis). MPS auto-demotes; CUDA preserves
+    and crashes downstream ops with mixed dtypes. .float() recursion keeps
+    not catching everything (some buffers held as plain attrs, some weights
+    look like Parameters but don't respond to .to() calls), so we belt-and-
+    suspenders by walking named_parameters / named_buffers explicitly AND
+    monkey-patching the most common F.* functions.
+    """
+    if not DEVICE.startswith("cuda"):
+        return  # MPS / CPU don't need this
+
+    # ── Pass 1: standard .float() recursion via every nn.Module attribute
+    seen = set()
+    def cast_recursive(obj, path="m"):
+        if id(obj) in seen:
+            return
+        seen.add(id(obj))
+        if isinstance(obj, torch.nn.Module):
+            try: obj.float()
+            except Exception as e: log.warning(f"  .float() failed at {path}: {e}")
+        if not hasattr(obj, "__dict__"): return
+        for attr_name, attr in list(vars(obj).items()):
+            if attr_name.startswith("_"): continue
+            if isinstance(attr, torch.nn.Module):
+                cast_recursive(attr, f"{path}.{attr_name}")
+            elif isinstance(attr, torch.Tensor) and attr.dtype == torch.float64:
+                try:
+                    setattr(obj, attr_name, attr.to(torch.float32))
+                    log.info(f"  demoted plain tensor {path}.{attr_name} to fp32")
+                except Exception: pass
+    try:
+        cast_recursive(m, "m")
+    except Exception as e:
+        log.warning(f"recursion failed: {e}")
+
+    # ── Pass 2: walk named_parameters / named_buffers on every nn.Module
+    # we can find, and forcefully demote any fp64 to fp32 in-place. This
+    # is more thorough than .float() because it operates on .data directly
+    # and handles edge cases where .to() doesn't propagate (e.g. fused
+    # operations, frozen parameters).
+    fp64_found = []
+    def force_demote_module(mod, path="m"):
+        if not isinstance(mod, torch.nn.Module): return
+        for name, p in mod.named_parameters(recurse=True):
+            if p.dtype == torch.float64:
+                fp64_found.append(f"{path}.{name} (param)")
+                p.data = p.data.to(torch.float32)
+        for name, b in mod.named_buffers(recurse=True):
+            if b.dtype == torch.float64:
+                fp64_found.append(f"{path}.{name} (buffer)")
+                b.data = b.data.to(torch.float32)
+
+    for sub_name in dir(m):
+        if sub_name.startswith("_"): continue
+        sub = getattr(m, sub_name, None)
+        if isinstance(sub, torch.nn.Module):
+            try: force_demote_module(sub, f"m.{sub_name}")
+            except Exception as e: log.warning(f"force-demote failed at m.{sub_name}: {e}")
+        # Also drill one level deeper for nested modules held as plain attrs
+        if hasattr(sub, "__dict__"):
+            for attr_name, attr in list(vars(sub).items()):
+                if attr_name.startswith("_"): continue
+                if isinstance(attr, torch.nn.Module):
+                    try: force_demote_module(attr, f"m.{sub_name}.{attr_name}")
+                    except Exception: pass
+
+    if fp64_found:
+        log.info(f"Demoted {len(fp64_found)} fp64 tensors to fp32:")
+        for path in fp64_found[:20]:  # cap at 20 to avoid log flood
+            log.info(f"  {path}")
+        if len(fp64_found) > 20:
+            log.info(f"  ... and {len(fp64_found) - 20} more")
+
+    # ── Pass 3: monkey-patch F.conv1d/linear/matmul to coerce dtype at
+    # call time. Catches any fp64 weights that survived passes 1+2 (e.g.
+    # tensors created at runtime, lazy init, or held in non-Module objects).
+    if not getattr(_force_fp32_on_cuda, "_patched_torch_fns", False):
+        import torch.nn.functional as F
+        for fn_name in ("conv1d", "conv2d", "conv3d", "linear"):
+            if not hasattr(F, fn_name): continue
+            orig = getattr(F, fn_name)
+            def make_wrapper(orig_fn, name):
+                def coerce(input, weight, bias=None, *args, **kwargs):
+                    if weight.dtype != input.dtype:
+                        weight = weight.to(input.dtype)
+                    if bias is not None and bias.dtype != input.dtype:
+                        bias = bias.to(input.dtype)
+                    return orig_fn(input, weight, bias, *args, **kwargs)
+                return coerce
+            setattr(F, fn_name, make_wrapper(orig, fn_name))
+        _force_fp32_on_cuda._patched_torch_fns = True
+        log.info("Monkey-patched F.{conv1d,conv2d,conv3d,linear} for dtype coercion")
+
+    log.info("Forced fp32 on CUDA — float64 contamination guarded (deep+)")
 
 _KIND_TO_CLASS = {
     "original": ChatterboxTTS,
@@ -229,6 +361,7 @@ def _load(kind):
         log.info(f"{cls.__name__} loaded in math-only SDPA mode")
     else:
         m = cls.from_pretrained(device=DEVICE)
+    _force_fp32_on_cuda(m)
     _apply_bf16(m)
     log.info(f"{cls.__name__} ready.")
     return m
@@ -284,6 +417,28 @@ def list_models():
         "data": [{"id": "chatterbox", "object": "model"}],
         "languages": sorted(SUPPORTED_LANGUAGES.keys()) if _MTL_AVAILABLE else ["en"],
     }
+
+class PreloadRequest(BaseModel):
+    # Either pass the explicit kind ('original'/'turbo'/'multilingual') OR a
+    # language and let the server resolve. Used by the frontend to warm the
+    # right model on language change / Set-click without producing audio.
+    kind: str | None = None
+    language: str | None = None
+
+@app.post("/v1/preload")
+def preload(req: PreloadRequest):
+    """Trigger model swap to the requested kind. Returns once loaded so the
+    client can display a 'loading' overlay while waiting. No audio produced."""
+    if req.kind:
+        kind = req.kind
+    elif req.language is not None:
+        kind = resolve_model_kind(req.language)
+    else:
+        kind = resolve_model_kind("en")
+    if kind not in _KIND_TO_CLASS or _KIND_TO_CLASS[kind] is None:
+        raise HTTPException(status_code=400, detail=f"unsupported kind: {kind}")
+    ensure_model(kind)
+    return {"ok": True, "kind": kind, "current": _current_kind}
 
 @app.get("/device")
 def device_info():
@@ -398,7 +553,9 @@ def synthesise(req: SpeechRequest):
                 audio_parts.append(wav.squeeze().cpu().float().numpy())
             sr = model.sr
     except Exception as e:
-        log.error(f"Generation failed: {e}")
+        # Full traceback so dtype / shape failures show their origin file/line
+        # instead of just the bare error message.
+        log.exception(f"Generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     # Concatenate all chunks with a short silence between them

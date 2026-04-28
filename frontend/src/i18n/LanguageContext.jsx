@@ -74,6 +74,22 @@ export function LanguageProvider({ children, initialLang = 'en' }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ language: code }),
     }).catch(() => {});
+    // If TTS is already running, pre-warm the right model for this language
+    // under the standard loading toast so the user sees feedback during the
+    // swap. Skip if TTS isn't running (don't force-spawn just for a language
+    // change — the swap will happen naturally on the next read-aloud).
+    try {
+      const { isChatterboxOnline, withLoadingToast } = await import('../utils/ttsStatus');
+      if (isChatterboxOnline()) {
+        withLoadingToast(() =>
+          apiFetch('/api/tts/preload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ language: code }),
+          })
+        ).catch(() => {});
+      }
+    } catch {}
   }, []);
 
   // React to initialLang changes from the parent — App.jsx fetches the saved

@@ -8,7 +8,7 @@ import { FONTS, needsGoogleFontsConsent, setGoogleFontsConsent, getFont } from '
 import FontConsentModal from '../components/FontConsentModal';
 import TermsOfService from '../components/TermsOfService';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { waitForChatterbox } from '../utils/ttsStatus';
+import { waitForChatterbox, withLoadingToast } from '../utils/ttsStatus';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABS = [
@@ -944,7 +944,10 @@ function WeatherLocationField() {
 
 // ── TTS Section ───────────────────────────────────────────────────────────────
 function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  // Non-English UI language → multilingual model is mandatory regardless of
+  // the user's English-mode preference. Used to grey out Turbo/Original.
+  const isNonEnglish = lang && lang !== 'en';
   const mode = cfg.tts_mode || 'chatterbox';
   const [voices, setVoices] = useState([]);
   const [ttsStatus, setTtsStatus] = useState(null);
@@ -1107,20 +1110,23 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
 
           <Field
             label={t('settings.chatterboxVersion') || 'Chatterbox Version'}
-            hint="Used when reading English text. Multilingual model is automatically used for other languages."
+            hint={isNonEnglish
+              ? 'Multilingual is the only valid model for non-English text. Switch the UI language to English to choose Turbo or Original.'
+              : 'Used when reading English text. Multilingual is automatically used for other languages — pick it here to also use it for English.'}
           >
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <select
                 style={{ ...s.select, flex: 1 }}
-                value={pendingTtsModel ?? (cfg.tts_model || 'turbo')}
+                value={isNonEnglish ? 'multilingual' : (pendingTtsModel ?? (cfg.tts_model || 'turbo'))}
                 onChange={e => setPendingTtsModel(e.target.value)}
-                disabled={ttsModelPinStatus === 'applying'}
+                disabled={isNonEnglish || ttsModelPinStatus === 'applying'}
               >
-                <option value="turbo">Chatterbox Turbo — faster, English only</option>
-                <option value="original">Chatterbox — full quality, English only</option>
+                <option value="turbo" disabled={isNonEnglish}>Chatterbox Turbo — faster, English only</option>
+                <option value="original" disabled={isNonEnglish}>Chatterbox — full quality, English only</option>
+                <option value="multilingual">Chatterbox Multilingual — 23 languages</option>
               </select>
               <Btn
-                disabled={ttsModelPinStatus === 'applying'}
+                disabled={isNonEnglish || ttsModelPinStatus === 'applying'}
                 onClick={async () => {
                   const chosen = pendingTtsModel ?? (cfg.tts_model || 'turbo');
                   setTtsModelPinStatus('applying');
@@ -1137,6 +1143,16 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
                     }
                     set('tts_model', chosen);
                     await save({ tts_model: chosen });
+                    // pin-model only writes the setting; the actual model
+                    // swap happens here, on the running server. Toast stays
+                    // up for the full ensure_model() duration (~5-30s).
+                    withLoadingToast(() =>
+                      apiFetch('/api/tts/preload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ kind: chosen }),
+                      })
+                    ).catch(() => {});
                     setTtsModelPinStatus({ ok: true, message: data.message || 'Applied.' });
                     setPendingTtsModel(null);
                   } catch (err) {

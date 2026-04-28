@@ -162,7 +162,20 @@ function maskSecret(value) {
   return value.slice(0, 4) + '••••••••' + value.slice(-4);
 }
 
+/** Write directly to the bare key, ignoring any active user context. Used
+ *  for machine-level singletons (tts_model, tts_device) where only one
+ *  value can be active at a time and per-user namespacing would silently
+ *  desync from the consumer (e.g. the Python TTS server, which reads the
+ *  bare key directly from SQLite at spawn). */
+function setGlobal(key, value) {
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+  `).run(key, String(value));
+}
+
 module.exports = {
   get, set, setMany, getAll, hasSecret, SECRET_KEYS,
-  getForUser, setForUser, runWithUserContext,
+  getForUser, setForUser, runWithUserContext, setGlobal,
 };

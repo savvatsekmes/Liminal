@@ -161,6 +161,37 @@ router.post('/ensure', async (_req, res) => {
   res.json({ ok });
 });
 
+// ── POST /api/tts/preload ────────────────────────────────────────────────────
+// Pre-warm a specific model (turbo / original / multilingual) so the next
+// /speak call doesn't wait on the swap. Frontend calls this on language
+// change and after the Settings "Set" click, then shows a loading toast
+// while this returns. No audio produced; just triggers the swap server-side.
+router.post('/preload', async (req, res) => {
+  const { kind, language } = req.body || {};
+  // Make sure the server is up before asking it to swap
+  if (!(await isChatterboxOnline())) {
+    await ensureTtsViaControl();
+  }
+  pingTtsKeepalive();
+  const url = getChatterboxUrl();
+  try {
+    const r = await fetch(`${url}/v1/preload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: kind || null, language: language || null }),
+      signal: AbortSignal.timeout(120000), // model load can take ~30-60s
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      return res.status(502).json({ error: 'Preload failed', detail: errText });
+    }
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(503).json({ error: 'Chatterbox not reachable', detail: err.message });
+  }
+});
+
 async function speakChatterbox(req, res, s) {
   const defaults = getTtsDefaults();
   const {
@@ -258,7 +289,11 @@ router.post('/pin-gpu', async (req, res) => {
   if (!gpuName) return res.status(400).json({ error: 'gpuName is required' });
   try {
     const s = require('../services/settingsService');
-    s.set('tts_device', gpuName);
+    // Machine-level singleton — write the bare key, NOT a per-user namespace.
+    // The Python TTS server reads `SELECT value FROM settings WHERE key='tts_device'`
+    // at spawn; a per-user write (`tts_device::<userId>`) would silently fail to
+    // be picked up because the TTS process has no user context.
+    s.setGlobal('tts_device', gpuName);
 
     // Kill the TTS server; Electron's child-exit handler nulls ttsProc so the
     // next /tts/ensure respawns with the new tts_device value read from SQLite.
@@ -286,34 +321,29 @@ router.post('/pin-gpu', async (req, res) => {
   }
 });
 
-// POST /api/tts/pin-model { model: 'turbo' | 'original' }
+// POST /api/tts/pin-model { model: 'turbo' | 'original' | 'multilingual' }
 // English-only preference. Non-English text always uses the multilingual model
-// regardless. Same kill+respawn flow as pin-gpu — TTS reads tts_model from SQLite
-// at spawn so we don't need IPC, just a clean restart.
+// regardless. Unlike pin-gpu, this does NOT kill+respawn — the running server
+// can swap models in-process via /v1/preload. The frontend calls /api/tts/preload
+// right after, so the model swap happens on the live server (toast visible
+// during the load) instead of being hidden inside a respawn. Why: a respawn
+// auto-loads the model during boot before /api/tts/preload arrives, which
+// makes the loading toast flash for a fraction of a second instead of staying
+// up for the actual ~5-30s swap.
 router.post('/pin-model', async (req, res) => {
   const { model } = req.body || {};
-  if (!['turbo', 'original'].includes(model)) {
-    return res.status(400).json({ error: "model must be 'turbo' or 'original'" });
+  if (!['turbo', 'original', 'multilingual'].includes(model)) {
+    return res.status(400).json({ error: "model must be 'turbo', 'original', or 'multilingual'" });
   }
   try {
     const s = require('../services/settingsService');
-    s.set('tts_model', model);
-
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/f', '/t', '/im', 'tts_server.exe'], { stdio: 'ignore', windowsHide: true });
-    } else {
-      spawnSync('pkill', ['-f', 'tts_server'], { stdio: 'ignore' });
-    }
-    await new Promise(r => setTimeout(r, 500));
-
-    const ok = await ensureTtsViaControl();
+    // Machine-level singleton (see pin-gpu for full reasoning) — write the
+    // bare key so the Python TTS server's bare-key SELECT picks it up.
+    s.setGlobal('tts_model', model);
     res.json({
       ok: true,
       model,
-      respawned: ok,
-      message: ok
-        ? `TTS restarted with ${model === 'turbo' ? 'Chatterbox Turbo' : 'Chatterbox'}.`
-        : `Setting saved. TTS will use ${model} on next speak.`,
+      message: `Switched to ${model === 'turbo' ? 'Chatterbox Turbo' : model === 'original' ? 'Chatterbox' : 'Chatterbox Multilingual'}.`,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
