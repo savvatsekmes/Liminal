@@ -476,6 +476,9 @@ function spawnTts() {
     TTS_PORT: String(TTS_PORT),
     LIMINAL_USER_DATA: USER_DATA,
     VOICES_DIR: path.join(USER_DATA, 'voices'),
+    // Whisper STT model: 'base' is the floor — readable on weak CPUs, ~150 MB.
+    // Override via setting later if we expose model size in Settings.
+    LIMINAL_WHISPER_MODEL: 'base',
   };
 
   let cmd, args, cwd;
@@ -612,6 +615,7 @@ async function createWindow() {
   });
 
   await mainWindow.loadURL(`http://127.0.0.1:${BACKEND_PORT}/`);
+
 
   // macOS renders Electron content noticeably larger than Windows for the same
   // CSS sizes — 90% brings the two platforms to roughly the same visual density.

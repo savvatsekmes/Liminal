@@ -21,7 +21,7 @@ import { useReflect } from './hooks/useReflect';
 import { isAuthenticated, getStoredUsername, getStoredToken, clearStoredToken, apiFetch } from './utils/api';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { CrisisGateProvider } from './components/CrisisGate';
-import { useTtsLoading } from './utils/ttsStatus';
+import { useTtsLoading, useLoadingMessage } from './utils/ttsStatus';
 import { useFont } from './hooks/useFont';
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
@@ -375,6 +375,12 @@ export default function App() {
             if (s.language) setLanguage(s.language);
             const lt = parseInt(s.lock_timeout_minutes, 10);
             if (!isNaN(lt)) setLockTimeoutMinutes(lt);
+            // Mirror dictate mic to localStorage so the dictation hook reads
+            // synchronously without re-fetching settings on every record start.
+            try {
+              if (s.dictate_mic) localStorage.setItem('liminal_dictate_mic', s.dictate_mic);
+              if (s.whisper_model) localStorage.setItem('liminal_whisper_model', s.whisper_model);
+            } catch {}
           }).catch(() => {});
           if (data.onboarding_complete) {
             setAuthStatus('ok');
@@ -508,6 +514,7 @@ export default function App() {
 
 function TtsLoadingToast() {
   const loading = useTtsLoading();
+  const message = useLoadingMessage();
   if (!loading) return null;
   return (
     <div style={{
@@ -536,7 +543,7 @@ function TtsLoadingToast() {
         animation: 'liminal-spin 0.8s linear infinite',
         flexShrink: 0,
       }} />
-      <span>Loading Chatterbox into VRAM… (takes ~15s first time)</span>
+      <span>{message}</span>
       <style>{`@keyframes liminal-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

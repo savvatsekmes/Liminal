@@ -7,8 +7,22 @@ import { useState, useEffect } from 'react';
 
 let online = false;
 let loading = false;
+const DEFAULT_TTS_MSG = 'Loading Chatterbox into VRAM… (takes ~15s first time)';
+let loadingMessage = DEFAULT_TTS_MSG;
 const listeners = new Set();
 const loadingListeners = new Set();
+const messageListeners = new Set();
+
+export function getLoadingMessage() { return loadingMessage; }
+export function useLoadingMessage() {
+  const [value, setValue] = useState(loadingMessage);
+  useEffect(() => {
+    setValue(loadingMessage);
+    messageListeners.add(setValue);
+    return () => messageListeners.delete(setValue);
+  }, []);
+  return value;
+}
 
 function notify() {
   listeners.forEach((fn) => fn(online));
@@ -54,11 +68,15 @@ export function isChatterboxOnline() {
   return online;
 }
 
-/** Show the "Loading Chatterbox into VRAM…" toast while `asyncFn` runs.
- * Used by call sites that trigger a model swap without going through
- * waitForChatterbox (e.g. /api/tts/preload after a Set click or language
- * change). Returns whatever asyncFn returns. */
-export async function withLoadingToast(asyncFn) {
+/** Show a loading toast while `asyncFn` runs. Optional `message` overrides the
+ * default Chatterbox text — pass it for non-TTS uses (e.g. Whisper STT). The
+ * message resets to the Chatterbox default when the toast hides, so the next
+ * caller doesn't inherit a stale label. Returns whatever asyncFn returns. */
+export async function withLoadingToast(asyncFn, message) {
+  if (message) {
+    loadingMessage = message;
+    messageListeners.forEach((fn) => fn(loadingMessage));
+  }
   loading = true;
   notifyLoading();
   try {
@@ -66,6 +84,10 @@ export async function withLoadingToast(asyncFn) {
   } finally {
     loading = false;
     notifyLoading();
+    if (message) {
+      loadingMessage = DEFAULT_TTS_MSG;
+      messageListeners.forEach((fn) => fn(loadingMessage));
+    }
   }
 }
 

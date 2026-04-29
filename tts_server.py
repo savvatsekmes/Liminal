@@ -24,7 +24,7 @@ from pathlib import Path
 import torch
 import soundfile as sf
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -611,6 +611,105 @@ def _embed_wav_synthetic_metadata(wav_bytes: bytes) -> bytes:
     new_body = wav_bytes[12:] + list_chunk
     new_size = len(new_body) + 4  # +4 for the "WAVE" marker
     return b"RIFF" + struct.pack("<I", new_size) + b"WAVE" + wav_bytes[12:] + list_chunk
+
+# ── STT (Whisper) ─────────────────────────────────────────────────────────────
+# faster-whisper runs on ctranslate2, independent of torch/chatterbox state, so
+# it cannot interact with the dtype patches, model swaps, or fp32 monkey-patches
+# above. The model is loaded lazily on the first /v1/transcribe call so app boot
+# is unchanged for users who never use dictation.
+
+_whisper_model = None
+_whisper_loaded_name = None
+_whisper_lock = threading.Lock()
+_WHISPER_VALID = {"tiny", "base", "small", "medium", "large-v3"}
+
+def _read_whisper_setting() -> str:
+    # Resolution order: SQLite setting → env var → default 'base'. The DB read
+    # mirrors how _read_tts_model_setting works for chatterbox so the user can
+    # change the Whisper model from Settings without an env var or restart.
+    try:
+        db_path = os.path.join(USER_DATA, "liminal.db")
+        if os.path.exists(db_path):
+            import sqlite3
+            con = sqlite3.connect(db_path)
+            row = con.execute("SELECT value FROM settings WHERE key='whisper_model'").fetchone()
+            con.close()
+            if row and row[0] in _WHISPER_VALID:
+                return row[0]
+    except Exception:
+        pass
+    env_val = os.environ.get("LIMINAL_WHISPER_MODEL", "base")
+    return env_val if env_val in _WHISPER_VALID else "base"
+
+def _whisper_device_compute():
+    # ctranslate2 device strings differ from torch's. CUDA → "cuda" + float16,
+    # MPS isn't supported by ctranslate2 (falls back to CPU), CPU → int8 for speed.
+    if DEVICE.startswith("cuda"):
+        return "cuda", "float16"
+    return "cpu", "int8"
+
+def _ensure_whisper(want_name: str | None = None):
+    """Load (or swap to) the requested Whisper model. If `want_name` is None,
+    resolves from the SQLite setting / env var. A swap discards the old model
+    and loads the new one — model files are cached on disk so swapping back is
+    fast after the first load."""
+    global _whisper_model, _whisper_loaded_name
+    target = want_name or _read_whisper_setting()
+    if target not in _WHISPER_VALID:
+        target = "base"
+    with _whisper_lock:
+        if _whisper_model is not None and _whisper_loaded_name == target:
+            return _whisper_model
+        from faster_whisper import WhisperModel
+        device, compute = _whisper_device_compute()
+        if _whisper_model is not None:
+            log.info(f"Swapping Whisper model {_whisper_loaded_name} -> {target}")
+            del _whisper_model
+            _whisper_model = None
+            import gc; gc.collect()
+            if DEVICE.startswith("cuda"):
+                torch.cuda.empty_cache()
+        log.info(f"Loading Whisper model={target} device={device} compute={compute}")
+        _whisper_model = WhisperModel(target, device=device, compute_type=compute)
+        _whisper_loaded_name = target
+        return _whisper_model
+
+class WhisperPreloadRequest(BaseModel):
+    model: str | None = None  # one of _WHISPER_VALID; None = read setting
+
+@app.post("/v1/whisper/preload")
+def whisper_preload(req: WhisperPreloadRequest):
+    """Pre-load (or swap to) a Whisper model so the next /v1/transcribe call
+    doesn't pay the ~5-30s load cost. Frontend calls this after the user picks
+    a model in Settings → Dictate."""
+    if req.model and req.model not in _WHISPER_VALID:
+        raise HTTPException(status_code=400, detail=f"unsupported whisper model: {req.model}")
+    _ensure_whisper(req.model)
+    return {"ok": True, "model": _whisper_loaded_name}
+
+@app.post("/v1/transcribe")
+async def transcribe(audio: UploadFile = File(...), language: str | None = Form(None)):
+    """Transcribe an uploaded audio file (any format faster-whisper/ffmpeg accepts).
+    `language` is optional ISO 639-1; omit for auto-detect."""
+    try:
+        data = await audio.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="empty audio")
+        # faster-whisper accepts a file-like or path; an in-memory BytesIO is simplest
+        import io
+        model = _ensure_whisper()
+        segments, info = model.transcribe(
+            io.BytesIO(data),
+            language=language or None,
+            vad_filter=True,
+        )
+        text = "".join(seg.text for seg in segments).strip()
+        return {"text": text, "language": info.language, "duration": info.duration}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("transcribe failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 

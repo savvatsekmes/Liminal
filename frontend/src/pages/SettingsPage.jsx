@@ -356,7 +356,10 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
       {/* Tab content */}
       <div style={{ ...s.tabContent, ...(isMobile ? { padding: '24px 16px 80px', maxWidth: '100%' } : {}) }}>
         {activeTab === 'llm'     && <LLMSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
-        {activeTab === 'tts'     && <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} onNavigate={onNavigate} />}
+        {activeTab === 'tts'     && (<>
+          <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} onNavigate={onNavigate} />
+          <DictateSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />
+        </>)}
         {activeTab === 'account' && <AccountSection cfg={cfg} set={set} save={save} showToast={showToast} username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />}
         {activeTab === 'data'    && <DataSection showToast={showToast} />}
         {activeTab === 'general'    && <GeneralSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
@@ -1241,6 +1244,125 @@ function TTSSection({ cfg, set, save, saving, showToast, onNavigate }) {
           {t('settings.webspeechDesc')}
         </div>
       )}
+    </Section>
+  );
+}
+
+// ── Dictate (Whisper STT) section ────────────────────────────────────────────
+// Whisper model picker + microphone selection. Sits next to Voice & TTS in the
+// same tab — both are audio I/O settings, just opposite directions.
+function DictateSection({ cfg, set, save, showToast }) {
+  const { t } = useLanguage();
+  const [pendingModel, setPendingModel] = useState(null);
+  const [pinStatus, setPinStatus] = useState(null);
+  const [mics, setMics] = useState([]);
+
+  // Enumerate microphones once. The labels are empty strings until the user
+  // has granted mic permission to ANY page on this origin, so on first run we
+  // fall back to "Microphone 1 / 2 / …" until they've used dictate at least
+  // once and we can re-enumerate with real names.
+  useEffect(() => {
+    async function loadMics() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        setMics(devices.filter(d => d.kind === 'audioinput'));
+      } catch {
+        setMics([]);
+      }
+    }
+    loadMics();
+    navigator.mediaDevices?.addEventListener?.('devicechange', loadMics);
+    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', loadMics);
+  }, []);
+
+  return (
+    <Section title={t('settings.dictate') || 'Dictate'}>
+      <Field
+        label={t('settings.whisperModel') || 'Whisper Model'}
+        hint="Larger = more accurate, slower, more VRAM. base is the floor for journaling; tiny saves VRAM but mishears common words."
+      >
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <select
+            style={{ ...s.select, flex: 1 }}
+            value={pendingModel ?? (cfg.whisper_model || 'base')}
+            onChange={e => setPendingModel(e.target.value)}
+            disabled={pinStatus === 'applying'}
+          >
+            <option value="tiny">tiny — fastest, ~75 MB, lowest accuracy</option>
+            <option value="base">base — recommended floor, ~150 MB</option>
+            <option value="small">small — better accuracy, ~500 MB</option>
+            <option value="medium">medium — high accuracy, ~1.5 GB</option>
+            <option value="large-v3">large-v3 — best accuracy, ~3 GB</option>
+          </select>
+          <Btn
+            disabled={pinStatus === 'applying'}
+            onClick={async () => {
+              const chosen = pendingModel ?? (cfg.whisper_model || 'base');
+              setPinStatus('applying');
+              try {
+                // Toast covers the model swap on the running server (~5-30s
+                // depending on size + whether it's been loaded before).
+                const { r, data } = await withLoadingToast(
+                  async () => {
+                    const r = await apiFetch('/api/stt/pin-model', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ model: chosen }),
+                    });
+                    const data = await r.json();
+                    return { r, data };
+                  },
+                  `Loading Whisper ${chosen}…`
+                );
+                if (!r.ok) {
+                  setPinStatus({ ok: false, message: data.error || `HTTP ${r.status}` });
+                  return;
+                }
+                set('whisper_model', chosen);
+                await save({ whisper_model: chosen });
+                try { localStorage.setItem('liminal_whisper_model', chosen); } catch {}
+                setPinStatus({ ok: true, message: data.preloaded ? 'Loaded.' : 'Saved (will load on next dictation).' });
+                setPendingModel(null);
+              } catch (err) {
+                setPinStatus({ ok: false, message: err.message });
+              }
+            }}
+          >
+            {pinStatus === 'applying' ? 'Applying…' : 'Set'}
+          </Btn>
+        </div>
+        {pinStatus && pinStatus !== 'applying' && (
+          <div style={{ ...s.sublabel, color: pinStatus.ok ? 'var(--muted)' : '#c54' }}>
+            {pinStatus.message}
+          </div>
+        )}
+      </Field>
+
+      <Field
+        label={t('settings.microphone') || 'Microphone'}
+        hint={mics.length === 0
+          ? 'No microphones detected — grant mic permission via the dictate button first, then reopen Settings.'
+          : 'Used for the dictate button.'}
+      >
+        <select
+          style={s.input}
+          value={cfg.dictate_mic || 'default'}
+          onChange={e => {
+            set('dictate_mic', e.target.value);
+            save({ dictate_mic: e.target.value });
+            // Mirror to localStorage so useDictation can read synchronously
+            // without waiting on a /api/settings round-trip.
+            try { localStorage.setItem('liminal_dictate_mic', e.target.value); } catch {}
+          }}
+        >
+          <option value="default">System default</option>
+          {mics.map((m, i) => (
+            <option key={m.deviceId} value={m.deviceId}>
+              {m.label || `Microphone ${i + 1}`}
+            </option>
+          ))}
+        </select>
+      </Field>
     </Section>
   );
 }

@@ -44,6 +44,10 @@ for pkg in (
     'accelerate',
     'torch',
     'torchaudio',
+    'faster-whisper',
+    'ctranslate2',
+    'onnxruntime',
+    'av',
 ):
     try:
         datas += copy_metadata(pkg)
@@ -65,6 +69,10 @@ for pkg in (
     'safetensors',
     'huggingface_hub',
     'sentencepiece',
+    'faster_whisper',
+    'ctranslate2',
+    'onnxruntime',
+    'av',
 ):
     try:
         d, b, h = collect_all(pkg)
