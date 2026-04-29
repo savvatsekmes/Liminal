@@ -24,12 +24,33 @@ Device selection (in priority order):
 #
 # None of our actual deps (ctranslate2, onnxruntime, av, faster-whisper) use
 # Python multiprocessing for their real work — they're all C++ thread pools.
-# The mp invocations we see are bookkeeping spawned during import. So we exit
-# any non-MainProcess immediately, before the heavy imports run, and let the
-# C++ side do its own thing.
-import multiprocessing as _liminal_mp
+# The mp invocations we see are bookkeeping spawned during import.
+#
+# Detection: helpers are launched as `python -c "from multiprocessing.X import
+# main; main(N)"`. PyInstaller's bootloader does NOT rewrite argv when the
+# bundle is invoked this way — the full argv is preserved (binary path, then
+# `-B -S -I -c <command>`). So we scan the *whole* argv for the helper
+# command, not just argv[0]. We can't use multiprocessing.current_process()
+# .name == 'MainProcess' because that returns True even in fresh helper
+# interpreters — multiprocessing's child-name bookkeeping runs AFTER our
+# guard. Verified empirically by writing argv to /tmp from inside the bundle
+# during a helper invocation.
 import sys as _liminal_sys
-if _liminal_mp.current_process().name != 'MainProcess':
+def _liminal_is_mp_helper():
+    # PyInstaller does NOT rewrite argv when the bundled binary is invoked
+    # as a multiprocessing helper — argv[0] stays the binary path, with the
+    # helper command preserved as later args (e.g.
+    # ['.../tts_server', '-B', '-S', '-I', '-c',
+    #  'from multiprocessing.resource_tracker import main; main(9)']).
+    # So we look for the helper command anywhere in argv, not just argv[0].
+    a = _liminal_sys.argv or []
+    if a and a[0] == '-c':  # belt-and-suspenders for unbundled / future PyI
+        return True
+    blob = ' '.join(str(x or '') for x in a)
+    return ('multiprocessing.resource_tracker' in blob
+            or 'multiprocessing.spawn' in blob
+            or '--multiprocessing-fork' in blob)
+if _liminal_is_mp_helper():
     _liminal_sys.exit(0)
 
 import io
