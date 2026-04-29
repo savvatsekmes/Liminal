@@ -394,8 +394,12 @@ def ensure_model(kind):
         _current_kind = kind
         return model
 
-# Warm-start with the user's preferred English model — keeps the common case fast
-ensure_model(resolve_model_kind("en"))
+# NOTE: The English warm-start used to live here at module top-level. It's now
+# inside the __main__ guard at the bottom so PyInstaller multiprocessing
+# workers (spawned by ctranslate2 / onnxruntime / av / faster-whisper)
+# re-importing this module DON'T also try to allocate a GPU slab and bind :8100,
+# which crash-loops the supervisor and on Apple Silicon can cascade into a
+# JetsamEvent system freeze.
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -715,5 +719,8 @@ async def transcribe(audio: UploadFile = File(...), language: str | None = Form(
 
 if __name__ == "__main__":
     log.info(f"Voices: {VOICES_DIR}")
+    # Warm-start with the user's preferred English model — keeps the common
+    # case fast. Inside __main__ so multiprocessing workers don't re-trigger it.
+    ensure_model(resolve_model_kind("en"))
     log.info(f"Starting on http://localhost:{PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
