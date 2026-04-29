@@ -12,6 +12,26 @@ Device selection (in priority order):
   3. "auto" → picks first CUDA GPU if available, else CPU
 """
 
+# ── Multiprocessing-child short-circuit ───────────────────────────────────────
+# PyInstaller-bundled apps re-execute the entry binary for every multiprocessing
+# child. Each child's PyInstaller bootloader runs the full module-level code
+# here — `import torch`, `import chatterbox`, etc. — and during those imports
+# yet another lib (huggingface_hub / diffusers / numpy / etc.) often fires its
+# own multiprocessing init, which spawns ANOTHER child that does the same
+# thing. The result is a chain of orphaned `multiprocessing.resource_tracker`
+# processes each at 100-600% CPU, observed as "TTS suddenly went very slow"
+# after a few minutes of mixed Whisper + Turbo use.
+#
+# None of our actual deps (ctranslate2, onnxruntime, av, faster-whisper) use
+# Python multiprocessing for their real work — they're all C++ thread pools.
+# The mp invocations we see are bookkeeping spawned during import. So we exit
+# any non-MainProcess immediately, before the heavy imports run, and let the
+# C++ side do its own thing.
+import multiprocessing as _liminal_mp
+import sys as _liminal_sys
+if _liminal_mp.current_process().name != 'MainProcess':
+    _liminal_sys.exit(0)
+
 import io
 import os
 import re
