@@ -75,6 +75,22 @@ router.post('/', async (req, res) => {
       }
     };
 
+    // Hard cap on block count by entry length. Mirrors the prompt rule's
+    // ceilings — small models occasionally over-deliver despite the prompt
+    // (a 72-word entry produced 10 blocks before this guard). The streaming
+    // parser keeps reading the model's full output (so onDone's salvage path
+    // still has the full raw text if needed), but only the first N blocks
+    // get forwarded to the client / DB / echo callout.
+    function maxBlocksFor(wordCount) {
+      if (wordCount < 150)  return 3;
+      if (wordCount < 300)  return 4;
+      if (wordCount < 500)  return 5;
+      if (wordCount < 1000) return 6;
+      return 7;
+    }
+    const wordCount = (text || '').trim().split(/\s+/).filter(Boolean).length;
+    const maxBlocks = maxBlocksFor(wordCount);
+
     // Track quote texts already attached to this reflection so the same
     // quote can't appear on two blocks. The bank's findBestQuote skips any
     // text in this set when picking.
@@ -119,6 +135,11 @@ router.post('/', async (req, res) => {
         sendEvent('opening', { opening: txt });
       },
       onBlock: async (rawBlock) => {
+        // Server-side cap: silently drop any block past maxBlocks. The
+        // streaming parser keeps reading the rest of the model's output
+        // so onDone has the complete raw text, but the client / DB / echo
+        // callout only see the first maxBlocks.
+        if (blockIndex >= maxBlocks) return;
         const processed = await postProcessBlock(rawBlock, blockIndex);
         blockIndex++;
         finalBlocks.push(processed);

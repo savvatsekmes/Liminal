@@ -791,12 +791,13 @@ Your response must be structured as JSON with this exact shape:
 Rules:
 - The opening comes BEFORE the themed blocks. It is personal, direct, and captures the whole entry in one visceral moment. It should feel like a friend reacting — not an AI summarising.
 - Read the full journal entry and identify the real emotional and psychological themes present.
-- Write one named paragraph per genuine distinct theme. Minimum block count by entry word count, NOT NEGOTIABLE — under-shooting is the failure mode small models keep hitting:
-    • 0-150 words → AT LEAST 3 blocks
-    • 150-300 words → AT LEAST 4 blocks
-    • 300-500 words → AT LEAST 5 blocks
-    • 500+ words → AT LEAST 6 blocks
-  Maximum is always 9 blocks. Padding by repeating the same observation across multiple blocks is also a failure mode — collapse blocks that restate the same idea, but never collapse below the minimum floor for the entry's length.
+- Block count is determined by the entry's word count. Stay within these ranges — both the floor and the ceiling matter equally. Padding past the ceiling is just as bad as undershooting the floor.
+    • Under 150 words → 2-3 blocks
+    • 150-300 words   → 3-4 blocks
+    • 300-500 words   → 4-5 blocks
+    • 500-1000 words  → 5-6 blocks
+    • 1000+ words     → 6-7 blocks
+  Never fewer than 2. Never more than 7. If two themes restate the same observation, collapse them into one block; if you only see two distinct threads in a long entry, write two blocks rather than padding.
 - Each paragraph has a short title that names the theme (e.g. "A Softer Nervous System", "The Timing Irony"), NOT the archetype.
 - Write each paragraph in your blended voice — draw on whichever wisdom tradition is most relevant to that specific theme naturally, without labelling which one you are using.
 - Write in prose paragraphs. No bullet points ever. No lists.
