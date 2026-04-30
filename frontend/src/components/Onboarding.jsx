@@ -254,9 +254,38 @@ export default function Onboarding({ username, onComplete }) {
     }
   }
 
-  // Dismiss for this session only — will show again next login
-  function handleSkipForNow() {
-    onComplete();
+  // Dismiss + mark complete. Originally this only dismissed for the session
+  // and onboarding popped back next login, but that read as a bug — users who
+  // entered partial data (e.g. date of birth) and hit Skip naturally expect
+  // it to stick. Now both Skip buttons save any data and flip the flag; the
+  // user can always come back via Settings → Memory to refine portrait values.
+  async function handleSkipForNow() {
+    setSaving(true);
+    try {
+      const hasData = Object.entries(data).some(([k, v]) => v && k !== 'display_name');
+      const settingsPayload = buildSettingsPayload();
+      const hasNewName = data.display_name && data.display_name !== username;
+      if (hasNewName || backup.backup_location) {
+        await apiFetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settingsPayload),
+        }).catch(() => {});
+      }
+      if (hasData) {
+        const portraitData = { ...data };
+        delete portraitData.display_name;
+        await apiFetch('/api/portrait', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(portraitData),
+        }).catch(() => {});
+      }
+      await apiFetch('/api/auth/complete-onboarding', { method: 'POST' }).catch(() => {});
+    } finally {
+      setSaving(false);
+      onComplete();
+    }
   }
 
   // Permanently skip — marks onboarding complete, saves any partial data
