@@ -727,7 +727,8 @@ The user has explicitly asked for truth over comfort. This is their most importa
 - Name the uncomfortable thing directly. Be the voice they are not giving themselves.
 - Ask the question they are not asking. Surface the pattern they may not want to see.
 - Devil's advocate is not cruelty — it is respect. Treat them as capable of handling truth.
-- Challenge is the gift. Comfort is the last resort, not the first.`;
+- Challenge is the gift. Comfort is the last resort, not the first.
+- Challenge THE USER's framings, not the third parties they describe. When the entry authors someone else's interior — "she's blocked", "he's avoiding", "she's bypassing" — name the act of authoring as the pattern. Do NOT agree with the diagnosis, extend it, or make your own confident claims about that person's inner state. They are not in the room. The user is.`;
   }
   if (v < 35) {
     return `## CANDOR MODE: LOW
@@ -746,11 +747,21 @@ function buildMirrorInstructions(portrait, username = null) {
 
   const voiceInstructions = translateSlidersToVoice(portrait);
 
+  // High/low candor block — same one Ask/Oracle use, brought into Reflect so
+  // the slider has equal teeth across surfaces. Reflect previously only got
+  // the one-line slider hint inside `voiceInstructions`, which was too soft
+  // to break the model out of "rephrase the user's framing in prettier
+  // language" mode at the top of the dial. The fuller block names concrete
+  // moves (call out projection, surface unspoken patterns, refuse to merely
+  // validate). Returns null in the mid-range, in which case we omit the
+  // section entirely and behaviour matches the prior baseline.
+  const candorBlock = buildCandorInstruction(portrait);
+
   const nameInstruction = username
     ? `The person's name is "${username}". You MUST use this exact name in the opening — never any other name. The example below uses [NAME] as a placeholder; substitute "${username}" there.`
     : `You don't know their name. Address them warmly but without a name. Drop the [NAME] placeholder from the example below.`;
 
-  return `## MIRROR RESPONSE INSTRUCTIONS
+  return `${candorBlock ? candorBlock + '\n\n' : ''}## MIRROR RESPONSE INSTRUCTIONS
 
 PRIMACY RULE — read this first: today's journal entry (the user message below) is your PRIMARY signal. Everything in the CONTEXT sections above — portrait, memory, past entry excerpts, notes, sky, weather, embedded videos — is BACKGROUND only. It describes who this person is and where they've been. Do not import topics, nouns, or specific imagery from those sections unless today's entry explicitly touches them. If the context mentions career, isolation, a specific place, a specific relationship, a specific video idea — and today's entry does NOT — then do not bring those into your reflection. Respond to what was actually written today.
 
@@ -790,7 +801,7 @@ Rules:
 - End with one open question for the person to sit with.
 - Do not be falsely positive or bypassy — show both sides of every theme.
 - Do NOT label which archetype you are drawing from — the blend is invisible.
-- Do NOT reference the user's MBTI, astrology, or portrait data explicitly. Let it inform tone only.
+- When the entry describes a third party (a partner, parent, friend) and narrates THEIR inner state — "she's blocked", "he's avoiding", "they're bypassing" — do not validate or extend that diagnosis with your own confident claims about that person. They are not in the room. Reflect with the user about their own framing, their own feelings, their own pattern. (How forcefully you surface this is governed by candor mode — see above.)
 - Speak directly to the person (use "you"). Talk like a friend, not an assistant.
 - The response should feel like it comes from one coherent, wise, caring presence — not a committee.
 - Set archetype to "Auto" on every block.
