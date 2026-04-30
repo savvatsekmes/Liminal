@@ -97,7 +97,10 @@ export const DetailsBlock = Node.create({
 
       // ── Content area — this is the ProseMirror contentDOM ──
       // Do NOT set contentEditable here — ProseMirror manages it automatically.
+      // The data-details-content marker lets the right-click "Copy" path locate
+      // the inner content cleanly when serialising the toggle for clipboard.
       const contentDOM = document.createElement('div');
+      contentDOM.setAttribute('data-details-content', '');
       contentDOM.style.cssText = 'padding:4px 12px 12px 40px;';
       box.appendChild(contentDOM);
 
@@ -118,6 +121,22 @@ export const DetailsBlock = Node.create({
       updatePlaceholder();
 
       // ── Events ──
+
+      // Plain click on the drag handle: select the whole toggle as a NodeSelection
+      // so the user can copy it with Ctrl+C. ProseMirror's clipboard path then
+      // serialises via renderHTML → which parseHTML re-parses on paste, giving a
+      // clean round-trip into another entry. Without this, there's no UI affordance
+      // to select the whole toggle (clicking inside enters text-edit mode, the drag
+      // handle's dragstart only fires during an actual drag).
+      drag.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const pos = getPos();
+        if (typeof pos !== 'number') return;
+        const sel = NodeSelection.create(editor.view.state.doc, pos);
+        editor.view.dispatch(editor.view.state.tr.setSelection(sel));
+        editor.view.focus();
+      });
 
       // Drag: replicate Tiptap's onDragStart for plain NodeViews.
       // React NodeViews get this from NodeViewWrapper; plain ones need it manually.

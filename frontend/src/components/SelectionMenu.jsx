@@ -89,7 +89,7 @@ export default function SelectionMenu() {
       // image, tarot reading). These have `selectable: false` so right-click
       // can't create a text selection on them — so we surface a dedicated
       // Copy item that serializes the atom's HTML directly.
-      const atomEl = target?.closest?.('[data-youtube-embed], [data-image-embed], [data-card-reading]') || null;
+      const atomEl = target?.closest?.('[data-youtube-embed], [data-image-embed], [data-card-reading], [data-toggle]') || null;
 
       // Detect a thread list item so ThreadsPage actions (regenerate / edit /
       // delete) can appear in this same popup rather than a second menu.
@@ -242,6 +242,27 @@ export default function SelectionMenu() {
       const spread = el.getAttribute('data-spread-name') || '';
       html = `<div data-card-reading="" data-cards="${escAttr(cards)}" data-reading="${escAttr(reading)}" data-deck-type="${escAttr(deckType)}" data-spread-name="${escAttr(spread)}"></div>`;
       plain = '[tarot reading]';
+    } else if (el.hasAttribute('data-toggle')) {
+      // Toggle / details block. Unlike the other atoms it has CONTENT, not just
+      // attributes — children are paragraphs / lists / atoms the user has typed
+      // inside. Build matching HTML for DetailsBlock.parseHTML which expects
+      // `details[data-toggle]` with a `data-summary` attr (or <summary> tag) and
+      // ProseMirror children inside. The contentDOM is tagged with
+      // `data-details-content` from the NodeView so we can find it reliably.
+      const summarySpan = el.querySelector('[contenteditable="true"]');
+      const summaryText = summarySpan?.textContent?.trim() || '';
+      const contentEl = el.querySelector('[data-details-content]');
+      const innerHTML = contentEl ? contentEl.innerHTML : '';
+      // Detect open/closed from the rendered display. Default to open if unsure
+      // — DetailsBlock attrs default to open: true.
+      const isClosed = contentEl?.style?.display === 'none';
+      const openAttr = isClosed ? '' : ' open';
+      html = `<details data-toggle data-summary="${escAttr(summaryText)}"${openAttr}><div data-details-content="">${innerHTML}</div></details>`;
+      // Plain-text fallback: summary + visible inner text. Strips HTML tags.
+      const tmp = document.createElement('div');
+      tmp.innerHTML = innerHTML;
+      const innerText = (tmp.textContent || '').trim();
+      plain = summaryText && innerText ? `${summaryText}\n${innerText}` : (summaryText || innerText || '[toggle]');
     } else {
       setPopup(null);
       return;
@@ -337,7 +358,7 @@ export default function SelectionMenu() {
       if (!editable) { setPopup(null); return; }
       editable.focus();
 
-      const isAtomHtml = clipHtml && /data-(youtube-embed|image-embed|card-reading)/.test(clipHtml);
+      const isAtomHtml = clipHtml && /data-(youtube-embed|image-embed|card-reading|toggle)/.test(clipHtml);
 
       if (pmEditor) {
         pmEditor.dispatchEvent(new CustomEvent('liminal-paste-atom', {
