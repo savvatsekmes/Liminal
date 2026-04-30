@@ -311,10 +311,14 @@ if (previewVersion) {
 
       {/* Body */}
       <div style={s.body} ref={bodyRef} data-find-scope="1">
-        {loading && <LoadingState />}
-        {!loading && error && <div style={s.error}>{error}</div>}
-        {!loading && !error && blocks.length === 0 && <EmptyState />}
-        {!loading && !error && opening && (
+        {/* During streaming: show LoadingState only until the first opening
+            or block lands, then let the streamed content render below it
+            (the header count already updates live). After streaming ends:
+            normal empty / error / opening states. */}
+        {loading && blocks.length === 0 && !opening && <LoadingState />}
+        {error && <div style={s.error}>{error}</div>}
+        {!loading && !error && blocks.length === 0 && !opening && <EmptyState />}
+        {!error && opening && (
           <div style={s.opening}>
             {opening}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
@@ -341,7 +345,7 @@ if (previewVersion) {
             </div>
           </div>
         )}
-        {!loading && !error && blocks.map((block, i) => (
+        {!error && blocks.map((block, i) => (
           <MirrorBlock
             key={i}
             block={block}

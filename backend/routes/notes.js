@@ -337,38 +337,105 @@ Rules:
     + (imgContext ? `\n\n---\nIMAGES IN THIS NOTE:\n${imgContext}` : '')
     + (cardContext ? `\n\n---\nCARDS PULLED IN THIS NOTE:\n${cardContext}` : '');
 
-  try {
-    const raw = await llm.call(systemPrompt, userMessage, { maxTokens: 1000 });
+  // Stream blocks to the client via SSE as the model produces them. Same
+  // pattern as /api/reflect (journal); reflectStream handles the incremental
+  // JSON parsing and the route does the per-block post-processing.
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
 
-    // Parse JSON from response
-    let blocks = [];
+  const reflectStream = require('../services/reflectStream');
+  const quoteBank = require('../services/quoteBank');
+  const lang = (req.body?.language || req.body?.lang || 'en').toLowerCase().slice(0, 2);
+
+  const sendEvent = (event, data) => {
     try {
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) blocks = JSON.parse(match[0]).blocks || [];
-    } catch {
-      blocks = [{ title: 'Reflection', body: raw.trim(), quote: null, archetype: singleArchetype || 'Mirror' }];
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (e) {
+      console.warn('[notes/reflect] sendEvent failed:', e.message);
     }
+  };
 
-    // Force-tag every block with the chosen archetype so the frontend voice
-    // override resolves correctly even if the LLM forgot the field.
-    if (singleArchetype) {
-      blocks = blocks.map(b => ({ ...b, archetype: singleArchetype }));
+  // Dedupe within this reflection: same quote can't appear on two blocks.
+  const usedQuoteTexts = new Set();
+
+  async function postProcessBlock(rawBlock, index) {
+    let b = rawBlock;
+    if (singleArchetype) b = { ...b, archetype: singleArchetype };
+    b = sanitiseQuote(b);
+    if (b && typeof b.body === 'string') {
+      let body = b.body;
+      const stars = (body.match(/\*\*/g) || []).length;
+      if (stars % 2 !== 0) body = body.replace(/\*\*(?=[^*]*$)/, '');
+      b = { ...b, body: body.trim() };
     }
+    if (b && typeof b.body === 'string') {
+      try {
+        const picked = await quoteBank.findBestQuote(b.body, lang, { excludeTexts: usedQuoteTexts });
+        if (picked) {
+          usedQuoteTexts.add(picked.text);
+          b = { ...b, quote: `${picked.text} — ${picked.author}` };
+        } else {
+          b = { ...b, quote: null };
+        }
+      } catch {
+        b = { ...b, quote: null };
+      }
+    }
+    return { ...b, _index: index };
+  }
 
-    // Coerce LLM-emitted "null"/"undefined"/"none" string quotes to real null
-    // so the frontend doesn't render the literal word as a quote.
-    blocks = blocks.map(sanitiseQuote);
+  const finalBlocks = [];
+  let blockIndex = 0;
 
-    // Persist the reflection
-    db.prepare(`
-      INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-    `).run(note.id, req.userId, encryptField(req.userId, JSON.stringify(blocks)));
+  try {
+    await reflectStream.run(systemPrompt, userMessage, { maxTokens: 1000 }, {
+      onBlock: async (rawBlock) => {
+        const processed = await postProcessBlock(rawBlock, blockIndex);
+        blockIndex++;
+        finalBlocks.push(processed);
+        sendEvent('block', processed);
+      },
+      onDone: async () => {
+        // Truly empty fallback — surface raw text rather than blank panel.
+        if (finalBlocks.length === 0) {
+          const fallback = await postProcessBlock(
+            { title: 'Reflection', body: '', quote: null, archetype: singleArchetype || 'Mirror' },
+            0,
+          );
+          finalBlocks.push(fallback);
+          sendEvent('block', fallback);
+        }
 
-    res.json({ blocks });
+        // Persist (strip our internal _index field).
+        const savedBlocks = finalBlocks.map(({ _index, ...rest }) => rest);
+        try {
+          db.prepare(`
+            INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
+          `).run(note.id, req.userId, encryptField(req.userId, JSON.stringify(savedBlocks)));
+        } catch (e) {
+          console.error('[notes/reflect] save failed:', e.message);
+        }
+
+        sendEvent('done', { blockCount: savedBlocks.length });
+        res.end();
+      },
+      onError: (err) => {
+        sendEvent('error', { error: err.message || 'Stream failed' });
+        res.end();
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    } else {
+      try { res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`); res.end(); } catch {}
+    }
   }
 });
 

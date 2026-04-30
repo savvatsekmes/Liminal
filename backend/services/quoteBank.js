@@ -23,7 +23,11 @@ const { embed } = require('./embeddingService');
 
 const QUOTES_DIR = path.join(__dirname, '..', 'data', 'quotes');
 const SUPPORTED_LANGS = ['en','es','fr','de','it','pt','nl','sv','pl','el','ru','tr','ar','ja','ko','zh'];
-const QUOTE_MIN_SIMILARITY = 0.35;
+// Threshold deliberately above the noise floor so weak thematic matches
+// don't surface — better no quote than a forced one. Bumped from 0.35 to
+// 0.45 after the first round of streaming reflections showed too many
+// blocks were getting marginally-relevant quotes attached.
+const QUOTE_MIN_SIMILARITY = 0.45;
 // Hard ceiling on bank size so massive future pools don't OOM. 16 langs ×
 // 500 ≈ 8000 vectors at 384 floats each ≈ 12 MB — fine.
 const MAX_QUOTES_PER_LANG = 500;
@@ -88,10 +92,20 @@ function dot(a, b) {
  * block of reflection text.
  * @param {string} text — the block body to match against
  * @param {string} lang — ISO 639-1 language code; falls back to 'en' if unsupported
- * @param {number} threshold — minimum cosine similarity to attach (default 0.35)
+ * @param {object} [opts]
+ * @param {number} [opts.threshold] — minimum cosine similarity (default QUOTE_MIN_SIMILARITY)
+ * @param {Set<string>} [opts.excludeTexts] — quote texts to skip. Used by
+ *   reflect routes to dedupe — once a quote attaches to one block, the same
+ *   quote shouldn't surface on another block in the same reflection.
  * @returns {Promise<{ text, author } | null>}
  */
-async function findBestQuote(text, lang = 'en', threshold = QUOTE_MIN_SIMILARITY) {
+async function findBestQuote(text, lang = 'en', opts = {}) {
+  // Backwards compat: callers that pass a number as the third arg get the
+  // old "threshold-only" signature.
+  if (typeof opts === 'number') opts = { threshold: opts };
+  const threshold = typeof opts.threshold === 'number' ? opts.threshold : QUOTE_MIN_SIMILARITY;
+  const excludeTexts = opts.excludeTexts instanceof Set ? opts.excludeTexts : null;
+
   if (!text || typeof text !== 'string' || text.trim().length < 20) return null;
   const code = SUPPORTED_LANGS.includes(lang) ? lang : 'en';
   const pool = await ensureEmbedded(code);
@@ -107,6 +121,7 @@ async function findBestQuote(text, lang = 'en', threshold = QUOTE_MIN_SIMILARITY
   let bestSim = -Infinity;
   let bestQuote = null;
   for (const q of pool) {
+    if (excludeTexts && excludeTexts.has(q.text)) continue;
     const sim = dot(queryVec, q.vec);
     if (sim > bestSim) {
       bestSim = sim;

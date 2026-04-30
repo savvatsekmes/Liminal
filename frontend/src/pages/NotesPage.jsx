@@ -182,17 +182,64 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
     if (!await confirmIfCrisis(noteText)) return;
     setReflecting(true);
     setReflectError(null);
+    // Clear prior blocks so the new reflection visibly streams in fresh.
+    setReflectBlocks([]);
+    let lang;
+    try { lang = localStorage.getItem('lang') || undefined; } catch {}
     try {
       const res = await apiFetch(`/api/notes/${activeNote.id}/reflect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           archetype: archetype && archetype !== 'Auto' ? archetype : undefined,
+          ...(lang ? { language: lang } : {}),
         }),
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setReflectBlocks(data.blocks || []);
+      if (!res.ok) {
+        let msg = 'Reflection failed.';
+        try { const e = await res.json(); msg = e.error || msg; } catch {}
+        throw new Error(msg);
+      }
+      // SSE stream — same shape as journal reflect: opening / block / update
+      // / done / error. Notes don't have an opening field but the parser is
+      // identical so any future addition just lands.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamErr = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let sepIdx;
+        while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
+          const eventChunk = buffer.slice(0, sepIdx);
+          buffer = buffer.slice(sepIdx + 2);
+          let eventName = 'message';
+          let dataLines = [];
+          for (const line of eventChunk.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+          }
+          if (!dataLines.length) continue;
+          let payload;
+          try { payload = JSON.parse(dataLines.join('\n')); } catch { continue; }
+          if (eventName === 'block') {
+            const { _index, ...rest } = payload;
+            setReflectBlocks((prev) => [...prev, rest]);
+          } else if (eventName === 'update') {
+            const { _index, ...rest } = payload;
+            setReflectBlocks((prev) => {
+              const next = [...prev];
+              if (typeof _index === 'number' && _index >= 0 && _index < next.length) next[_index] = rest;
+              return next;
+            });
+          } else if (eventName === 'error') {
+            streamErr = payload.error || 'Stream error';
+          }
+        }
+      }
+      if (streamErr) throw new Error(streamErr);
     } catch (err) {
       setReflectError(err.message);
     } finally {

@@ -12,6 +12,7 @@ const { buildCardContext } = require('./cards');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 const { applyPatchWithEditTracking, applyPutWithEditTracking, sanitiseQuote } = require('../services/reflectionEdits');
 const quoteBank = require('../services/quoteBank');
+const reflectStream = require('../services/reflectStream');
 
 router.use(requireAuth);
 
@@ -54,113 +55,151 @@ router.post('/', async (req, res) => {
       + (ytContext ? `\n\n---\n# REFERENCE: videos the user embedded (background only — do NOT treat these as the user's words or let them set the topic)\n\n${ytContext}` : '')
       + (imgContext ? `\n\n---\n# REFERENCE: images in the entry (background only)\n\n${imgContext}` : '')
       + (cardContext ? `\n\n---\n# REFERENCE: tarot cards pulled in the entry\n\n${cardContext}` : '');
-    const rawResponse = await llm.call(systemPrompt, userMessage, { maxTokens: 2500 });
+    // 3. Stream blocks to the client as the model produces them. Each block
+    // is post-processed (sanitiseQuote, orphan-bold strip, quote bank match)
+    // before being sent over SSE. The full reflection is saved to DB at end
+    // of stream after the echo callout runs (which needs all blocks present).
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // disable any reverse-proxy buffering
+    res.flushHeaders?.();
 
-    // 3. Parse Mirror blocks from JSON response
-    //
-    // The LLM is asked to return strict JSON, but in practice it sometimes:
-    //   a) wraps the JSON in ```json fences
-    //   b) prefaces it with a sentence ("Here's your reflection: { ... }")
-    //   c) adds a trailing question or remark *after* the closing brace
-    // (a) and (c) both make JSON.parse(rawResponse) throw. We handle all three
-    // by locating the outermost { ... } via brace-matching and parsing that.
-    let blocks = [];
-    let opening = null;
-    const parsed = extractJsonObject(rawResponse);
-    if (parsed) {
-      blocks = parsed.blocks || [];
-      opening = parsed.opening || null;
-    }
-    // JSON.parse failed (or returned no blocks) — try the salvage path. Catches
-    // common LLM malformations like the "blocks" array being unclosed before
-    // top-level keys appear: e.g. `{"blocks":[...,"closing":"..."}}` instead of
-    // `{"blocks":[...],"closing":"..."}`. Extracts opening + blocks structurally
-    // so the user gets a proper reflection instead of seeing raw JSON.
-    if (!blocks.length) {
-      const salvaged = salvageReflection(rawResponse);
-      if (salvaged && salvaged.blocks.length) {
-        console.warn(`[reflect] salvaged ${salvaged.blocks.length} blocks from malformed JSON`);
-        blocks = salvaged.blocks;
-        opening = opening || salvaged.opening;
+    const lang = (req.body.language || req.body.lang || 'en').toLowerCase().slice(0, 2);
+    const sendEvent = (event, data) => {
+      try {
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch (e) {
+        console.warn('[reflect] sendEvent failed:', e.message);
       }
-    }
-    // Final fallback: treat the whole response as a single prose block
-    if (!blocks.length) {
-      blocks = [{ title: 'Reflection', body: rawResponse, quote: null, archetype: singleArchetype || 'Auto' }];
-    }
+    };
 
-    // Force-tag every block with the chosen archetype so the frontend voice
-    // override resolves correctly even if the LLM forgot the field.
-    if (singleArchetype) {
-      blocks = blocks.map(b => ({ ...b, archetype: singleArchetype }));
-    }
+    // Track quote texts already attached to this reflection so the same
+    // quote can't appear on two blocks. The bank's findBestQuote skips any
+    // text in this set when picking.
+    const usedQuoteTexts = new Set();
 
-    // Local LLMs sometimes emit the literal string "null" as the quote field
-    // instead of a real JSON null. Coerce those (and "undefined", "none",
-    // empty strings) to null so the frontend doesn't render `"null"`.
-    blocks = blocks.map(sanitiseQuote);
-
-    // Strip stray markdown artifacts smaller models leave behind. Specifically:
-    // an odd count of `**` bold markers (i.e. an unclosed bold) leaves a
-    // dangling `**` in the body; remove the last one so the renderer doesn't
-    // show a literal `**` to the user. Also trim trailing whitespace.
-    blocks = blocks.map((b) => {
-      if (!b || typeof b.body !== 'string') return b;
-      let body = b.body;
-      const stars = (body.match(/\*\*/g) || []).length;
-      if (stars % 2 !== 0) body = body.replace(/\*\*(?=[^*]*$)/, '');
-      return { ...b, body: body.trim() };
-    });
-
-    // Replace any LLM-supplied quote with one picked from the curated bank
-    // (real, attributable lines from real authors). Smaller models invent
-    // aphorisms and even fabricate quotes attributed to real people; pulling
-    // from a curated bank keyed on the user's UI language gets us guaranteed-
-    // attributable wisdom that's also embedding-matched to the block's theme.
-    // If no quote in the bank crosses the similarity threshold, the field is
-    // null. The frontend already renders null quotes as absent.
-    {
-      const lang = (req.body.language || req.body.lang || 'en').toLowerCase().slice(0, 2);
-      blocks = await Promise.all(
-        blocks.map(async (b) => {
-          if (!b || typeof b.body !== 'string') return b;
-          try {
-            const picked = await quoteBank.findBestQuote(b.body, lang);
-            return { ...b, quote: picked ? `${picked.text} — ${picked.author}` : null };
-          } catch {
-            return { ...b, quote: null };
+    // Per-block post-processing: archetype tag, sanitise quote, strip orphan
+    // bold, replace quote with curated-bank match. All synchronous except
+    // the bank lookup (which embeds the body and picks via cosine).
+    async function postProcessBlock(rawBlock, index) {
+      let b = rawBlock;
+      if (singleArchetype) b = { ...b, archetype: singleArchetype };
+      b = sanitiseQuote(b);
+      if (b && typeof b.body === 'string') {
+        let body = b.body;
+        const stars = (body.match(/\*\*/g) || []).length;
+        if (stars % 2 !== 0) body = body.replace(/\*\*(?=[^*]*$)/, '');
+        b = { ...b, body: body.trim() };
+      }
+      if (b && typeof b.body === 'string') {
+        try {
+          const picked = await quoteBank.findBestQuote(b.body, lang, { excludeTexts: usedQuoteTexts });
+          if (picked) {
+            usedQuoteTexts.add(picked.text);
+            b = { ...b, quote: `${picked.text} — ${picked.author}` };
+          } else {
+            b = { ...b, quote: null };
           }
-        }),
-      );
+        } catch {
+          b = { ...b, quote: null };
+        }
+      }
+      return { ...b, _index: index };
     }
 
-    // 4. Echo: find a relevant snippet from a past entry and attach it to the
-    // most thematically related block. Best-effort, never blocks the response.
-    if (entryId && text && text.length >= 200 && blocks.length) {
-      try {
-        await attachEcho(blocks, text, entryId, req.userId);
-      } catch (e) {
-        console.warn('[reflect] echo attach failed:', e.message);
-      }
-    }
+    const finalBlocks = [];
+    let openingFinal = null;
+    let blockIndex = 0;
 
-    // 5. Save blocks (with opening) and return response
-    const savedData = { opening, blocks };
-    console.log(`[reflect] Saving ${blocks.length} blocks for entryId=${entryId}, archetypes=${blocks.map(b => b.archetype).join(',')}`);
-    if (entryId) {
-      try {
-        db.prepare(
-          `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
-           VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-        ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify(savedData)));
-        console.log(`[reflect] Saved OK`);
-      } catch (e) {
-        console.error('[reflect] Failed to save reflections:', e.message);
-      }
-    } else {
-      console.log(`[reflect] Skipped save — no entryId`);
-    }
-    res.json({ opening, blocks });
+    await reflectStream.run(systemPrompt, userMessage, { maxTokens: 2500 }, {
+      onOpening: (txt) => {
+        openingFinal = txt;
+        sendEvent('opening', { opening: txt });
+      },
+      onBlock: async (rawBlock) => {
+        const processed = await postProcessBlock(rawBlock, blockIndex);
+        blockIndex++;
+        finalBlocks.push(processed);
+        sendEvent('block', processed);
+      },
+      onDone: async (final) => {
+        // Salvage path: if the streaming parser couldn't extract any blocks
+        // (model emitted truly broken JSON), try the legacy structural salvage
+        // on the full raw text and emit those blocks now. Better late than
+        // empty.
+        if (finalBlocks.length === 0) {
+          const salvaged = salvageReflection(final.raw);
+          if (salvaged && salvaged.blocks.length) {
+            console.warn(`[reflect] salvaged ${salvaged.blocks.length} blocks from end-of-stream`);
+            if (!openingFinal && salvaged.opening) {
+              openingFinal = salvaged.opening;
+              sendEvent('opening', { opening: salvaged.opening });
+            }
+            for (const rb of salvaged.blocks) {
+              const processed = await postProcessBlock(rb, blockIndex);
+              blockIndex++;
+              finalBlocks.push(processed);
+              sendEvent('block', processed);
+            }
+          }
+        }
+        // Truly empty fallback — at least surface the raw text so user sees
+        // something rather than blank panel.
+        if (finalBlocks.length === 0) {
+          const fallback = await postProcessBlock(
+            { title: 'Reflection', body: final.raw, quote: null, archetype: singleArchetype || 'Auto' },
+            0,
+          );
+          finalBlocks.push(fallback);
+          sendEvent('block', fallback);
+        }
+
+        // Echo: find a relevant snippet from a past entry and attach to one
+        // block. After streaming finishes since echo needs to compare across
+        // all blocks. Mutates the matched block's `echo` field; we re-emit
+        // that block as an `update` event so the frontend can patch.
+        if (entryId && text && text.length >= 200 && finalBlocks.length) {
+          try {
+            await attachEcho(finalBlocks, text, entryId, req.userId);
+            // Find which block got the echo and re-emit. attachEcho mutates
+            // exactly one block (the best match) by adding an `echo` field.
+            const echoed = finalBlocks.findIndex((b) => b && b.echo);
+            if (echoed >= 0) {
+              sendEvent('update', finalBlocks[echoed]);
+            }
+          } catch (e) {
+            console.warn('[reflect] echo attach failed:', e.message);
+          }
+        }
+
+        // Save consolidated reflection to DB (strip our internal _index field).
+        const savedBlocks = finalBlocks.map(({ _index, ...rest }) => rest);
+        const savedData = { opening: openingFinal, blocks: savedBlocks };
+        console.log(`[reflect] Saving ${savedBlocks.length} blocks for entryId=${entryId}, archetypes=${savedBlocks.map(b => b.archetype).join(',')}`);
+        if (entryId) {
+          try {
+            db.prepare(
+              `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+            ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify(savedData)));
+            console.log(`[reflect] Saved OK`);
+          } catch (e) {
+            console.error('[reflect] Failed to save reflections:', e.message);
+          }
+        } else {
+          console.log(`[reflect] Skipped save — no entryId`);
+        }
+
+        sendEvent('done', { blockCount: savedBlocks.length });
+        res.end();
+      },
+      onError: (err) => {
+        sendEvent('error', { error: err.message || 'Stream failed' });
+        res.end();
+      },
+    });
 
     // 6. Background: index entry, extract memories, auto-tag
     const userId = req.userId;
@@ -197,7 +236,13 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     console.error('[reflect] Error:', err.message);
-    res.status(500).json({ error: 'Reflection failed. Check your LLM API key and provider settings.' });
+    // If headers haven't been sent yet (failure before SSE init), respond
+    // with a normal JSON 500. If we're already streaming, just close.
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Reflection failed. Check your LLM API key and provider settings.' });
+    } else {
+      try { res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`); res.end(); } catch {}
+    }
   }
 });
 

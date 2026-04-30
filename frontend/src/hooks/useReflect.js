@@ -21,6 +21,10 @@ export function useReflect() {
     if (!await confirmIfCrisis(entry.body_text)) return;
     setLoading(true);
     setError(null);
+    // Reset blocks/opening so prior reflection visibly clears as the new one
+    // streams in. The MirrorPanel renders empty state during the gap.
+    setOpening(null);
+    setBlocks([]);
 
     try {
       // Strip inline base64 image data from HTML before sending — backend reads from DB instead
@@ -43,13 +47,70 @@ export function useReflect() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Reflection failed.');
+        // Backend may respond with a JSON error if the failure happened
+        // before SSE init (e.g. crisis gate, missing entry text). After SSE
+        // starts, errors arrive as `event: error` over the stream itself.
+        let msg = 'Reflection failed.';
+        try {
+          const err = await res.json();
+          msg = err.error || msg;
+        } catch {}
+        throw new Error(msg);
       }
 
-      const data = await res.json();
-      setOpening(data.opening || null);
-      setBlocks(data.blocks || []);
+      // Stream parser: walk the response body as text/event-stream chunks,
+      // dispatching each `event: <name>` block into state. Backend emits:
+      //   opening  → setOpening
+      //   block    → append to blocks (each block is fully post-processed)
+      //   update   → patch one existing block (echo callout post-stream)
+      //   done     → end of stream
+      //   error    → error event
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamErr = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE events are separated by a blank line (\n\n).
+        let sepIdx;
+        while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
+          const eventChunk = buffer.slice(0, sepIdx);
+          buffer = buffer.slice(sepIdx + 2);
+          // Each chunk is a sequence of "event: foo" / "data: ..." lines.
+          let eventName = 'message';
+          let dataLines = [];
+          for (const line of eventChunk.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+          }
+          if (!dataLines.length) continue;
+          let payload;
+          try { payload = JSON.parse(dataLines.join('\n')); } catch { continue; }
+          if (eventName === 'opening') {
+            setOpening(payload.opening || null);
+          } else if (eventName === 'block') {
+            // Strip backend-internal `_index` field before storing.
+            const { _index, ...rest } = payload;
+            setBlocks((prev) => [...prev, rest]);
+          } else if (eventName === 'update') {
+            const { _index, ...rest } = payload;
+            setBlocks((prev) => {
+              const next = [...prev];
+              if (typeof _index === 'number' && _index >= 0 && _index < next.length) {
+                next[_index] = rest;
+              }
+              return next;
+            });
+          } else if (eventName === 'error') {
+            streamErr = payload.error || 'Stream error';
+          } else if (eventName === 'done') {
+            // No-op: final marker. Keep reading until reader.read() reports done.
+          }
+        }
+      }
+      if (streamErr) throw new Error(streamErr);
     } catch (err) {
       setError(err.message);
     } finally {
