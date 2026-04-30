@@ -25,6 +25,11 @@ export function useReflect() {
     try {
       // Strip inline base64 image data from HTML before sending — backend reads from DB instead
       const strippedBody = (entry.body || '').replace(/data-src="data:image\/[^"]*"/g, 'data-src=""');
+      // Pass UI language so the backend's quote bank picks from the matching
+      // language pool. LanguageContext mirrors `lang` to localStorage on every
+      // change; default 'en'.
+      let lang;
+      try { lang = localStorage.getItem('lang') || undefined; } catch {}
       const res = await apiFetch('/api/reflect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -33,6 +38,7 @@ export function useReflect() {
           entryText: entry.body_text || '',
           entryBody: strippedBody,
           archetype: archetype && archetype !== 'Auto' ? archetype : undefined,
+          ...(lang ? { language: lang } : {}),
         }),
       });
 

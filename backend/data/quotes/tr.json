@@ -1,0 +1,630 @@
+[
+  {
+    "text": "Yaşamak bir ağaç gibi tek ve hür ve bir orman gibi kardeşçesine.",
+    "author": "Nâzım Hikmet"
+  },
+  {
+    "text": "En güzel günlerimizi henüz yaşamadık.",
+    "author": "Nâzım Hikmet"
+  },
+  {
+    "text": "Memleketimi seviyorum: çınarlarında kolan vurdum, hapishanelerinde yattım.",
+    "author": "Nâzım Hikmet"
+  },
+  {
+    "text": "Sevdiğim için sevdiğin gibi sev beni.",
+    "author": "Nâzım Hikmet"
+  },
+  {
+    "text": "Ben gelmedim dava için, benim işim sevda için.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Yaratılanı severiz Yaratan’dan ötürü.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "İlim ilim bilmektir, ilim kendin bilmektir. Sen kendin bilmezsen, bu nice okumaktır.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Bir ben vardır bende benden içeri.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "İnsanların en hayırlısı, insanlara faydalı olandır.",
+    "author": "Hadis-i şerif (Türkçe)"
+  },
+  {
+    "text": "Bir fincan kahvenin kırk yıl hatırı vardır.",
+    "author": "Türk atasözü"
+  },
+  {
+    "text": "Ağaç yaşken eğilir.",
+    "author": "Türk atasözü"
+  },
+  {
+    "text": "Damlaya damlaya göl olur.",
+    "author": "Türk atasözü"
+  },
+  {
+    "text": "Anladım ki dünyada her şey insan içinmiş.",
+    "author": "Cemal Süreya"
+  },
+  {
+    "text": "Şiir bir başkaldırıdır. Hayata, ölüme, aşka.",
+    "author": "Cemal Süreya"
+  },
+  {
+    "text": "Üşüyorum kapama gözlerini.",
+    "author": "Cemal Süreya"
+  },
+  {
+    "text": "Bir gün anlayacaksın, sevmek bazen susmaktır.",
+    "author": "Sabahattin Ali"
+  },
+  {
+    "text": "İstanbul’u dinliyorum, gözlerim kapalı.",
+    "author": "Orhan Veli"
+  },
+  {
+    "text": "Bedava yaşıyoruz, bedava; hava bedava, bulut bedava.",
+    "author": "Orhan Veli"
+  },
+  {
+    "text": "Hamdım, piştim, yandım.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Ne olursan ol yine gel.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Sen düşünceden ibaretsin, geri kalanın et ve kemiktir.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Sessizlik Tanrı'nın dilidir, geri kalan her şey kötü tercümedir.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Yara, ışığın sana girdiği yerdir.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Dün dünde kaldı cancağızım, bugün yeni şeyler söylemek lazım.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Aşk geldi damarda, derimde kan oldu; benliğimi aldı, beni dost yaptı.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Ya olduğun gibi görün, ya göründüğün gibi ol.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Cömertlikte ve yardım etmede akarsu gibi ol.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Tevazuda toprak gibi ol.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Öfkede ve asabiyette ölü gibi ol.",
+    "author": "Mevlânâ Celâleddîn-i Rûmî"
+  },
+  {
+    "text": "Gönül kâbedir, taştan değil.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Söz ola kese savaşı, söz ola kestire başı.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Bu dünyaya gelen gider, baki kalır kuru yer.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Bana seni gerek seni.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Dağlar ile taşlar ile çağırayım Mevlâ'm seni.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Cennet cennet dedikleri birkaç köşkle birkaç huri, isteyene ver onları, bana seni gerek seni.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Hak bir gönül verdi bana, ha demeden hayran olur.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Beni bende demen, ben değilim; bir ben vardır bende benden içeri.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Sevelim sevilelim, dünya kimseye kalmaz.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Ben yürürüm yana yana, aşk boyadı beni kana.",
+    "author": "Yunus Emre"
+  },
+  {
+    "text": "Uzun ince bir yoldayım, gidiyorum gündüz gece.",
+    "author": "Âşık Veysel"
+  },
+  {
+    "text": "Benim sadık yârim kara topraktır.",
+    "author": "Âşık Veysel"
+  },
+  {
+    "text": "Dost dost diye nicesine sarıldım, benim sadık yârim kara topraktır.",
+    "author": "Âşık Veysel"
+  },
+  {
+    "text": "Güzelliğin on para etmez, bu bendeki aşk olmasa.",
+    "author": "Âşık Veysel"
+  },
+  {
+    "text": "Bir yaşıma daha girdim, kabul olmadı dileğim.",
+    "author": "Âşık Veysel"
+  },
+  {
+    "text": "Kıymet vermez bilmeyenler bilenin kadrini, böyle yazmış kalemine bilmem ki ben ne diyem.",
+    "author": "Âşık Veysel"
+  },
+  {
+    "text": "Ölüm asla korkutamaz beni, ayrılıktır bana en zor görünen.",
+    "author": "Âşık Veysel"
+  },
+  {
+    "text": "Düşmüşüm bir derde, derman bilinmez.",
+    "author": "Karacaoğlan"
+  },
+  {
+    "text": "Çıktım yücesine seyran eyledim, cebrail mi indi sundu deyledim.",
+    "author": "Karacaoğlan"
+  },
+  {
+    "text": "Elif dedim be dedim, kıldan ince bele dedim.",
+    "author": "Karacaoğlan"
+  },
+  {
+    "text": "Şu karşıki yüce dağdan çığ kalkmış da boran m'ola.",
+    "author": "Karacaoğlan"
+  },
+  {
+    "text": "Hep kayıp giden bir hayat, gözlerimin önünde.",
+    "author": "Cahit Sıtkı Tarancı"
+  },
+  {
+    "text": "Yaş otuz beş, yolun yarısı eder; Dante gibi ortasındayız ömrün.",
+    "author": "Cahit Sıtkı Tarancı"
+  },
+  {
+    "text": "Ne doğan güne hükmüm geçer, ne halden anlayan bulunur.",
+    "author": "Cahit Sıtkı Tarancı"
+  },
+  {
+    "text": "Memleket isterim, gök mavi, dal yeşil, tarla sarı olsun.",
+    "author": "Cahit Sıtkı Tarancı"
+  },
+  {
+    "text": "Ölüm güzel şey, budur perde ardından haber.",
+    "author": "Cahit Sıtkı Tarancı"
+  },
+  {
+    "text": "Ne hasta bekler sabahı, ne taze ölüyü mezar; ne de şeytan, bir günahı, seni beklediğim kadar.",
+    "author": "Necip Fazıl Kısakürek"
+  },
+  {
+    "text": "Anladım işi, sanat Allah'ı aramakmış.",
+    "author": "Necip Fazıl Kısakürek"
+  },
+  {
+    "text": "Durun kalabalıklar, bu cadde çıkmaz sokak!",
+    "author": "Necip Fazıl Kısakürek"
+  },
+  {
+    "text": "Tomurcuk derdinde olmayan ağaç, odundur.",
+    "author": "Necip Fazıl Kısakürek"
+  },
+  {
+    "text": "Çile, çekilmesi gereken bir armağandır.",
+    "author": "Necip Fazıl Kısakürek"
+  },
+  {
+    "text": "Bir mektup yaz bana, ucunda ölüm bile olsa.",
+    "author": "Edip Cansever"
+  },
+  {
+    "text": "Ne kadar yorgun olursak olalım, hep bir şeyler kalır geriye.",
+    "author": "Edip Cansever"
+  },
+  {
+    "text": "Mendilimde kan sesleri.",
+    "author": "Edip Cansever"
+  },
+  {
+    "text": "Bir masa, ne çok şeydir bir masa.",
+    "author": "Edip Cansever"
+  },
+  {
+    "text": "Yalnızlık paylaşılmaz, paylaşılsa yalnızlık olmaz.",
+    "author": "Özdemir Asaf"
+  },
+  {
+    "text": "Sen kocaman çöllerde bir kalabalık gibisin.",
+    "author": "Özdemir Asaf"
+  },
+  {
+    "text": "Ölüm, hayatın en güzel buluşudur.",
+    "author": "Özdemir Asaf"
+  },
+  {
+    "text": "Yağmurdan sonra büyürmüş çocuklar, yağmurdan sonra.",
+    "author": "Özdemir Asaf"
+  },
+  {
+    "text": "Ben sana mecburum bilemezsin.",
+    "author": "Attila İlhan"
+  },
+  {
+    "text": "Bir sevda gemisinde gizli yolcu olalım.",
+    "author": "Attila İlhan"
+  },
+  {
+    "text": "Aldırma gönül aldırma.",
+    "author": "Attila İlhan"
+  },
+  {
+    "text": "Pişmanlık duymak için çok geç, unutmak için çok erken.",
+    "author": "Attila İlhan"
+  },
+  {
+    "text": "Hangi şehre gitsem geri dönerim, gözlerinin rengi olmadıktan sonra.",
+    "author": "Attila İlhan"
+  },
+  {
+    "text": "Hayat insana ne öğretirse, kitap onu hatırlatır.",
+    "author": "Ahmet Hamdi Tanpınar"
+  },
+  {
+    "text": "Ne içindeyim zamanın, ne de büsbütün dışında.",
+    "author": "Ahmet Hamdi Tanpınar"
+  },
+  {
+    "text": "Bir milletin tarihi, ruhunun aynasıdır.",
+    "author": "Ahmet Hamdi Tanpınar"
+  },
+  {
+    "text": "Hayat, bütün düzensizliği içinde, en büyük sanatçıdır.",
+    "author": "Ahmet Hamdi Tanpınar"
+  },
+  {
+    "text": "Mazi insanı bir kuyu gibi çeker.",
+    "author": "Ahmet Hamdi Tanpınar"
+  },
+  {
+    "text": "İnsan, sevdiği kadar insandır.",
+    "author": "Sait Faik Abasıyanık"
+  },
+  {
+    "text": "Yazmasaydım çıldıracaktım.",
+    "author": "Sait Faik Abasıyanık"
+  },
+  {
+    "text": "İnsanı sevmek, dünyayı sevmektir.",
+    "author": "Sait Faik Abasıyanık"
+  },
+  {
+    "text": "Hayat öyle uzun ve geniş ki, herkese yetecek kadar yer var.",
+    "author": "Sait Faik Abasıyanık"
+  },
+  {
+    "text": "Ben anlatamam, sen anlamalısın.",
+    "author": "Sabahattin Ali"
+  },
+  {
+    "text": "Hiçbir kadın bir erkeğe, sevmediği takdirde, vücudunu teslim etmemelidir.",
+    "author": "Sabahattin Ali"
+  },
+  {
+    "text": "İnsan dediğin böyledir işte; bir tarafı melek, bir tarafı şeytan.",
+    "author": "Sabahattin Ali"
+  },
+  {
+    "text": "Anlatması güç değil, anlatabileceğine inanmak güç.",
+    "author": "Sabahattin Ali"
+  },
+  {
+    "text": "Bir insanı tanımak için en az üç mevsim geçirmek lazım.",
+    "author": "Sabahattin Ali"
+  },
+  {
+    "text": "İstanbul'un yarısı diğer yarısının ne yaptığını merak eder.",
+    "author": "Orhan Pamuk"
+  },
+  {
+    "text": "Hayat kısa, kuşlar uçuyor.",
+    "author": "Orhan Pamuk"
+  },
+  {
+    "text": "Hatırlamak, bir şeyleri unutmamak için çabalamaktır.",
+    "author": "Orhan Pamuk"
+  },
+  {
+    "text": "Güzel bir manzaraya bakmak, hatıraları çoğaltır.",
+    "author": "Orhan Pamuk"
+  },
+  {
+    "text": "Romancılık, başkalarının hayatını yaşamayı öğrenme sanatıdır.",
+    "author": "Orhan Pamuk"
+  },
+  {
+    "text": "İnsan toprakla beraber doğar, toprakla beraber ölür.",
+    "author": "Yaşar Kemal"
+  },
+  {
+    "text": "Bir destan yazmak istiyorum, dağ kadar yüce.",
+    "author": "Yaşar Kemal"
+  },
+  {
+    "text": "Çocukluğum, şu Çukurova'nın bir köşesinde geçti.",
+    "author": "Yaşar Kemal"
+  },
+  {
+    "text": "İnsan umutla yaşar.",
+    "author": "Yaşar Kemal"
+  },
+  {
+    "text": "Yazmak, varoluşumun tek anlamıdır.",
+    "author": "Oğuz Atay"
+  },
+  {
+    "text": "Ben buradayım sevgili okuyucum, sen neredesin acaba?",
+    "author": "Oğuz Atay"
+  },
+  {
+    "text": "Bütün ihmal edilmişler adına yazıyorum.",
+    "author": "Oğuz Atay"
+  },
+  {
+    "text": "Tutunamayanlar, hayatın kıyısında durur.",
+    "author": "Oğuz Atay"
+  },
+  {
+    "text": "İçimde tuhaf bir his vardı, sanki bir şeyler eksikti.",
+    "author": "Oğuz Atay"
+  },
+  {
+    "text": "Yalnızlık, en sadık dostumuzdur.",
+    "author": "Tezer Özlü"
+  },
+  {
+    "text": "Çocukluğun soğuk geceleri, hâlâ içimde.",
+    "author": "Tezer Özlü"
+  },
+  {
+    "text": "Yaşamak, ölmekten daha zor.",
+    "author": "Tezer Özlü"
+  },
+  {
+    "text": "Hiçbir yere ait değilim, her yere ait olmak istiyorum.",
+    "author": "Tezer Özlü"
+  },
+  {
+    "text": "Bir kelime, bazen bütün bir hayatı değiştirir.",
+    "author": "Bilge Karasu"
+  },
+  {
+    "text": "Sözcükler, bizden kaçan kuşlardır.",
+    "author": "Bilge Karasu"
+  },
+  {
+    "text": "Gece, en derin düşüncelerin doğduğu yerdir.",
+    "author": "Bilge Karasu"
+  },
+  {
+    "text": "Hayat bir yolculuktur, varış değil.",
+    "author": "Hasan Ali Toptaş"
+  },
+  {
+    "text": "Gölgeler bile, kendi hikayesini taşır.",
+    "author": "Hasan Ali Toptaş"
+  },
+  {
+    "text": "Sessizlik, bazen en büyük çığlıktır.",
+    "author": "Hasan Ali Toptaş"
+  },
+  {
+    "text": "Bir kadın, bir şehirden büyüktür.",
+    "author": "Latife Tekin"
+  },
+  {
+    "text": "Yoksulluk, bir dildir; öğrenmesi yıllar alır.",
+    "author": "Latife Tekin"
+  },
+  {
+    "text": "Çöp dağlarının arasında bile, çiçek açar.",
+    "author": "Latife Tekin"
+  },
+  {
+    "text": "Aşk, dile gelmeyen bir şarkıdır.",
+    "author": "Murathan Mungan"
+  },
+  {
+    "text": "Her hikâye, anlatılmayı bekler.",
+    "author": "Murathan Mungan"
+  },
+  {
+    "text": "Bir kadının yüzü, bir ülkedir.",
+    "author": "Murathan Mungan"
+  },
+  {
+    "text": "Yalnızlık, kalabalıkta daha derin hissedilir.",
+    "author": "Murathan Mungan"
+  },
+  {
+    "text": "Şiir, dilin en saf hâlidir.",
+    "author": "Hilmi Yavuz"
+  },
+  {
+    "text": "Bir mevsim daha geçti, içimizden.",
+    "author": "Hilmi Yavuz"
+  },
+  {
+    "text": "Hatıralar, taşıdığımız en ağır yüktür.",
+    "author": "Hilmi Yavuz"
+  },
+  {
+    "text": "Şair, dilin bekçisidir.",
+    "author": "Behçet Necatigil"
+  },
+  {
+    "text": "Evler, içlerinde yaşayanların ruhunu taşır.",
+    "author": "Behçet Necatigil"
+  },
+  {
+    "text": "Sessiz gemiler, en uzağa giderler.",
+    "author": "Behçet Necatigil"
+  },
+  {
+    "text": "Dört atlı geldi sabah, yedi atlı dönecek akşam.",
+    "author": "Fazıl Hüsnü Dağlarca"
+  },
+  {
+    "text": "Türkçem, benim ses bayrağım.",
+    "author": "Fazıl Hüsnü Dağlarca"
+  },
+  {
+    "text": "Çocuklar, geleceğin şiiridir.",
+    "author": "Fazıl Hüsnü Dağlarca"
+  },
+  {
+    "text": "Sabah olur, güneş doğar, sen yine yoksun.",
+    "author": "Sevgi Soysal"
+  },
+  {
+    "text": "Kadınlar, susarak konuşmayı öğrenirler.",
+    "author": "Sevgi Soysal"
+  },
+  {
+    "text": "Yenişehir'de bir öğle vakti, hayat orada da akar.",
+    "author": "Sevgi Soysal"
+  },
+  {
+    "text": "Engellerle dolu bir hayatta, sevgi tek pusuladır.",
+    "author": "Halide Edib Adıvar"
+  },
+  {
+    "text": "Vatan, sevgiyle yoğrulan topraktır.",
+    "author": "Halide Edib Adıvar"
+  },
+  {
+    "text": "Bir insanın değeri, sevdikleriyle ölçülür.",
+    "author": "Reşat Nuri Güntekin"
+  },
+  {
+    "text": "Çalıkuşu gibi, hayata cesurca atılmak gerek.",
+    "author": "Reşat Nuri Güntekin"
+  },
+  {
+    "text": "Hayat, beklemediğimiz anda gülümser bize.",
+    "author": "Reşat Nuri Güntekin"
+  },
+  {
+    "text": "Bir bilsen ne kadar özledim seni, kelimeler kâfi gelmez.",
+    "author": "Cemal Süreya"
+  },
+  {
+    "text": "Ölüm, ucu görünmeyen bir ip gibidir.",
+    "author": "Cemal Süreya"
+  },
+  {
+    "text": "Şiir, insanın iç sesidir.",
+    "author": "Cemal Süreya"
+  },
+  {
+    "text": "Aşk olmasa, hiçbir şey olmaz.",
+    "author": "Cemal Süreya"
+  },
+  {
+    "text": "İnsan kendini bilmedikçe, dünyayı bilemez.",
+    "author": "Hacı Bektaş Veli"
+  },
+  {
+    "text": "İncinsen de, incitme.",
+    "author": "Hacı Bektaş Veli"
+  },
+  {
+    "text": "Eline, diline, beline sahip ol.",
+    "author": "Hacı Bektaş Veli"
+  },
+  {
+    "text": "İlimden gidilmeyen yolun sonu karanlıktır.",
+    "author": "Hacı Bektaş Veli"
+  },
+  {
+    "text": "Düşünce karanlığına ışık tutan, bilimdir.",
+    "author": "Hacı Bektaş Veli"
+  },
+  {
+    "text": "Kadınları okutmayan millet, yarısı sakat olan bir millettir.",
+    "author": "Hacı Bektaş Veli"
+  },
+  {
+    "text": "Aramakla bulunmaz, bulanlar ancak arayanlardır.",
+    "author": "Bayezid-i Bistami"
+  },
+  {
+    "text": "Var olan her şey, sevgiden doğar.",
+    "author": "İbn Arabi"
+  },
+  {
+    "text": "Kalp, Tanrı'nın evidir.",
+    "author": "İbn Arabi"
+  },
+  {
+    "text": "Yedi vadiyi geçmeden Simurg'a varılmaz.",
+    "author": "Feridüddin Attar"
+  },
+  {
+    "text": "Aşık olan, kendini unutandır.",
+    "author": "Feridüddin Attar"
+  },
+  {
+    "text": "Gönül kuşu, hakikatin peşinde uçar.",
+    "author": "Feridüddin Attar"
+  },
+  {
+    "text": "Hafızam, sana yazdığım her şeyi sakladı.",
+    "author": "Hafız Şirazi"
+  },
+  {
+    "text": "Kadeh, dudaklarımda söze dönüşür.",
+    "author": "Hafız Şirazi"
+  },
+  {
+    "text": "Bir gül uğruna, bin diken çekilir.",
+    "author": "Sadi Şirazi"
+  },
+  {
+    "text": "İnsan, tek bir vücudun uzuvlarıdır.",
+    "author": "Sadi Şirazi"
+  },
+  {
+    "text": "Konuşmak gümüşse, susmak altındır.",
+    "author": "Sadi Şirazi"
+  },
+  {
+    "text": "Sabır acıdır, meyvesi tatlıdır.",
+    "author": "Sadi Şirazi"
+  }
+]

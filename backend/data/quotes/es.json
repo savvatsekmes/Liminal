@@ -1,0 +1,618 @@
+[
+  {
+    "text": "Caminante, no hay camino, se hace camino al andar.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "Hoy es siempre todavía.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "Podrán cortar todas las flores, pero no podrán detener la primavera.",
+    "author": "Pablo Neruda"
+  },
+  {
+    "text": "Algún día en cualquier parte, en cualquier lugar indefectiblemente te encontrarás a ti mismo, y ésa, sólo ésa, puede ser la más feliz o la más amarga de tus horas.",
+    "author": "Pablo Neruda"
+  },
+  {
+    "text": "La poesía es un arma cargada de futuro.",
+    "author": "Gabriel Celaya"
+  },
+  {
+    "text": "Nada te turbe, nada te espante, todo se pasa.",
+    "author": "Santa Teresa de Ávila"
+  },
+  {
+    "text": "Yo soy yo y mi circunstancia, y si no la salvo a ella no me salvo yo.",
+    "author": "José Ortega y Gasset"
+  },
+  {
+    "text": "En algún lugar de un libro hay una frase esperándonos para darle un sentido a la existencia.",
+    "author": "Miguel de Cervantes"
+  },
+  {
+    "text": "La libertad, Sancho, es uno de los más preciosos dones que a los hombres dieron los cielos.",
+    "author": "Miguel de Cervantes"
+  },
+  {
+    "text": "A veces siento que se me olvida el corazón.",
+    "author": "Federico García Lorca"
+  },
+  {
+    "text": "Las cosas que nos pasan, a veces, nos pasan también por dentro.",
+    "author": "Julio Cortázar"
+  },
+  {
+    "text": "Nada está perdido si se tiene por fin el valor de proclamar que todo está perdido y hay que empezar de nuevo.",
+    "author": "Julio Cortázar"
+  },
+  {
+    "text": "Uno no es lo que es por lo que escribe, sino por lo que ha leído.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "Siempre imaginé que el Paraíso sería algún tipo de biblioteca.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "No hay rosa sin espinas, ni amor sin celos.",
+    "author": "refrán español"
+  },
+  {
+    "text": "La realidad no es siempre verosímil.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "El mundo es todo coincidencia.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "Vivimos en un mundo donde escondemos para sobrevivir.",
+    "author": "Octavio Paz"
+  },
+  {
+    "text": "Lo esencial es invisible a los ojos.",
+    "author": "Antoine de Saint-Exupéry"
+  },
+  {
+    "text": "Cuando creíamos que teníamos todas las respuestas, de pronto, cambiaron todas las preguntas.",
+    "author": "Mario Benedetti"
+  },
+  {
+    "text": "Te quiero porque tus manos trabajan por la justicia.",
+    "author": "Mario Benedetti"
+  },
+  {
+    "text": "No te rindas, por favor no cedas, aunque el frío queme, aunque el miedo muerda.",
+    "author": "Mario Benedetti"
+  },
+  {
+    "text": "Después de todo, la muerte es sólo un síntoma de que hubo vida.",
+    "author": "Mario Benedetti"
+  },
+  {
+    "text": "El olvido está lleno de memoria.",
+    "author": "Mario Benedetti"
+  },
+  {
+    "text": "El sur también existe.",
+    "author": "Mario Benedetti"
+  },
+  {
+    "text": "La verdad es lo que es, y sigue siendo verdad aunque se piense al revés.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "En cuestiones de cultura y de saber, sólo se pierde lo que se guarda; sólo se gana lo que se da.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "Para dialogar, preguntad primero; después, escuchad.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "Despacito y buena letra, que el hacer las cosas bien importa más que el hacerlas.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "El ojo que ves no es ojo porque tú lo veas; es ojo porque te ve.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "Tras el vivir y el soñar, está lo que más importa: despertar.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "Bueno es saber que los vasos nos sirven para beber; lo malo es que no sabemos para qué sirve la sed.",
+    "author": "Antonio Machado"
+  },
+  {
+    "text": "La fe que no duda es fe muerta.",
+    "author": "Miguel de Unamuno"
+  },
+  {
+    "text": "Sólo el que sabe es libre, y más libre el que más sabe.",
+    "author": "Miguel de Unamuno"
+  },
+  {
+    "text": "El progreso consiste en renovarse.",
+    "author": "Miguel de Unamuno"
+  },
+  {
+    "text": "El amor es hijo de la ilusión y padre de la desilusión.",
+    "author": "Miguel de Unamuno"
+  },
+  {
+    "text": "La vida nos es dada, pero no nos es dada hecha.",
+    "author": "José Ortega y Gasset"
+  },
+  {
+    "text": "El esfuerzo inútil conduce a la melancolía.",
+    "author": "José Ortega y Gasset"
+  },
+  {
+    "text": "La claridad es la cortesía del filósofo.",
+    "author": "José Ortega y Gasset"
+  },
+  {
+    "text": "Yo no soy ni quiero ser tuyo, eres tú quien me perteneces.",
+    "author": "Sor Juana Inés de la Cruz"
+  },
+  {
+    "text": "Hombres necios que acusáis a la mujer sin razón, sin ver que sois la ocasión de lo mismo que culpáis.",
+    "author": "Sor Juana Inés de la Cruz"
+  },
+  {
+    "text": "Yo no estudio para escribir, ni menos para enseñar, sino sólo por ver si con estudiar ignoro menos.",
+    "author": "Sor Juana Inés de la Cruz"
+  },
+  {
+    "text": "Verde que te quiero verde. Verde viento. Verdes ramas.",
+    "author": "Federico García Lorca"
+  },
+  {
+    "text": "La poesía no quiere adeptos, quiere amantes.",
+    "author": "Federico García Lorca"
+  },
+  {
+    "text": "Quiero dormir el sueño de las manzanas, alejarme del tumulto de los cementerios.",
+    "author": "Federico García Lorca"
+  },
+  {
+    "text": "El más terrible de los sentimientos es el sentimiento de tener la esperanza perdida.",
+    "author": "Federico García Lorca"
+  },
+  {
+    "text": "Yo creo que el ser de Granada me inclina a la comprensión simpática de los perseguidos.",
+    "author": "Federico García Lorca"
+  },
+  {
+    "text": "Puedo escribir los versos más tristes esta noche.",
+    "author": "Pablo Neruda"
+  },
+  {
+    "text": "Es tan corto el amor, y es tan largo el olvido.",
+    "author": "Pablo Neruda"
+  },
+  {
+    "text": "Me gustas cuando callas porque estás como ausente.",
+    "author": "Pablo Neruda"
+  },
+  {
+    "text": "Te amo sin saber cómo, ni cuándo, ni de dónde, te amo directamente sin problemas ni orgullo.",
+    "author": "Pablo Neruda"
+  },
+  {
+    "text": "Quiero hacer contigo lo que la primavera hace con los cerezos.",
+    "author": "Pablo Neruda"
+  },
+  {
+    "text": "Muere lentamente quien no viaja, quien no lee, quien no escucha música.",
+    "author": "Martha Medeiros"
+  },
+  {
+    "text": "Uno llega a ser grande por lo que lee y no por lo que escribe.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "He cometido el peor de los pecados que un hombre puede cometer. No he sido feliz.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "El original es infiel a la traducción.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "Que otros se jacten de las páginas que han escrito; a mí me enorgullecen las que he leído.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "El tiempo es la sustancia de que estoy hecho. El tiempo es un río que me arrebata, pero yo soy el río.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "Cualquier destino, por largo y complicado que sea, consta en realidad de un solo momento: el momento en que el hombre sabe para siempre quién es.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "Somos nuestra memoria, somos ese quimérico museo de formas inconstantes, ese montón de espejos rotos.",
+    "author": "Jorge Luis Borges"
+  },
+  {
+    "text": "El amor es uno de los pocos recursos contra la muerte.",
+    "author": "Octavio Paz"
+  },
+  {
+    "text": "La soledad es el fondo último de la condición humana.",
+    "author": "Octavio Paz"
+  },
+  {
+    "text": "Somos lo que hacemos para cambiar lo que somos.",
+    "author": "Eduardo Galeano"
+  },
+  {
+    "text": "Mucha gente pequeña, en lugares pequeños, haciendo cosas pequeñas, puede cambiar el mundo.",
+    "author": "Eduardo Galeano"
+  },
+  {
+    "text": "La utopía está en el horizonte. Camino dos pasos, ella se aleja dos pasos. Por mucho que yo camine, nunca la alcanzaré. ¿Para qué sirve la utopía? Para eso sirve: para caminar.",
+    "author": "Eduardo Galeano"
+  },
+  {
+    "text": "Cada persona brilla con luz propia entre todas las demás.",
+    "author": "Eduardo Galeano"
+  },
+  {
+    "text": "El mundo es eso, un montón de gente, un mar de fueguitos.",
+    "author": "Eduardo Galeano"
+  },
+  {
+    "text": "Hay un solo niño bello en el mundo y cada madre lo tiene.",
+    "author": "Gabriela Mistral"
+  },
+  {
+    "text": "Donde haya un árbol que plantar, plántalo tú; donde haya un error que enmendar, enmiéndalo tú.",
+    "author": "Gabriela Mistral"
+  },
+  {
+    "text": "El futuro de los niños es siempre hoy. Mañana será tarde.",
+    "author": "Gabriela Mistral"
+  },
+  {
+    "text": "Gracias a la vida, que me ha dado tanto.",
+    "author": "Violeta Parra"
+  },
+  {
+    "text": "Hay golpes en la vida, tan fuertes... ¡Yo no sé!",
+    "author": "César Vallejo"
+  },
+  {
+    "text": "Hoy me gusta la vida mucho menos, pero siempre me gusta vivir.",
+    "author": "César Vallejo"
+  },
+  {
+    "text": "Yo nací un día que Dios estuvo enfermo.",
+    "author": "César Vallejo"
+  },
+  {
+    "text": "Me moriré en París con aguacero, un día del cual tengo ya el recuerdo.",
+    "author": "César Vallejo"
+  },
+  {
+    "text": "Y si después de tantas palabras, no sobrevive la palabra.",
+    "author": "César Vallejo"
+  },
+  {
+    "text": "Explicar con palabras de este mundo que partió de mí un barco llevándome.",
+    "author": "Alejandra Pizarnik"
+  },
+  {
+    "text": "La muerte siempre al lado. Escucho su decir. Sólo me oigo.",
+    "author": "Alejandra Pizarnik"
+  },
+  {
+    "text": "El día tenía el color de los días que aún no fueron.",
+    "author": "Alejandra Pizarnik"
+  },
+  {
+    "text": "La memoria es de noche y duele.",
+    "author": "Rosario Castellanos"
+  },
+  {
+    "text": "Otro modo de ser humano y libre. Otro modo de ser.",
+    "author": "Rosario Castellanos"
+  },
+  {
+    "text": "Conozco mejor el sitio en el que sangro porque lo nombro.",
+    "author": "Rosario Castellanos"
+  },
+  {
+    "text": "Cuando un hombre ya no puede cambiar una situación, queda el desafío de cambiarse a sí mismo.",
+    "author": "Viktor Frankl"
+  },
+  {
+    "text": "Entre el estímulo y la respuesta hay un espacio. En ese espacio reside nuestro poder de elegir nuestra respuesta. En nuestra respuesta reside nuestro crecimiento y nuestra libertad.",
+    "author": "Viktor Frankl"
+  },
+  {
+    "text": "Lo que está destinado a dejar una marca en el corazón no necesita repetirse.",
+    "author": "Carl Jung"
+  },
+  {
+    "text": "Quien mira hacia afuera, sueña; quien mira hacia adentro, despierta.",
+    "author": "Carl Jung"
+  },
+  {
+    "text": "Conocer tu propia oscuridad es el mejor método para hacer frente a las oscuridades de los demás.",
+    "author": "Carl Jung"
+  },
+  {
+    "text": "Hasta que lo inconsciente no se haga consciente, el subconsciente seguirá dirigiendo tu vida y tú lo llamarás destino.",
+    "author": "Carl Jung"
+  },
+  {
+    "text": "El privilegio de una vida es convertirse en quien realmente eres.",
+    "author": "Carl Jung"
+  },
+  {
+    "text": "El encuentro de dos personalidades es como el contacto de dos sustancias químicas: si hay alguna reacción, ambos se transforman.",
+    "author": "Carl Jung"
+  },
+  {
+    "text": "No nos perturban las cosas, sino la opinión que tenemos de ellas.",
+    "author": "Epicteto"
+  },
+  {
+    "text": "Tienes poder sobre tu mente, no sobre los acontecimientos externos. Date cuenta de esto y encontrarás la fuerza.",
+    "author": "Marco Aurelio"
+  },
+  {
+    "text": "La felicidad de tu vida depende de la calidad de tus pensamientos.",
+    "author": "Marco Aurelio"
+  },
+  {
+    "text": "Sé como el promontorio contra el cual rompen las olas continuamente; pero él se mantiene firme y a su alrededor amansan su furia las hinchadas aguas.",
+    "author": "Marco Aurelio"
+  },
+  {
+    "text": "Sólo sé que no sé nada.",
+    "author": "Sócrates"
+  },
+  {
+    "text": "Una vida sin examen no merece la pena ser vivida.",
+    "author": "Sócrates"
+  },
+  {
+    "text": "El comienzo es la parte más importante del trabajo.",
+    "author": "Platón"
+  },
+  {
+    "text": "Vendrás del silencio. Volverás al silencio. Y entre los dos silencios eres palabra.",
+    "author": "Roberto Juarroz"
+  },
+  {
+    "text": "Vivir es ir naciendo a cada instante.",
+    "author": "Roberto Juarroz"
+  },
+  {
+    "text": "Lo que buscas también te está buscando.",
+    "author": "Rumi"
+  },
+  {
+    "text": "La herida es el lugar por donde entra la luz en ti.",
+    "author": "Rumi"
+  },
+  {
+    "text": "Ayer era inteligente, así que quería cambiar el mundo. Hoy soy sabio, así que me estoy cambiando a mí mismo.",
+    "author": "Rumi"
+  },
+  {
+    "text": "Tu tarea no es buscar el amor, sino simplemente buscar y encontrar todas las barreras dentro de ti que has construido contra él.",
+    "author": "Rumi"
+  },
+  {
+    "text": "Sé tú mismo, los demás puestos están ocupados.",
+    "author": "Oscar Wilde"
+  },
+  {
+    "text": "Vivir es la cosa más rara del mundo. La mayor parte de la gente sólo existe.",
+    "author": "Oscar Wilde"
+  },
+  {
+    "text": "Si quieres conocer a una persona, no le preguntes lo que piensa, sino lo que ama.",
+    "author": "San Agustín"
+  },
+  {
+    "text": "La medida del amor es amar sin medida.",
+    "author": "San Agustín"
+  },
+  {
+    "text": "Quien a Dios tiene, nada le falta. Sólo Dios basta.",
+    "author": "Santa Teresa de Ávila"
+  },
+  {
+    "text": "Para venir a serlo todo, no quieras ser algo en nada.",
+    "author": "San Juan de la Cruz"
+  },
+  {
+    "text": "Donde no hay amor, pon amor y sacarás amor.",
+    "author": "San Juan de la Cruz"
+  },
+  {
+    "text": "Vivir no es necesario; navegar es necesario.",
+    "author": "Fernando Pessoa"
+  },
+  {
+    "text": "Tengo en mí todos los sueños del mundo.",
+    "author": "Fernando Pessoa"
+  },
+  {
+    "text": "La literatura, como toda forma de arte, es una confesión de que la vida no basta.",
+    "author": "Fernando Pessoa"
+  },
+  {
+    "text": "Cuando pasa el viento, comprendo el viento.",
+    "author": "Fernando Pessoa"
+  },
+  {
+    "text": "La vida no es la que uno vivió, sino la que uno recuerda y cómo la recuerda para contarla.",
+    "author": "Gabriel García Márquez"
+  },
+  {
+    "text": "Ninguna persona merece tus lágrimas, y quien las merezca, no te hará llorar.",
+    "author": "Gabriel García Márquez"
+  },
+  {
+    "text": "El secreto de una buena vejez no es otra cosa que un pacto honrado con la soledad.",
+    "author": "Gabriel García Márquez"
+  },
+  {
+    "text": "Las cosas tienen vida propia, todo es cuestión de despertarles el ánima.",
+    "author": "Gabriel García Márquez"
+  },
+  {
+    "text": "Cuando una puerta se cierra, otra se abre.",
+    "author": "Miguel de Cervantes"
+  },
+  {
+    "text": "La pluma es la lengua del alma.",
+    "author": "Miguel de Cervantes"
+  },
+  {
+    "text": "Caminamos sobre los muertos del pasado y vivimos al lado de los muertos del presente.",
+    "author": "Roberto Bolaño"
+  },
+  {
+    "text": "Leer es siempre más importante que escribir.",
+    "author": "Roberto Bolaño"
+  },
+  {
+    "text": "Andábamos sin buscarnos pero sabiendo que andábamos para encontrarnos.",
+    "author": "Julio Cortázar"
+  },
+  {
+    "text": "Sólo en sueños, en la poesía, en el juego se asoma a veces lo que fuimos antes de ser esto que vaya a saber si somos.",
+    "author": "Julio Cortázar"
+  },
+  {
+    "text": "Si he de vivir sin ti, que sea duro y cruento, la sopa fría, los zapatos rotos.",
+    "author": "Julio Cortázar"
+  },
+  {
+    "text": "Es signo de salud no estar bien adaptado a una sociedad profundamente enferma.",
+    "author": "Krishnamurti"
+  },
+  {
+    "text": "La libertad consiste en observar sin elegir.",
+    "author": "Krishnamurti"
+  },
+  {
+    "text": "Caminar sobre la Tierra es un milagro.",
+    "author": "Thich Nhat Hanh"
+  },
+  {
+    "text": "Negra sombra que me asombras.",
+    "author": "Rosalía de Castro"
+  },
+  {
+    "text": "Tenga paciencia con todo lo no resuelto en su corazón y trate de amar las preguntas mismas.",
+    "author": "Rainer Maria Rilke"
+  },
+  {
+    "text": "El futuro entra en nosotros mucho antes de que suceda.",
+    "author": "Rainer Maria Rilke"
+  },
+  {
+    "text": "La belleza no es más que el comienzo del terror que somos apenas capaces de soportar.",
+    "author": "Rainer Maria Rilke"
+  },
+  {
+    "text": "La angustia es el vértigo de la libertad.",
+    "author": "Søren Kierkegaard"
+  },
+  {
+    "text": "La vida sólo puede ser comprendida mirando hacia atrás, pero ha de ser vivida mirando hacia delante.",
+    "author": "Søren Kierkegaard"
+  },
+  {
+    "text": "Atreverse es perder pie momentáneamente. No atreverse es perderse uno mismo.",
+    "author": "Søren Kierkegaard"
+  },
+  {
+    "text": "Lo que no me mata, me hace más fuerte.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Quien tiene un porqué para vivir puede soportar casi cualquier cómo.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Sin música, la vida sería un error.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "El que combate con monstruos debe cuidar de no convertirse a su vez en monstruo.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Hay que tener todavía caos dentro de sí para poder dar a luz una estrella danzarina.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "El precio de cualquier cosa es la cantidad de vida que tú cambias por ella.",
+    "author": "Henry David Thoreau"
+  },
+  {
+    "text": "Donde haya un hombre habrá una herida; donde haya una herida habrá una historia.",
+    "author": "Clarice Lispector"
+  },
+  {
+    "text": "La libertad es poco. Lo que deseo aún no tiene nombre.",
+    "author": "Clarice Lispector"
+  },
+  {
+    "text": "Soy tan misteriosa que no me entiendo a mí misma.",
+    "author": "Clarice Lispector"
+  },
+  {
+    "text": "El alma sabe encontrar el alma en el otro.",
+    "author": "Rumi"
+  },
+  {
+    "text": "El que no comprende una mirada tampoco comprenderá una larga explicación.",
+    "author": "Khalil Gibran"
+  },
+  {
+    "text": "Me di cuenta entonces de que toda dificultad de la vida es una oportunidad para el alma.",
+    "author": "Khalil Gibran"
+  },
+  {
+    "text": "El mundo entero, en cualquier momento, está lleno de poesía.",
+    "author": "Walt Whitman"
+  },
+  {
+    "text": "Yo soy grande, contengo multitudes.",
+    "author": "Walt Whitman"
+  },
+  {
+    "text": "El amor no consiste en mirarse el uno al otro, sino en mirar juntos en la misma dirección.",
+    "author": "Antoine de Saint-Exupéry"
+  },
+  {
+    "text": "Solamente con el corazón se puede ver bien; lo esencial es invisible para los ojos.",
+    "author": "Antoine de Saint-Exupéry"
+  },
+  {
+    "text": "Si quieres construir un barco, no empieces por buscar madera, cortar tablas o distribuir el trabajo. Evoca primero en los hombres y mujeres el anhelo del mar libre y ancho.",
+    "author": "Antoine de Saint-Exupéry"
+  },
+  {
+    "text": "Hay una grieta en todo, así es como entra la luz.",
+    "author": "Leonard Cohen"
+  },
+  {
+    "text": "Olvida tu perfecta ofrenda, hay una grieta en todo, así es como entra la luz.",
+    "author": "Leonard Cohen"
+  }
+]

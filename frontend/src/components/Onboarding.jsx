@@ -946,10 +946,12 @@ function ResponseStyleStep({ data, set, onContinue, onBack, onSkipForNow, onSkip
 // ── Step 5: Ollama Setup ────────────────────────────────────────────────────
 
 const PERFORMANCE_TIERS = [
-  { id: 'low',     label: 'Lightweight',       model: 'qwen3.5:2b',  size: '2.7 GB', desc: 'Older laptops, 4-6 GB VRAM, integrated graphics' },
-  { id: 'mid',     label: 'Mid-range',         model: 'qwen3.5:4b',  size: '3.4 GB', desc: 'Modern laptops, 6-8 GB VRAM, GTX 1060+' },
-  { id: 'high',    label: 'High performance',   model: 'qwen3.5:9b',  size: '6.6 GB', desc: 'Gaming PC / M1 Pro+, 8-12 GB VRAM' },
-  { id: 'extreme', label: 'Extreme',            model: 'qwen3.5:27b', size: '17 GB',  desc: 'RTX 4080+, M2 Max/Ultra, 16+ GB VRAM' },
+  // qwen3.5:2b is intentionally absent — it produces too many comprehension
+  // errors and invented aphorisms on /api/reflect to represent the product
+  // well. 4b is the practical floor for usable reflection output.
+  { id: 'low',     label: 'Lightweight',        model: 'qwen3.5:4b',  size: '3.4 GB', desc: 'Modern laptops, 6-8 GB VRAM, GTX 1060+' },
+  { id: 'mid',     label: 'Recommended',        model: 'qwen3.5:9b',  size: '6.6 GB', desc: 'Gaming PC / M1 Pro+, 8-12 GB VRAM' },
+  { id: 'high',    label: 'High performance',   model: 'qwen3.5:27b', size: '17 GB',  desc: 'RTX 4080+, M2 Max/Ultra, 16+ GB VRAM' },
 ];
 
 function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {

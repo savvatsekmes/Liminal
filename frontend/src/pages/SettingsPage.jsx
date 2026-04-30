@@ -374,8 +374,9 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
 // ── Ollama Model Browser ──────────────────────────────────────────────────────
 
 const RECOMMENDED_MODELS = [
-  // Lightweight — 4-6 GB VRAM (GTX 1060, RTX 2060, M1/M2)
-  { name: 'qwen3.5:2b',   desc: 'Lightweight · 2.7GB · fast daily use' },
+  // Lightweight — 4-6 GB VRAM (GTX 1060, RTX 2060, M1/M2).
+  // qwen3.5:2b removed — comprehension errors + invented aphorisms make
+  // reflect output unrepresentative of the product. 4b is the floor.
   { name: 'qwen3.5:4b',   desc: 'Lightweight · 3.4GB · great balance' },
   { name: 'llama3.2:3b',  desc: 'Lightweight · 4GB VRAM · solid all-rounder' },
   { name: 'gemma3:4b',    desc: 'Lightweight · 5GB VRAM · Google · very capable' },
@@ -790,6 +791,11 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             )}
           </Field>
 
+          {/* Thinking Mode toggle hidden for now — confused users on small models
+              where reasoning bursts the token budget before any visible output
+              lands. Default value stays 'false' (the existing fallback when
+              ollama_think is unset), so behaviour is unchanged for fresh accounts.
+              Restore by uncommenting when we're ready to surface this again.
           <Field label="Thinking Mode" hint="Let reasoning models think before responding. Better quality but slower.">
             <div style={s.segmented}>
               {['off', 'on'].map((v, i, arr) => (
@@ -807,6 +813,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               ))}
             </div>
           </Field>
+          */}
 
           <OllamaModelBrowser
             installedNames={new Set((ollamaData?.models || []).map(m => m.name))}

@@ -1,0 +1,602 @@
+[
+  {
+    "text": "Wer ein Warum zum Leben hat, erträgt fast jedes Wie.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Was mich nicht umbringt, macht mich stärker.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Du musst dein Leben ändern.",
+    "author": "Rainer Maria Rilke"
+  },
+  {
+    "text": "Sei geduldig gegen alles Ungelöste in deinem Herzen, und versuche, die Fragen selbst lieb zu haben.",
+    "author": "Rainer Maria Rilke"
+  },
+  {
+    "text": "Wer nicht von dreitausend Jahren sich weiß Rechenschaft zu geben, bleib im Dunkeln unerfahren, mag von Tag zu Tage leben.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Es irrt der Mensch, solang er strebt.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Werde, der du bist.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Jedem Anfang wohnt ein Zauber inne, der uns beschützt und der uns hilft, zu leben.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Man muss das Unmögliche versuchen, um das Mögliche zu erreichen.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Worüber man nicht sprechen kann, darüber muss man schweigen.",
+    "author": "Ludwig Wittgenstein"
+  },
+  {
+    "text": "Die Welt ist alles, was der Fall ist.",
+    "author": "Ludwig Wittgenstein"
+  },
+  {
+    "text": "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.",
+    "author": "Isaac Newton (im Deutschen)"
+  },
+  {
+    "text": "Die Sprache ist das Haus des Seins.",
+    "author": "Martin Heidegger"
+  },
+  {
+    "text": "Wer mit Ungeheuern kämpft, mag zusehn, dass er nicht dabei zum Ungeheuer wird. Und wenn du lange in einen Abgrund blickst, blickt der Abgrund auch in dich hinein.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Wo aber Gefahr ist, wächst das Rettende auch.",
+    "author": "Friedrich Hölderlin"
+  },
+  {
+    "text": "Es ist nicht zu wenig Zeit, die wir haben, sondern es ist zu viel Zeit, die wir nicht nutzen.",
+    "author": "Lucius Annaeus Seneca (auf Deutsch)"
+  },
+  {
+    "text": "Stille ist nicht das, was man hört, wenn nichts klingt.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Der Augenblick gehört dem, der ihn empfindet.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Wer reisen will, schweige, gehe stetig, lasse sein Gut zurück, sei auf alles gefasst und nehme von keinem Menschen Abschied.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Man sieht nur mit dem Herzen gut. Das Wesentliche ist für die Augen unsichtbar.",
+    "author": "Antoine de Saint-Exupéry"
+  },
+  {
+    "text": "Wer kämpft, kann verlieren. Wer nicht kämpft, hat schon verloren.",
+    "author": "Bertolt Brecht"
+  },
+  {
+    "text": "Die Schwierigkeiten wachsen, je näher man dem Ziele kommt.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Behandle die Menschen so, als wären sie, was sie sein sollten, und du hilfst ihnen zu werden, was sie sein können.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Wer sich nicht selbst befiehlt, bleibt immer Knecht.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Es ist nicht genug zu wissen, man muss auch anwenden; es ist nicht genug zu wollen, man muss auch tun.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Wer nicht vorwärts geht, der kommt zurücke.",
+    "author": "Johann Wolfgang von Goethe"
+  },
+  {
+    "text": "Der Mensch ist ein vielfältiges, trübes, hingerissenes und widerspruchsvolles Wesen.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Einsamkeit ist nicht das Alleinsein, sondern das Leersein.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Glück ist Liebe, nichts anderes. Wer lieben kann, ist glücklich.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Bäume sind Heiligtümer. Wer mit ihnen zu sprechen, wer ihnen zuzuhören weiß, der erfährt die Wahrheit.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Damit das Mögliche entsteht, muss immer wieder das Unmögliche versucht werden.",
+    "author": "Hermann Hesse"
+  },
+  {
+    "text": "Man muss noch Chaos in sich haben, um einen tanzenden Stern gebären zu können.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Ohne Musik wäre das Leben ein Irrtum.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Die Schlange, die sich nicht häuten kann, geht zugrunde. Ebenso die Geister, die man verhindert, ihre Meinung zu wechseln.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Es gibt keine Tatsachen, nur Interpretationen.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Wer ein Ziel hat, kann sich aufmachen, wer ein Warum hat, kann fast jedes Wie ertragen.",
+    "author": "Viktor Frankl"
+  },
+  {
+    "text": "Zwischen Reiz und Reaktion liegt ein Raum. In diesem Raum liegt unsere Macht zur Wahl unserer Reaktion.",
+    "author": "Viktor Frankl"
+  },
+  {
+    "text": "Der Mensch ist letztlich selbstbestimmend. Was er wird, ist er aus dem Selbst, das er sich gibt.",
+    "author": "Viktor Frankl"
+  },
+  {
+    "text": "Wer nach außen schaut, träumt; wer nach innen schaut, erwacht.",
+    "author": "Carl Gustav Jung"
+  },
+  {
+    "text": "Wir sind das, was wir denken. Alles, was wir sind, entsteht aus unseren Gedanken.",
+    "author": "Buddha"
+  },
+  {
+    "text": "Bis du das Unbewusste bewusst machst, wird es dein Leben lenken und du wirst es Schicksal nennen.",
+    "author": "Carl Gustav Jung"
+  },
+  {
+    "text": "Die Begegnung zweier Persönlichkeiten ist wie der Kontakt zweier chemischer Substanzen: Wenn eine Reaktion eintritt, sind beide verwandelt.",
+    "author": "Carl Gustav Jung"
+  },
+  {
+    "text": "Wer nicht durch die eigene Hölle gegangen ist, hat seine Leidenschaften nie überwunden.",
+    "author": "Carl Gustav Jung"
+  },
+  {
+    "text": "Wo die Liebe herrscht, gibt es keinen Machtwillen, und wo die Macht den Vorrang hat, da fehlt die Liebe.",
+    "author": "Carl Gustav Jung"
+  },
+  {
+    "text": "Das Privileg eines Lebens besteht darin, der zu werden, der man wirklich ist.",
+    "author": "Carl Gustav Jung"
+  },
+  {
+    "text": "Das Fragen ist die Frömmigkeit des Denkens.",
+    "author": "Martin Heidegger"
+  },
+  {
+    "text": "Nur ein Gott kann uns noch retten.",
+    "author": "Martin Heidegger"
+  },
+  {
+    "text": "Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.",
+    "author": "Ludwig Wittgenstein"
+  },
+  {
+    "text": "Wovon man nicht sprechen kann, davon muss man weitersprechen.",
+    "author": "Theodor W. Adorno"
+  },
+  {
+    "text": "Es gibt kein richtiges Leben im falschen.",
+    "author": "Theodor W. Adorno"
+  },
+  {
+    "text": "Denken heißt überschreiten.",
+    "author": "Ernst Bloch"
+  },
+  {
+    "text": "Hoffnung ist im Unterschied zur Erwartung gerichtet auf das Mögliche.",
+    "author": "Ernst Bloch"
+  },
+  {
+    "text": "Die wahre Heimat ist eigentlich die Sprache.",
+    "author": "Hannah Arendt"
+  },
+  {
+    "text": "Niemand hat das Recht zu gehorchen.",
+    "author": "Hannah Arendt"
+  },
+  {
+    "text": "Verzeihen ist die einzige Reaktion, die nicht bloß zurückreagiert.",
+    "author": "Hannah Arendt"
+  },
+  {
+    "text": "Das größte begangene Übel ist das Übel, das von Niemandem begangen wird.",
+    "author": "Hannah Arendt"
+  },
+  {
+    "text": "Verstehen ist immer ein anderes Verstehen.",
+    "author": "Hans-Georg Gadamer"
+  },
+  {
+    "text": "Aus Sorgen wird man nicht klüger; man wird nur älter.",
+    "author": "Theodor Fontane"
+  },
+  {
+    "text": "Es ist eine alte Geschichte, doch bleibt sie immer neu; und wem sie just passieret, dem bricht das Herz entzwei.",
+    "author": "Heinrich Heine"
+  },
+  {
+    "text": "Schlafen ist gut, der Tod ist besser - freilich das beste wäre, nie geboren zu sein.",
+    "author": "Heinrich Heine"
+  },
+  {
+    "text": "Wo man Bücher verbrennt, verbrennt man auch am Ende Menschen.",
+    "author": "Heinrich Heine"
+  },
+  {
+    "text": "Denk ich an Deutschland in der Nacht, dann bin ich um den Schlaf gebracht.",
+    "author": "Heinrich Heine"
+  },
+  {
+    "text": "Komm in den totgesagten Park und schau.",
+    "author": "Stefan George"
+  },
+  {
+    "text": "Ein Jeglicher sucht sich endlich selbst.",
+    "author": "Friedrich Hölderlin"
+  },
+  {
+    "text": "Voll Verdienst, doch dichterisch wohnet der Mensch auf dieser Erde.",
+    "author": "Friedrich Hölderlin"
+  },
+  {
+    "text": "Was bleibet aber, stiften die Dichter.",
+    "author": "Friedrich Hölderlin"
+  },
+  {
+    "text": "Die Zeit hebt nichts auf, sie rückt nur fort.",
+    "author": "Marie von Ebner-Eschenbach"
+  },
+  {
+    "text": "Wer nichts weiß, muss alles glauben.",
+    "author": "Marie von Ebner-Eschenbach"
+  },
+  {
+    "text": "Ein kluger Mensch begeht nicht nur keine Dummheiten, sondern auch keine, die er noch bereuen müsste.",
+    "author": "Marie von Ebner-Eschenbach"
+  },
+  {
+    "text": "Geistreich sein bedeutet nicht, einen Geist zu haben, sondern den Geist anderer zu wecken.",
+    "author": "Marie von Ebner-Eschenbach"
+  },
+  {
+    "text": "Der Egoist liebt nicht sich selbst, sondern sein Spiegelbild.",
+    "author": "Marie von Ebner-Eschenbach"
+  },
+  {
+    "text": "Liebe und tu, was du willst.",
+    "author": "Augustinus"
+  },
+  {
+    "text": "Werde wesentlich.",
+    "author": "Angelus Silesius"
+  },
+  {
+    "text": "Mensch, werde wesentlich; denn wenn die Welt vergeht, so fällt der Zufall weg, das Wesen, das besteht.",
+    "author": "Angelus Silesius"
+  },
+  {
+    "text": "Die Ros' ist ohn warum, sie blühet, weil sie blühet.",
+    "author": "Angelus Silesius"
+  },
+  {
+    "text": "Gott ist in mir das Feuer, und ich in ihm der Schein; sind wir einander nicht ganz innig und gemein?",
+    "author": "Angelus Silesius"
+  },
+  {
+    "text": "Das Auge, mit dem ich Gott sehe, ist dasselbe Auge, mit dem Gott mich sieht.",
+    "author": "Meister Eckhart"
+  },
+  {
+    "text": "Nichts gleicht so sehr Gott in allen Tugenden wie Schweigen.",
+    "author": "Meister Eckhart"
+  },
+  {
+    "text": "Der schnellste Weg zu Gott führt durch die Liebe.",
+    "author": "Meister Eckhart"
+  },
+  {
+    "text": "Der Mensch hat dreierlei Geburten: die erste durch die Mutter, die zweite zur Welt, die dritte zu Gott.",
+    "author": "Meister Eckhart"
+  },
+  {
+    "text": "Der Mensch ist ein Geschöpf der Liebe.",
+    "author": "Hildegard von Bingen"
+  },
+  {
+    "text": "Der Mensch ist ein Mikrokosmos, der die Welt in sich trägt.",
+    "author": "Hildegard von Bingen"
+  },
+  {
+    "text": "Der Mensch lebt nicht vom Brot allein, sondern von jedem Wort, das aus dem Mund Gottes kommt.",
+    "author": "Jesus von Nazareth"
+  },
+  {
+    "text": "Sorget nicht für den morgigen Tag, denn der morgige Tag wird für das Seine sorgen.",
+    "author": "Jesus von Nazareth"
+  },
+  {
+    "text": "Ich denke, also bin ich.",
+    "author": "René Descartes"
+  },
+  {
+    "text": "Der Mensch ist zur Freiheit verurteilt.",
+    "author": "Jean-Paul Sartre"
+  },
+  {
+    "text": "Die Hölle, das sind die anderen.",
+    "author": "Jean-Paul Sartre"
+  },
+  {
+    "text": "Man wird nicht als Frau geboren, man wird es.",
+    "author": "Simone de Beauvoir"
+  },
+  {
+    "text": "Im Winter meiner tiefsten Verzweiflung entdeckte ich, dass in mir ein unbesiegbarer Sommer wohnte.",
+    "author": "Albert Camus"
+  },
+  {
+    "text": "Wir müssen uns Sisyphos als einen glücklichen Menschen vorstellen.",
+    "author": "Albert Camus"
+  },
+  {
+    "text": "Die einzige wirklich ernsthafte philosophische Frage ist die nach dem Selbstmord.",
+    "author": "Albert Camus"
+  },
+  {
+    "text": "Reife des Mannes - das heißt, den Ernst wiedergefunden haben, den man als Kind hatte beim Spiel.",
+    "author": "Friedrich Nietzsche"
+  },
+  {
+    "text": "Ich kann freilich nicht sagen, ob es besser werden wird, wenn es anders wird; aber so viel kann ich sagen, es muss anders werden, wenn es gut werden soll.",
+    "author": "Georg Christoph Lichtenberg"
+  },
+  {
+    "text": "Ein Buch ist ein Spiegel, wenn ein Affe hineinsieht, so kann freilich kein Apostel heraussehen.",
+    "author": "Georg Christoph Lichtenberg"
+  },
+  {
+    "text": "Wer nichts als Chemie versteht, versteht auch die nicht recht.",
+    "author": "Georg Christoph Lichtenberg"
+  },
+  {
+    "text": "Man muss etwas Neues machen, um etwas Neues zu sehen.",
+    "author": "Georg Christoph Lichtenberg"
+  },
+  {
+    "text": "Es ist fast unmöglich, die Fackel der Wahrheit durch ein Gedränge zu tragen, ohne jemandem den Bart zu sengen.",
+    "author": "Georg Christoph Lichtenberg"
+  },
+  {
+    "text": "Sage nicht alles, was du weißt, aber wisse immer, was du sagst.",
+    "author": "Matthias Claudius"
+  },
+  {
+    "text": "Der Mond ist aufgegangen, die goldnen Sternlein prangen am Himmel hell und klar.",
+    "author": "Matthias Claudius"
+  },
+  {
+    "text": "Man muss schweigen können, wenn man reden will.",
+    "author": "Matthias Claudius"
+  },
+  {
+    "text": "Eins, zwei, drei! Im Sauseschritt läuft die Zeit; wir laufen mit.",
+    "author": "Wilhelm Busch"
+  },
+  {
+    "text": "Sehnsucht ist die einzige Macht, die uns nicht lächerlich macht.",
+    "author": "Stefan Zweig"
+  },
+  {
+    "text": "Niemals fühlt sich der Mensch bedrohter in seinem Selbst als in den Augenblicken, wo er sich nur lieben kann.",
+    "author": "Stefan Zweig"
+  },
+  {
+    "text": "Nur der besiegte Mensch kennt den Wert des Lebens.",
+    "author": "Stefan Zweig"
+  },
+  {
+    "text": "Geschichte hat kein Gerechtigkeitsgefühl.",
+    "author": "Stefan Zweig"
+  },
+  {
+    "text": "Wer einmal sich selbst gefunden hat, kann nichts auf dieser Welt mehr verlieren.",
+    "author": "Stefan Zweig"
+  },
+  {
+    "text": "Toleranz wird zum Verbrechen, wenn sie dem Bösen gilt.",
+    "author": "Thomas Mann"
+  },
+  {
+    "text": "Alles ist Politik.",
+    "author": "Thomas Mann"
+  },
+  {
+    "text": "Ordnung und Vereinfachung sind die ersten Schritte zur Beherrschung eines Themas.",
+    "author": "Thomas Mann"
+  },
+  {
+    "text": "Ein Schriftsteller ist ein Mensch, dem das Schreiben schwerer fällt als anderen Leuten.",
+    "author": "Thomas Mann"
+  },
+  {
+    "text": "Zeit hat keine Einteilungen, um ihren Verlauf zu kennzeichnen.",
+    "author": "Thomas Mann"
+  },
+  {
+    "text": "Der Mensch hat zwei Beine und zwei Überzeugungen: eine, wenn es ihm gut geht, und eine, wenn es ihm schlecht geht.",
+    "author": "Bertolt Brecht"
+  },
+  {
+    "text": "Es gibt viele, die Zeitungen lesen. Und es gibt viele, die schöne Bilder ansehen. Aber es gibt nur wenige, die durch dieses Sehen wirklich etwas erfahren.",
+    "author": "Bertolt Brecht"
+  },
+  {
+    "text": "Erst kommt das Fressen, dann kommt die Moral.",
+    "author": "Bertolt Brecht"
+  },
+  {
+    "text": "Die Wahrheit ist konkret.",
+    "author": "Bertolt Brecht"
+  },
+  {
+    "text": "Reicher Mann und armer Mann standen da und sah'n sich an. Und der Arme sagte bleich: Wär ich nicht arm, wärst du nicht reich.",
+    "author": "Bertolt Brecht"
+  },
+  {
+    "text": "Ich glaube an den Tag, an dem das Gute siegen wird.",
+    "author": "Anne Frank"
+  },
+  {
+    "text": "Trotz allem glaube ich an das Gute im Menschen.",
+    "author": "Anne Frank"
+  },
+  {
+    "text": "Wer glücklich ist, macht auch andere glücklich.",
+    "author": "Anne Frank"
+  },
+  {
+    "text": "Geben macht reicher, als man je durch Nehmen werden kann.",
+    "author": "Anne Frank"
+  },
+  {
+    "text": "Die Welt ist meine Vorstellung.",
+    "author": "Arthur Schopenhauer"
+  },
+  {
+    "text": "Jeder Abschied von einem Ort, zu dem wir wohl nie zurückkehren werden, ergreift uns wehmütig.",
+    "author": "Arthur Schopenhauer"
+  },
+  {
+    "text": "Der Mensch kann zwar tun, was er will, aber er kann nicht wollen, was er will.",
+    "author": "Arthur Schopenhauer"
+  },
+  {
+    "text": "Der Wechsel allein ist das Beständige.",
+    "author": "Arthur Schopenhauer"
+  },
+  {
+    "text": "Höflichkeit ist wie ein Luftkissen: Es mag wohl nichts darin sein, aber es mildert die Stöße des Lebens.",
+    "author": "Arthur Schopenhauer"
+  },
+  {
+    "text": "Wer nicht jeden Tag sich Zeit für seine Gesundheit nimmt, der wird eines Tages viel Zeit für seine Krankheit aufwenden müssen.",
+    "author": "Sebastian Kneipp"
+  },
+  {
+    "text": "Was wir heute tun, entscheidet darüber, wie die Welt morgen aussieht.",
+    "author": "Marie Curie"
+  },
+  {
+    "text": "Das Leben ist für niemanden leicht. Aber was hilft das, man muss Ausdauer haben und vor allem Vertrauen zu sich selbst.",
+    "author": "Marie Curie"
+  },
+  {
+    "text": "Phantasie ist wichtiger als Wissen, denn Wissen ist begrenzt.",
+    "author": "Albert Einstein"
+  },
+  {
+    "text": "Es gibt nur zwei Arten zu leben. Entweder so, als wäre nichts ein Wunder, oder so, als wäre alles ein Wunder.",
+    "author": "Albert Einstein"
+  },
+  {
+    "text": "Probleme kann man niemals mit derselben Denkweise lösen, durch die sie entstanden sind.",
+    "author": "Albert Einstein"
+  },
+  {
+    "text": "Ich denke niemals an die Zukunft, sie kommt früh genug.",
+    "author": "Albert Einstein"
+  },
+  {
+    "text": "Die reinste Form des Wahnsinns ist es, alles beim Alten zu lassen und gleichzeitig zu hoffen, dass sich etwas ändert.",
+    "author": "Albert Einstein"
+  },
+  {
+    "text": "Wir können das Leben nicht länger machen, aber tiefer und intensiver.",
+    "author": "Friedrich Hebbel"
+  },
+  {
+    "text": "Niemand ist frei, der nicht über sich selbst Herr ist.",
+    "author": "Matthias Claudius"
+  },
+  {
+    "text": "Was schließlich zu allem Entscheidenden führt, das ist immer der einzelne Mensch.",
+    "author": "Albert Schweitzer"
+  },
+  {
+    "text": "Das einzig Wichtige im Leben sind die Spuren der Liebe, die wir hinterlassen, wenn wir gehen.",
+    "author": "Albert Schweitzer"
+  },
+  {
+    "text": "Beispiel ist nicht eine Art, um andere Menschen zu beeinflussen, es ist die einzige.",
+    "author": "Albert Schweitzer"
+  },
+  {
+    "text": "Wer Glück erfahren hat, der hat die Pflicht, etwas davon abzugeben.",
+    "author": "Albert Schweitzer"
+  },
+  {
+    "text": "Glück ist das einzige, das sich verdoppelt, wenn man es teilt.",
+    "author": "Albert Schweitzer"
+  },
+  {
+    "text": "Der Augenblick ist Ewigkeit.",
+    "author": "Marie Luise Kaschnitz"
+  },
+  {
+    "text": "Schwarze Milch der Frühe wir trinken sie abends.",
+    "author": "Paul Celan"
+  },
+  {
+    "text": "Niemand zeugt für den Zeugen.",
+    "author": "Paul Celan"
+  },
+  {
+    "text": "Die Wahrheit selbst ist erschienen unter den Menschen, mitten ins Metapherngestöber.",
+    "author": "Paul Celan"
+  },
+  {
+    "text": "Wer sein Herz an Gott hängt, hat das beste Teil erwählt.",
+    "author": "Dietrich Bonhoeffer"
+  },
+  {
+    "text": "Den größten Teil dessen, was wir vom Leben lernen, lernen wir durch Schmerz.",
+    "author": "Dietrich Bonhoeffer"
+  },
+  {
+    "text": "Wir können zwar das Vergangene nicht ändern, aber das Künftige gestalten.",
+    "author": "Dietrich Bonhoeffer"
+  },
+  {
+    "text": "Von guten Mächten wunderbar geborgen, erwarten wir getrost, was kommen mag.",
+    "author": "Dietrich Bonhoeffer"
+  },
+  {
+    "text": "Niemand hat größere Liebe als die, dass er sein Leben lässt für seine Freunde.",
+    "author": "Jesus von Nazareth"
+  },
+  {
+    "text": "Im Grunde sind es immer die Verbindungen mit Menschen, die dem Leben seinen Wert geben.",
+    "author": "Wilhelm von Humboldt"
+  }
+]

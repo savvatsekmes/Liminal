@@ -36,7 +36,7 @@
       {
         "from": "backend",
         "to": "backend",
-        "filter": ["**/*", "!data/**", "data/*.js", "!default-voices/For_Savva_Only/**", "!.env"]
+        "filter": ["**/*", "!data/**", "data/*.js", "data/quotes/**", "!default-voices/For_Savva_Only/**", "!.env"]
       },
       {
         "from": "frontend/dist",

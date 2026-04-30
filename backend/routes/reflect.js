@@ -11,6 +11,7 @@ const { buildImageContext } = require('./images');
 const { buildCardContext } = require('./cards');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 const { applyPatchWithEditTracking, applyPutWithEditTracking, sanitiseQuote } = require('../services/reflectionEdits');
+const quoteBank = require('../services/quoteBank');
 
 router.use(requireAuth);
 
@@ -98,6 +99,40 @@ router.post('/', async (req, res) => {
     // instead of a real JSON null. Coerce those (and "undefined", "none",
     // empty strings) to null so the frontend doesn't render `"null"`.
     blocks = blocks.map(sanitiseQuote);
+
+    // Strip stray markdown artifacts smaller models leave behind. Specifically:
+    // an odd count of `**` bold markers (i.e. an unclosed bold) leaves a
+    // dangling `**` in the body; remove the last one so the renderer doesn't
+    // show a literal `**` to the user. Also trim trailing whitespace.
+    blocks = blocks.map((b) => {
+      if (!b || typeof b.body !== 'string') return b;
+      let body = b.body;
+      const stars = (body.match(/\*\*/g) || []).length;
+      if (stars % 2 !== 0) body = body.replace(/\*\*(?=[^*]*$)/, '');
+      return { ...b, body: body.trim() };
+    });
+
+    // Replace any LLM-supplied quote with one picked from the curated bank
+    // (real, attributable lines from real authors). Smaller models invent
+    // aphorisms and even fabricate quotes attributed to real people; pulling
+    // from a curated bank keyed on the user's UI language gets us guaranteed-
+    // attributable wisdom that's also embedding-matched to the block's theme.
+    // If no quote in the bank crosses the similarity threshold, the field is
+    // null. The frontend already renders null quotes as absent.
+    {
+      const lang = (req.body.language || req.body.lang || 'en').toLowerCase().slice(0, 2);
+      blocks = await Promise.all(
+        blocks.map(async (b) => {
+          if (!b || typeof b.body !== 'string') return b;
+          try {
+            const picked = await quoteBank.findBestQuote(b.body, lang);
+            return { ...b, quote: picked ? `${picked.text} — ${picked.author}` : null };
+          } catch {
+            return { ...b, quote: null };
+          }
+        }),
+      );
+    }
 
     // 4. Echo: find a relevant snippet from a past entry and attach it to the
     // most thematically related block. Best-effort, never blocks the response.
@@ -527,6 +562,15 @@ function repairLlmJson(s) {
   let escape = false;
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
+    // Trailing-comma stripping: outside a string, skip any comma whose next
+    // non-whitespace char is `}` or `]`. Smaller LLMs (qwen 4b, llama 3 8b)
+    // frequently slip into JS-style trailing commas which strict JSON.parse
+    // rejects, breaking otherwise-good reflection output.
+    if (!inStr && ch === ',') {
+      let p = i + 1;
+      while (p < s.length && /\s/.test(s[p])) p++;
+      if (s[p] === '}' || s[p] === ']') continue;
+    }
     out += ch;
     let justClosedStructural = false;
     if (inStr) {

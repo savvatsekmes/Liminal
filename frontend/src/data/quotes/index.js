@@ -1,23 +1,24 @@
-// Per-language daily quote pools.
-// Each language file holds quotes from authors writing natively in that
-// language. Languages without a curated pool fall back to the English pool.
+// Per-language daily quote pools — canonical source is at
+// /backend/data/quotes/*.json so the backend's reflect quote-bank can read
+// the same data without us maintaining two separate copies. Vite inlines
+// these JSON imports into the frontend bundle at build time.
 
-import en from './en';
-import el from './el';
-import fr from './fr';
-import de from './de';
-import es from './es';
-import pt from './pt';
-import it from './it';
-import ja from './ja';
-import zh from './zh';
-import ko from './ko';
-import ru from './ru';
-import ar from './ar';
-import tr from './tr';
-import nl from './nl';
-import sv from './sv';
-import pl from './pl';
+import en from '../../../../backend/data/quotes/en.json';
+import el from '../../../../backend/data/quotes/el.json';
+import fr from '../../../../backend/data/quotes/fr.json';
+import de from '../../../../backend/data/quotes/de.json';
+import es from '../../../../backend/data/quotes/es.json';
+import pt from '../../../../backend/data/quotes/pt.json';
+import it from '../../../../backend/data/quotes/it.json';
+import ja from '../../../../backend/data/quotes/ja.json';
+import zh from '../../../../backend/data/quotes/zh.json';
+import ko from '../../../../backend/data/quotes/ko.json';
+import ru from '../../../../backend/data/quotes/ru.json';
+import ar from '../../../../backend/data/quotes/ar.json';
+import tr from '../../../../backend/data/quotes/tr.json';
+import nl from '../../../../backend/data/quotes/nl.json';
+import sv from '../../../../backend/data/quotes/sv.json';
+import pl from '../../../../backend/data/quotes/pl.json';
 
 const POOLS = { en, el, fr, de, es, pt, it, ja, zh, ko, ru, ar, tr, nl, sv, pl };
 

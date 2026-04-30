@@ -13,8 +13,14 @@ dist/
 dist-installers/
 
 # Database & data
-backend/data/
+# Glob (`*`) instead of trailing slash so we can selectively un-include
+# product data subdirs like `quotes/` while still ignoring user runtime
+# data (db, voices, embeddings cache, etc.). Trailing-slash form would
+# block any un-include of children.
+backend/data/*
 !backend/data/*.js
+!backend/data/quotes/
+!backend/data/quotes/*.json
 *.db
 *.db-shm
 *.db-wal
