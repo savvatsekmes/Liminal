@@ -6,6 +6,7 @@ const db = require('../database');
 const s = require('../services/settingsService');
 const llm = require('../services/llmService');
 const { DATA_DIR } = require('../paths');
+const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
 // Soft-auth: this router doesn't use requireAuth (some flows like restore
 // run with the user identified manually via resolveUserId), but we still
@@ -534,17 +535,35 @@ router.post('/restore-backup', backupUpload.single('backup'), async (req, res) =
  */
 function buildExportData(userId) {
   // ── User-scoped data ────────────────────────────────────────────────────────
+  // Field-level encryption is keyed per-user. The export must contain plaintext
+  // so the importing user can re-encrypt with their own key — otherwise restore
+  // into a different account leaves every body / note / message / memory /
+  // reflection unreadable. safeDecrypt is a no-op for legacy unencrypted rows
+  // and a best-effort decrypt for encrypted ones.
+  const dec = (v) => safeDecrypt(userId, v);
+
   const entries = db.prepare(`
     SELECT id, title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at
     FROM entries WHERE user_id = ? ORDER BY date DESC, created_at DESC
-  `).all(userId).map(e => ({ ...e, tags: parseJSON(e.tags, []), auto_tags: parseJSON(e.auto_tags, []) }));
+  `).all(userId).map(e => ({
+    ...e,
+    body: dec(e.body),
+    body_text: dec(e.body_text),
+    tags: parseJSON(e.tags, []),
+    auto_tags: parseJSON(e.auto_tags, []),
+  }));
 
   const entryIds = new Set(entries.map(e => e.id));
 
   const notes = db.prepare(`
     SELECT id, type, title, body, attribution, target_date, custom_tag, tags, auto_tags, threaded_at, created_at, updated_at
     FROM notes WHERE user_id = ? ORDER BY created_at DESC
-  `).all(userId).map(n => ({ ...n, tags: parseJSON(n.tags, []), auto_tags: parseJSON(n.auto_tags, []) }));
+  `).all(userId).map(n => ({
+    ...n,
+    body: dec(n.body),
+    tags: parseJSON(n.tags, []),
+    auto_tags: parseJSON(n.auto_tags, []),
+  }));
 
   const noteIds = new Set(notes.map(n => n.id));
 
@@ -554,32 +573,33 @@ function buildExportData(userId) {
     ...session,
     messages: db.prepare(
       'SELECT role, content, archetype, created_at FROM oracle_messages WHERE session_id = ? ORDER BY created_at'
-    ).all(session.id),
+    ).all(session.id).map(m => ({ ...m, content: dec(m.content) })),
   }));
 
   const reflections = db.prepare(`
     SELECT entry_id, blocks, created_at, updated_at FROM reflections WHERE user_id = ? ORDER BY created_at DESC
-  `).all(userId).map(r => ({ ...r, blocks: parseJSON(r.blocks, []) }));
+  `).all(userId).map(r => ({ ...r, blocks: parseJSON(dec(r.blocks), []) }));
 
   const noteReflections = db.prepare(`
     SELECT note_id, blocks, created_at, updated_at FROM note_reflections WHERE user_id = ? ORDER BY created_at DESC
-  `).all(userId).map(r => ({ ...r, blocks: parseJSON(r.blocks, []) }));
+  `).all(userId).map(r => ({ ...r, blocks: parseJSON(dec(r.blocks), []) }));
 
   const memories = db.prepare(`
     SELECT content, pinned, source_entry_id, created_at FROM memories WHERE user_id = ? ORDER BY created_at DESC
-  `).all(userId);
+  `).all(userId).map(m => ({ ...m, content: dec(m.content) }));
 
   const entryVersions = db.prepare(`
     SELECT entry_id, title, body, body_text, saved_at FROM entry_versions WHERE user_id = ? ORDER BY saved_at DESC
-  `).all(userId);
+  `).all(userId).map(v => ({ ...v, body: dec(v.body), body_text: dec(v.body_text) }));
 
   const noteVersions = db.prepare(`
     SELECT note_id, body, saved_at FROM note_versions WHERE user_id = ? ORDER BY saved_at DESC
-  `).all(userId);
+  `).all(userId).map(v => ({ ...v, body: dec(v.body) }));
 
   // ── Per-user singleton data ──────────────────────────────────────────────────
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
-  const memory   = db.prepare('SELECT summary, updated_at FROM memory WHERE user_id = ?').get(userId);
+  const memoryRow = db.prepare('SELECT summary, updated_at FROM memory WHERE user_id = ?').get(userId);
+  const memory = memoryRow ? { ...memoryRow, summary: dec(memoryRow.summary) } : null;
 
   // Home layouts
   const homeLayouts = db.prepare(
@@ -595,6 +615,9 @@ function buildExportData(userId) {
   ).all(userId);
   const threads = threadRows.map(t => ({
     ...t,
+    name: dec(t.name),
+    description: dec(t.description),
+    insight: dec(t.insight),
     nodes: db.prepare(
       'SELECT content_type, content_id, created_at FROM thread_nodes WHERE thread_id = ? ORDER BY created_at ASC'
     ).all(t.id),
@@ -658,6 +681,11 @@ function buildExportData(userId) {
  *  Clears existing user data first, then inserts everything from the backup.
  */
 function importDataIntoDb(data, entries, notes, oracleSessions, reflections, noteReflections, portrait, memorySummary, memories, entryVersions, noteVersions, counts, entryIdMap, noteIdMap, sessionIdMap, userId) {
+  // Re-encrypt every body / content / message / memory / reflection / thread
+  // text with the IMPORTING user's key. The export side already decrypted
+  // (or passed through legacy unencrypted) so values arrive here as plaintext.
+  // encryptField is a no-op on null/empty; safe to call unconditionally.
+  const enc = (v) => encryptField(userId, v);
   // ── Clear existing user data to prevent duplicates ──────────────────────────
   db.prepare('DELETE FROM entry_versions WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM note_versions WHERE user_id = ?').run(userId);
@@ -681,8 +709,8 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     try {
       const result = insertEntry.run({
         title: e.title || '',
-        body: e.body || '',
-        body_text: e.body_text || '',
+        body: enc(e.body || ''),
+        body_text: enc(e.body_text || ''),
         date: e.date || e.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
         tags: typeof e.tags === 'string' ? e.tags : JSON.stringify(e.tags || []),
         auto_tags: typeof e.auto_tags === 'string' ? e.auto_tags : JSON.stringify(e.auto_tags || []),
@@ -706,7 +734,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
       const result = insertNote.run({
         type: n.type || 'free',
         title: n.title || '',
-        body: n.body || '',
+        body: enc(n.body || ''),
         attribution: n.attribution || null,
         target_date: n.target_date || null,
         custom_tag: n.custom_tag || null,
@@ -748,7 +776,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
           insertMessage.run({
             session_id: newSessionId,
             role: msg.role || 'user',
-            content: msg.content || '',
+            content: enc(msg.content || ''),
             archetype: msg.archetype || sess.archetype || null,
             created_at: msg.created_at || sess.created_at || new Date().toISOString(),
           });
@@ -767,7 +795,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
       insertReflection.run({
         entry_id: entryIdMap[r.entry_id] || r.entry_id,
         user_id: userId,
-        blocks: typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || []),
+        blocks: enc(typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || [])),
         created_at: r.created_at || new Date().toISOString(),
         updated_at: r.updated_at || r.created_at || new Date().toISOString(),
       });
@@ -785,7 +813,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
       insertNoteReflection.run({
         note_id: noteIdMap[r.note_id] || r.note_id,
         user_id: userId,
-        blocks: typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || []),
+        blocks: enc(typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || [])),
         created_at: r.created_at || new Date().toISOString(),
         updated_at: r.updated_at || r.created_at || new Date().toISOString(),
       });
@@ -827,7 +855,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     try {
       insertMemory.run({
         user_id: userId,
-        content: m.content || '',
+        content: enc(m.content || ''),
         pinned: m.pinned || 0,
         source_entry_id: m.source_entry_id ? (entryIdMap[m.source_entry_id] || m.source_entry_id) : null,
         created_at: m.created_at || new Date().toISOString(),
@@ -838,13 +866,14 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
 
   // 8. Memory summary (per-user)
   if (memorySummary) {
+    const encSummary = enc(memorySummary);
     const existingMem = db.prepare('SELECT id FROM memory WHERE user_id = ?').get(userId);
     if (existingMem) {
       db.prepare('UPDATE memory SET summary = ?, updated_at = ? WHERE user_id = ?')
-        .run(memorySummary, new Date().toISOString(), userId);
+        .run(encSummary, new Date().toISOString(), userId);
     } else {
       db.prepare('INSERT INTO memory (user_id, summary, updated_at) VALUES (?, ?, ?)')
-        .run(userId, memorySummary, new Date().toISOString());
+        .run(userId, encSummary, new Date().toISOString());
     }
   }
 
@@ -859,8 +888,8 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
         entry_id: entryIdMap[v.entry_id] || v.entry_id,
         user_id: userId,
         title: v.title || '',
-        body: v.body || '',
-        body_text: v.body_text || '',
+        body: enc(v.body || ''),
+        body_text: enc(v.body_text || ''),
         saved_at: v.saved_at || new Date().toISOString(),
       });
       counts.entry_versions++;
@@ -877,7 +906,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
       insertNoteVersion.run({
         note_id: noteIdMap[v.note_id] || v.note_id,
         user_id: userId,
-        body: v.body || '',
+        body: enc(v.body || ''),
         saved_at: v.saved_at || new Date().toISOString(),
       });
       counts.note_versions++;
@@ -921,12 +950,12 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
       try {
         const res = insertThread.run({
           user_id: userId,
-          name: th.name || '',
-          description: th.description || '',
+          name: enc(th.name || ''),
+          description: enc(th.description || ''),
           status: th.status || 'active',
           weight: th.weight || 'medium',
           kind: th.kind || 'novel',
-          insight: th.insight || '',
+          insight: enc(th.insight || ''),
           detected_at: th.detected_at || new Date().toISOString(),
           updated_at: th.updated_at || th.detected_at || new Date().toISOString(),
         });
@@ -983,6 +1012,22 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     } catch (err) {
       console.error('[restore] Avatar failed:', err.message);
     }
+  }
+
+  // 13. Onboarding flag — if the backup came from an account that had
+  // completed onboarding (or shipped any portrait data, which only the
+  // onboarding flow ever sets), carry that flag forward to the restoring
+  // user. Otherwise restoring a backup leaves onboarding_complete=false on
+  // the new account: the user fills in date of birth, hits Skip for now,
+  // and onboarding pops back up every login until they walk through the
+  // whole flow they already completed years ago on the source account.
+  const sourceUser = Array.isArray(data.users) && data.users[0];
+  const sourceCompleted = sourceUser && (sourceUser.onboarding_complete === 1 || sourceUser.onboarding_complete === true);
+  const hadPortrait = portrait && Object.keys(portrait).length > 0;
+  if (sourceCompleted || hadPortrait) {
+    try {
+      db.prepare('UPDATE users SET onboarding_complete = 1 WHERE id = ?').run(userId);
+    } catch {}
   }
 }
 
