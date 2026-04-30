@@ -534,7 +534,7 @@ function formatSessionDate(dateStr) {
   } catch { return ''; }
 }
 
-export default function OraclePage({ initialSessionId, onSessionSelected, onNavigateToEntry, onNavigateToNote, onCloseSession }) {
+export default function OraclePage({ initialSessionId, requestNew, onNewHandled, onSessionSelected, onNavigateToEntry, onNavigateToNote, onCloseSession }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('chat'); // 'list' | 'chat'
@@ -657,10 +657,18 @@ export default function OraclePage({ initialSessionId, onSessionSelected, onNavi
     ]).then(([sessionsData, portrait]) => {
       if (Array.isArray(sessionsData)) {
         setSessions(sessionsData);
-        const targetId = initialSessionId || (sessionsData.length > 0 ? sessionsData[0].id : null);
-        if (targetId) {
-          loadSession(targetId);
-          if (initialSessionId) onSessionSelected?.();
+        // "+ new" from the home widget pill: skip resuming the most recent
+        // session and create a fresh one instead. requestNew is cleared via
+        // onNewHandled so the path is single-shot.
+        if (requestNew) {
+          handleNewConversation();
+          onNewHandled?.();
+        } else {
+          const targetId = initialSessionId || (sessionsData.length > 0 ? sessionsData[0].id : null);
+          if (targetId) {
+            loadSession(targetId);
+            if (initialSessionId) onSessionSelected?.();
+          }
         }
       }
       if (portrait) {

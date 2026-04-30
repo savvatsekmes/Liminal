@@ -68,6 +68,10 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   }, [locked, resetLockTimer, lockTimeoutMs]);
   const [previewVersion, setPreviewVersion] = useState(null);
   const [pendingNoteId, setPendingNoteId] = useState(null);
+  // "+ new" pill on the home widget: tells NotesPage / OraclePage to create
+  // a fresh entity on mount instead of resuming the last one.
+  const [requestNewNote, setRequestNewNote] = useState(false);
+  const [requestNewSession, setRequestNewSession] = useState(false);
   const [pendingThreadId, setPendingThreadId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
   const [pendingPortraitTab, setPendingPortraitTab] = useState(null);
@@ -271,8 +275,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNavigateToCards={() => { setPendingPortraitTab('cards'); handleViewChange('portrait'); }}
               onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }}
               onNewEntry={() => { createEntry(); handleViewChange('journal'); }}
-              onNewNote={() => handleViewChange('notes')}
-              onNewConversation={() => handleViewChange('oracle')}
+              onNewNote={() => { setRequestNewNote(true); handleViewChange('notes'); }}
+              onNewConversation={() => { setRequestNewSession(true); handleViewChange('oracle'); }}
               onLogout={onLogout}
               onLock={() => setLocked(true)}
               onNavigateToSettings={() => handleViewChange('settings')}
@@ -282,12 +286,14 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             <OraclePage
               initialSessionId={pendingSessionId}
               onSessionSelected={() => setPendingSessionId(null)}
+              requestNew={requestNewSession}
+              onNewHandled={() => setRequestNewSession(false)}
               onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
               onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
               onCloseSession={() => handleViewChange('home')}
             />
           );
-          if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
+          if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} requestNew={requestNewNote} onNewHandled={() => setRequestNewNote(false)} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
           if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
           if (activeView === 'memory') return <MemoryPage onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }} />;
           if (activeView === 'threads') return (

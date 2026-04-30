@@ -84,7 +84,7 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
 }
 
-export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNote, onNavigateToChat }) {
+export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onNoteSelected, onTalkAboutNote, onNavigateToChat }) {
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const { isCore, coreList } = useCoreTags();
@@ -113,6 +113,19 @@ export default function NotesPage({ initialNoteId, onNoteSelected, onTalkAboutNo
     const target = notes.find((n) => n.id === initialNoteId);
     if (target) { selectNote(target); onNoteSelected?.(); }
   }, [initialNoteId, notes]);
+
+  // "+ new" from the home widget pill: create an empty idea-tagged note and
+  // open it in the editor. Guarded so the create only fires once per pill
+  // click — onNewHandled clears the parent flag so we don't spam-create on
+  // re-renders.
+  const newHandledRef = useRef(false);
+  useEffect(() => {
+    if (!requestNew || newHandledRef.current) return;
+    newHandledRef.current = true;
+    createNote('idea', null, []);
+    onNewHandled?.();
+  }, [requestNew, createNote, onNewHandled]);
+  useEffect(() => { if (!requestNew) newHandledRef.current = false; }, [requestNew]);
 
   const [newTagInput, setNewTagInput] = useState('');
   const [showNewTagInput, setShowNewTagInput] = useState(false);
