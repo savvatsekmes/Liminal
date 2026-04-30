@@ -93,8 +93,26 @@ router.get('/:id', (req, res) => {
 });
 
 // ── POST /api/entries ────────────────────────────────────────────────────────
+// Strip HTML to plain text. Used to derive body_text when the caller didn't
+// supply it — Home-widget save-to-journal flows (Quick Ask, Daily Card, Quote,
+// Pulse) build HTML strings directly and have no Tiptap editor to call
+// .getText() on. Without this, those entries land with body_text='' and the
+// Reflect button silently no-ops because useReflect bails on missing text.
+function stripHtmlForBodyText(html) {
+  return (html || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 router.post('/', (req, res) => {
-  const { title = 'Untitled', body = '', body_text = '', date, tags = [] } = req.body;
+  const { title = 'Untitled', body = '', date, tags = [] } = req.body;
+  let { body_text = '' } = req.body;
+  if (!body_text && body) body_text = stripHtmlForBodyText(body);
 
   // Tag with current sky conditions
   const now = new Date();
