@@ -1022,7 +1022,9 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
   // and onboarding pops back up every login until they walk through the
   // whole flow they already completed years ago on the source account.
   const sourceUser = Array.isArray(data.users) && data.users[0];
-  const sourceCompleted = sourceUser && (sourceUser.onboarding_complete === 1 || sourceUser.onboarding_complete === true);
+  // Be liberal in what we accept: SQLite returns INTEGER 1, JSON could be
+  // boolean true, string "1", or number 1.0. Coerce to truthy.
+  const sourceCompleted = !!(sourceUser && sourceUser.onboarding_complete);
   const hadPortrait = portrait && Object.keys(portrait).length > 0;
   if (sourceCompleted || hadPortrait) {
     try {

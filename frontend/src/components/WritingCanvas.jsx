@@ -30,6 +30,7 @@ import HardBreak from '@tiptap/extension-hard-break';
 import HorizontalRule from '@tiptap/extension-horizontal-rule';
 import History from '@tiptap/extension-history';
 import Gapcursor from '@tiptap/extension-gapcursor';
+import { TextIndent } from '../extensions/TextIndent';
 import Placeholder from '@tiptap/extension-placeholder';
 import Code from '@tiptap/extension-code';
 import Blockquote from '../extensions/Blockquote';
@@ -352,6 +353,7 @@ const editor = useEditor({
       DetailsBlock,
       MediaRow,
       CardReading,
+      TextIndent,
       Placeholder.configure({
         placeholder: isFirstSession
           ? t('journal.firstSession')
@@ -574,13 +576,13 @@ const editor = useEditor({
 
         <ToolbarButton
           label="Indent"
-          onClick={() => editor?.chain().focus().sinkListItem('listItem').run()}
+          onClick={() => editor?.chain().focus().indent().run()}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="21" y2="16"/><polyline points="9 4 13 8 9 12"/></svg>
         </ToolbarButton>
         <ToolbarButton
           label="Outdent"
-          onClick={() => editor?.chain().focus().liftListItem('listItem').run()}
+          onClick={() => editor?.chain().focus().outdent().run()}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="21" y2="16"/><polyline points="13 4 9 8 13 12"/></svg>
         </ToolbarButton>
