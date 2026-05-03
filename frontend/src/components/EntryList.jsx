@@ -292,6 +292,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
         )}
 
         <input
+          data-tour-id="journal-search"
           style={s.search}
           placeholder={t('common.search')}
           value={search}
@@ -300,6 +301,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
         />
 
         <button
+          data-tour-id="journal-new-entry"
           style={s.addBtn}
           onClick={onNew}
           onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--strong)'; }}
@@ -328,7 +330,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
       </div>
 
       {/* Tag strip */}
-      <div style={s.tagStrip}>
+      <div data-tour-id="journal-tag-filter" style={s.tagStrip}>
         <TagPill
           label={t('notes.typeAll')}
           active={filterTag === ALL_TAG}

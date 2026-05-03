@@ -56,6 +56,7 @@ import { useCoreTags } from '../hooks/useCoreTags';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSwipeNav } from '../hooks/useSwipeNav';
+import { useFirstTourTrigger } from '../components/TutorialContext';
 
 const BUILT_IN_TYPES = [
   { type: 'all',        labelKey: 'notes.typeAll' },
@@ -85,6 +86,7 @@ function formatDate(iso) {
 }
 
 export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onNoteSelected, onTalkAboutNote, onNavigateToChat }) {
+  useFirstTourTrigger('notes');
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const { isCore, coreList } = useCoreTags();
@@ -424,6 +426,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
         )}
 
         <input
+          data-tour-id="notes-search"
           style={{
             margin: '8px 10px', padding: '5px 10px', fontSize: '12px',
             border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
@@ -436,6 +439,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
         />
 
         <button
+          data-tour-id="notes-new-note"
           style={{
             margin: '0 10px 8px', padding: '7px 0', fontSize: '11px',
             fontFamily: 'var(--font)', color: 'var(--muted)', background: 'transparent',
@@ -474,7 +478,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
       </div>
 
       {/* Tag strip — hidden on mobile except in list view */}
-      {(!isMobile || mobileView === 'list') && <div style={{
+      {(!isMobile || mobileView === 'list') && <div data-tour-id="notes-type-rail" style={{
         width: '76px',
         flexShrink: 0,
         borderLeft: 'var(--border-style)',
@@ -565,6 +569,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
 
         {showNewTagInput ? (
           <input
+            data-tour-id="notes-custom-tag"
             ref={newTagRef}
             autoFocus
             value={newTagInput}
@@ -585,6 +590,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
           />
         ) : (
           <button
+            data-tour-id="notes-custom-tag"
             onClick={() => setShowNewTagInput(true)}
             title={t('notes.newCustomTag')}
             style={{
@@ -1233,7 +1239,7 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle,
   );
 
   return (
-    <div style={{
+    <div data-tour-id="notes-toolbar" style={{
       display: 'flex',
       alignItems: 'center',
       gap: '1px',
@@ -1268,6 +1274,7 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle,
         </span>
       )}
       <button
+        data-tour-id="notes-lock"
         style={{
           ...btnStyle,
           ...(editMode ? {} : { background: 'rgba(0,0,0,0.06)', color: 'var(--strong)' }),
@@ -1289,6 +1296,7 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle,
         )}
       </button>
       <button
+        data-tour-id="notes-versions"
         style={{ ...btnStyle, fontSize: '14px', marginRight: '2px' }}
         title={t('notes.versionHistory')}
         onClick={onVersionsOpen}
@@ -1637,6 +1645,7 @@ async function handlePolish() {
       {/* Polish + Mic — fixed footer */}
       <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)', display: 'flex', gap: '10px', alignItems: 'center' }}>
         <button
+          data-tour-id="notes-polish"
           style={{
             flex: 1,
             fontSize: '12px',
@@ -1658,6 +1667,7 @@ async function handlePolish() {
           {polishing ? t('notes.polishing') : t('notes.polish')}
         </button>
         <button
+          data-tour-id="notes-generate-title"
           onClick={handleGenerateTitle}
           title="Generate title"
           disabled={titling || !hasText}
@@ -1680,12 +1690,15 @@ async function handlePolish() {
         >
           {titling ? <SpinnerIcon /> : <TitleIcon />}
         </button>
+        <span data-tour-id="notes-dictate" style={{ display: 'inline-flex' }}>
         <MicButton
           isRecording={isRecording}
           isProcessing={isProcessing}
           onClick={toggleDictation}
         />
+        </span>
         <button
+          data-tour-id="notes-read-aloud"
           onClick={handleReadAloud}
           title={reading ? t('common.stop') : t('common.readAloud')}
           type="button"
@@ -1713,6 +1726,7 @@ async function handlePolish() {
         </button>
         {onTalkAboutNote && (
           <button
+            data-tour-id="notes-send-to-chat"
             onClick={() => onTalkAboutNote(note.id, note.linked_session_id)}
             title={note.linked_session_id ? t('notes.goToChat') : t('notes.talkAboutThis')}
             type="button"
@@ -2141,6 +2155,7 @@ const panelStyle = {
         alignItems: 'center',
       }}>
         <button
+          data-tour-id="notes-reflect"
           className="btn-primary"
           style={{ flex: 1, fontSize: '12px', padding: '9px 0', borderRadius: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1)', opacity: (!hasContent || loading) ? 0.45 : 1 }}
           onClick={() => onReflect(selectedArchetype)}
@@ -2151,6 +2166,7 @@ const panelStyle = {
 
         {/* Edit mode toggle */}
         <button
+          data-tour-id="notes-edit-reflections"
           onClick={() => setEditMode(v => !v)}
           title={editMode ? (t('common.done') || 'Done') : (t('common.edit') || 'Edit')}
           type="button"
@@ -2195,6 +2211,7 @@ const panelStyle = {
 
         {/* Archetype picker button */}
         <button
+          data-tour-id="notes-mirror-archetype"
           onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
           title={t(BUILT_IN_ARCHETYPES.find(a => a.value === selectedArchetype)?.key || 'archetype.auto')}
           type="button"
@@ -2218,6 +2235,7 @@ const panelStyle = {
 
         {/* Read all button */}
         <button
+          data-tour-id="notes-mirror-read-aloud"
           onClick={handleReadAll}
           title={readingAll ? t('common.stop') : t('common.readAloud')}
           type="button"

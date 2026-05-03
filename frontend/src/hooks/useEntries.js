@@ -51,16 +51,29 @@ export function useEntries() {
     return () => window.removeEventListener('liminal:entries-changed', onChanged);
   }, [fetchEntries]);
 
-  const createEntry = useCallback(async () => {
+  const createEntry = useCallback(async (initial = {}) => {
     try {
+      // Pull pending body from sessionStorage if HomePage's QuickModeToggle
+      // stashed the user's typed text before navigating here. One-shot read,
+      // cleared immediately so it can't bleed into a manual New entry click.
+      let pendingBody = '';
+      try {
+        const stash = sessionStorage.getItem('liminal_pending_entry_body');
+        if (stash) {
+          pendingBody = stash;
+          sessionStorage.removeItem('liminal_pending_entry_body');
+        }
+      } catch {}
+      const body = initial.body ?? (pendingBody ? `<p>${pendingBody}</p>` : '');
+      const bodyText = initial.body_text ?? pendingBody;
       const res = await apiFetch(`${API}/entries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: 'Entry Title',
-          body: '',
-          body_text: '',
-          date: today(),
+          title: initial.title ?? 'Entry Title',
+          body,
+          body_text: bodyText,
+          date: initial.date ?? today(),
         }),
       });
       const entry = await res.json();

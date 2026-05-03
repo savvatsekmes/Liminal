@@ -5,10 +5,13 @@ import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
 import { useFont } from '../hooks/useFont';
 import { FONTS, needsGoogleFontsConsent, setGoogleFontsConsent, getFont } from '../utils/fontCatalog';
+import { FONT_SCALE_OPTIONS, getFontScale, setFontScale as setFontScaleLocal } from '../utils/fontScale';
 import FontConsentModal from '../components/FontConsentModal';
 import TermsOfService from '../components/TermsOfService';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { waitForChatterbox, withLoadingToast } from '../utils/ttsStatus';
+import { TOUR_LABELS, TOUR_ORDER } from '../data/tutorials';
+import { useTutorial } from '../components/TutorialContext';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABS = [
@@ -2163,6 +2166,24 @@ function AppearanceSection() {
   const { fontId, setFont, headingFontId, setHeadingFont } = useFont();
   // Pending Google-font pick that's waiting on consent. { id, kind: 'body' | 'heading' } | null
   const [pendingFont, setPendingFont] = useState(null);
+  // Font scale (UI zoom). Read once from localStorage; updates land via the
+  // Ctrl+/Ctrl- shortcuts in App.jsx too, so we re-read on each render via
+  // controlled input + a refresh tick driven by the settings-changed event.
+  const [fontScale, setFontScaleState] = useState(getFontScale());
+  useEffect(() => {
+    function refresh() { setFontScaleState(getFontScale()); }
+    window.addEventListener('liminal:settings-changed', refresh);
+    return () => window.removeEventListener('liminal:settings-changed', refresh);
+  }, []);
+  function changeFontScale(value) {
+    setFontScaleLocal(value);
+    setFontScaleState(value);
+    apiFetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ui_font_scale: value }),
+    }).catch(() => {});
+  }
 
   function handlePick(kind, id) {
     if (needsGoogleFontsConsent(id)) {
@@ -2197,6 +2218,13 @@ function AppearanceSection() {
           </span>
         </div>
       </Field>
+      <Field label={t('settings.fontSize') || 'Font Size'} hint={t('settings.fontSizeHint') || 'Scales the entire app. Ctrl + / Ctrl - / Ctrl 0 also work.'}>
+        <select style={s.input} value={fontScale} onChange={(e) => changeFontScale(e.target.value)}>
+          {FONT_SCALE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </Field>
       <Field label={t('settings.fontHeading') || 'Heading font'} hint={t('settings.fontHeadingHint') || 'Used on page titles. Cormorant Garamond is the default.'}>
         <select style={s.input} value={headingFontId} onChange={(e) => handlePick('heading', e.target.value)}>
           {FONTS.map((f) => (
@@ -2218,6 +2246,88 @@ function AppearanceSection() {
           onDeny={denyConsent}
         />
       )}
+    </Section>
+  );
+}
+
+// ── Replay tutorials ─────────────────────────────────────────────────────────
+// Lets the user re-trigger any tour. Show again navigates to the host page
+// and starts the tour fresh. Reset all clears the seen flags without firing
+// any tour now (next first-visit will auto-trigger).
+
+function ReplayTutorialsSection() {
+  const { t } = useLanguage();
+  const { resetTour } = useTutorial();
+  const [flashed, setFlashed] = useState({});
+
+  function flash(key, label) {
+    setFlashed((prev) => ({ ...prev, [key]: label }));
+    setTimeout(() => setFlashed((prev) => { const n = { ...prev }; delete n[key]; return n; }), 1400);
+  }
+
+  function replayTour(id) {
+    window.dispatchEvent(new CustomEvent('liminal:replay-tour', { detail: { id } }));
+    flash(id, t('common.saved') || 'Started');
+  }
+
+  function handleResetAll() {
+    resetTour('all');
+    flash('__all', t('common.saved') || 'Reset');
+  }
+
+  return (
+    <Section title={t('settings.replayTutorials') || 'Replay tutorials'}>
+      <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.6, marginBottom: '12px' }}>
+        {t('settings.replayTutorialsHint') ||
+          'Show again replays the tour now. Reset all clears the seen flags so the tours auto-fire next time you visit each page.'}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
+        {TOUR_ORDER.map((id) => (
+          <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <span style={{ fontSize: '13px', color: 'var(--strong)' }}>{t(TOUR_LABELS[id])}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {flashed[id] && (
+                <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>{flashed[id]} ✓</span>
+              )}
+              <button
+                onClick={() => replayTour(id)}
+                style={{
+                  fontSize: '12px',
+                  padding: '6px 12px',
+                  borderRadius: '999px',
+                  background: 'transparent',
+                  color: 'var(--strong)',
+                  border: 'var(--border-style)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font)',
+                }}
+              >
+                {t('settings.showAgain') || 'Show again'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
+        {flashed.__all && (
+          <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>{flashed.__all} ✓</span>
+        )}
+        <button
+          onClick={handleResetAll}
+          style={{
+            fontSize: '12px',
+            padding: '6px 14px',
+            borderRadius: '999px',
+            background: 'transparent',
+            color: 'var(--muted)',
+            border: 'var(--border-style)',
+            cursor: 'pointer',
+            fontFamily: 'var(--font)',
+          }}
+        >
+          {t('settings.resetAllTutorials') || 'Reset all'}
+        </button>
+      </div>
     </Section>
   );
 }
@@ -2374,6 +2484,9 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
           </Field>
         )}
       </Section>
+
+      {/* Replay tutorials */}
+      <ReplayTutorialsSection />
 
       {/* Version & updates */}
       <Section title={t('settings.aboutVersion')}>

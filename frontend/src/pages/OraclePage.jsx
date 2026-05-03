@@ -23,6 +23,7 @@ import Calendar from '../components/Calendar';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSwipeNav } from '../hooks/useSwipeNav';
 import { useListArrowNav } from '../hooks/useListArrowNav';
+import { useFirstTourTrigger } from '../components/TutorialContext';
 
 const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.map(a => a.value);
 const ALL_TAG = '__all__';
@@ -535,6 +536,7 @@ function formatSessionDate(dateStr) {
 }
 
 export default function OraclePage({ initialSessionId, requestNew, onNewHandled, onSessionSelected, onNavigateToEntry, onNavigateToNote, onCloseSession }) {
+  useFirstTourTrigger('conversations');
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('chat'); // 'list' | 'chat'
@@ -1067,6 +1069,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
           />
         )}
         <input
+          data-tour-id="conversations-search"
           style={{
             margin: '8px 10px', padding: '5px 10px', fontSize: '12px',
             border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
@@ -1078,6 +1081,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
           onChange={(e) => setSearch(e.target.value)}
         />
         <button
+          data-tour-id="conversations-new"
           style={{
             margin: '0 10px 8px', padding: '7px 0', fontSize: '11px',
             fontFamily: 'var(--font)', color: 'var(--muted)', background: 'transparent',
@@ -1266,6 +1270,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
         {/* Archetype picker */}
         <div style={{ position: 'relative' }} ref={archetypePickerRef}>
           <button
+            data-tour-id="conversations-archetype"
             onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
             title={archetype}
             type="button"
@@ -1351,13 +1356,16 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
             </div>
           )}
         </div>
+        <span data-tour-id="conversations-dictate" style={{ display: 'inline-flex' }}>
         <MicButton
           isRecording={isDictating}
           isProcessing={isDictatingProcessing}
           onClick={toggleDictation}
           style={{ width: '36px', height: '36px' }}
         />
+        </span>
         <button
+          data-tour-id="conversations-ask"
           style={{ ...s.sendBtn, opacity: loading || !input.trim() ? 0.5 : 1 }}
           onClick={handleSend}
           disabled={loading || !input.trim()}
@@ -1579,7 +1587,7 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
   const auto = allAuto.filter((tag) => !isCore(tag));
 
   return (
-    <div style={s.tagStrip}>
+    <div data-tour-id="conversations-tags" style={s.tagStrip}>
       {/* "All" pill */}
       <TagFilterPill
         label={t('oracle.allTag')}

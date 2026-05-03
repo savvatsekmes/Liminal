@@ -23,11 +23,17 @@ import { LanguageProvider } from './i18n/LanguageContext';
 import { CrisisGateProvider } from './components/CrisisGate';
 import { useTtsLoading, useLoadingMessage } from './utils/ttsStatus';
 import { useFont } from './hooks/useFont';
+import { applyFontScale, getFontScale, setFontScale, installZoomShortcuts } from './utils/fontScale';
+import { TutorialProvider, useTutorial } from './components/TutorialContext';
+
+// Apply font scale at module load so the very first paint already honours the
+// user's saved size — avoids a flash of default-size text.
+applyFontScale(getFontScale());
 
 // ── Authenticated shell ───────────────────────────────────────────────────────
 // Mounted only after auth is confirmed — ensures hooks fetch with valid token.
 
-function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange, lockTimeoutMinutes }) {
+function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAvatarChange, lockTimeoutMinutes, layoutPreference }) {
   const [activeView, setActiveView] = useState(() => {
     const saved = sessionStorage.getItem('liminal_view');
     if (saved && ['home','journal','notes','threads','oracle','portrait','memory','settings'].includes(saved)) return saved;
@@ -37,6 +43,24 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     setActiveView(view);
     sessionStorage.setItem('liminal_view', view);
   }, []);
+  // "Show again" from Settings → Replay tutorials dispatches this event.
+  // We switch to home (the page the home tour lives on) and start the
+  // tour after a short delay so the page's data-tour-id elements exist
+  // in the DOM before the overlay tries to find them.
+  const tutorialApi = useTutorial();
+  useEffect(() => {
+    function onReplay(e) {
+      const id = e.detail?.id;
+      if (!id) return;
+      // Map tour id → its host page. Extend as more tours land.
+      const TOUR_HOST = { home: 'home', journal: 'journal', notes: 'notes', conversations: 'oracle', threads: 'threads', oracle: 'portrait', context: 'memory' };
+      const host = TOUR_HOST[id] || 'home';
+      handleViewChange(host);
+      setTimeout(() => tutorialApi.startTour(id), 450);
+    }
+    window.addEventListener('liminal:replay-tour', onReplay);
+    return () => window.removeEventListener('liminal:replay-tour', onReplay);
+  }, [handleViewChange, tutorialApi]);
   const [locked, setLocked] = useState(false);
   const lockTimerRef = useRef(null);
   // Apply the saved body font on app boot (no-op if user is on the default).
@@ -69,8 +93,11 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   const [previewVersion, setPreviewVersion] = useState(null);
   const [pendingNoteId, setPendingNoteId] = useState(null);
   // "+ new" pill on the home widget: tells NotesPage / OraclePage to create
-  // a fresh entity on mount instead of resuming the last one.
-  const [requestNewNote, setRequestNewNote] = useState(false);
+  // a fresh entity on mount instead of resuming the last one. requestNewNote
+  // doubles as the body to prefill the new note with — it's null when no
+  // new-note request is pending, an empty string for a blank "+ new" click,
+  // or the typed-in HTML body when Quick Note submits a draft.
+  const [requestNewNote, setRequestNewNote] = useState(null);
   const [requestNewSession, setRequestNewSession] = useState(false);
   const [pendingThreadId, setPendingThreadId] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
@@ -267,6 +294,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             <HomePage
               username={username}
               avatarUrl={avatarUrl}
+              layoutPreference={layoutPreference}
               onNavigateToEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }}
               onNavigateToNote={(id) => { setPendingNoteId(id); handleViewChange('notes'); }}
               onNavigateToOracle={(id) => { setPendingSessionId(id); handleViewChange('oracle'); }}
@@ -274,8 +302,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onNavigateToSky={() => { setPendingPortraitTab('sky'); handleViewChange('portrait'); }}
               onNavigateToCards={() => { setPendingPortraitTab('cards'); handleViewChange('portrait'); }}
               onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }}
-              onNewEntry={() => { createEntry(); handleViewChange('journal'); }}
-              onNewNote={() => { setRequestNewNote(true); handleViewChange('notes'); }}
+              onNewEntry={(initial) => { createEntry(initial || {}); handleViewChange('journal'); }}
+              onNewNote={(body) => { setRequestNewNote(body || ''); handleViewChange('notes'); }}
               onNewConversation={() => { setRequestNewSession(true); handleViewChange('oracle'); }}
               onLogout={onLogout}
               onLock={() => setLocked(true)}
@@ -293,7 +321,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
               onCloseSession={() => handleViewChange('home')}
             />
           );
-          if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} requestNew={requestNewNote} onNewHandled={() => setRequestNewNote(false)} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
+          if (activeView === 'notes') return <NotesPage initialNoteId={pendingNoteId} requestNew={requestNewNote} onNewHandled={() => setRequestNewNote(null)} onNoteSelected={() => setPendingNoteId(null)} onTalkAboutNote={handleTalkAboutNote} onNavigateToChat={(sessionId) => { setPendingSessionId(sessionId); handleViewChange('oracle'); }} />;
           if (activeView === 'portrait') return <PortraitPage onNavigateEntry={(id) => { selectEntry({ id }); handleViewChange('journal'); }} initialTab={pendingPortraitTab} onTabLoaded={() => setPendingPortraitTab(null)} />;
           if (activeView === 'memory') return <MemoryPage onNavigateToPortrait={() => { setPendingPortraitTab('portrait'); handleViewChange('portrait'); }} />;
           if (activeView === 'threads') return (
@@ -363,6 +391,32 @@ export default function App() {
   const [isFirstSession, setIsFirstSession] = useState(false);
   const [language, setLanguage] = useState('en');
   const [lockTimeoutMinutes, setLockTimeoutMinutes] = useState(30);
+  // Onboarding-quiz result. Drives the home layout preset and tells the
+  // portrait widget whether to render in personality-only mode (Seeker).
+  const [layoutPreference, setLayoutPreference] = useState('liminal');
+  // Completed guided tours, e.g. ['home']. Sourced from /api/auth/me and
+  // forwarded into TutorialProvider so first-visit auto-triggers know
+  // whether to fire. tutorialsSeenLoaded flips true the first time /me
+  // resolves; until then auto-triggers stay quiet to avoid re-firing a
+  // previously-completed tour during the brief mount-before-fetch window.
+  const [tutorialsSeen, setTutorialsSeen] = useState([]);
+  const [tutorialsSeenLoaded, setTutorialsSeenLoaded] = useState(false);
+  // Pending tour id to start after onboarding completes (the home tour).
+  // Drained by AuthenticatedApp via a tiny inner trigger component once
+  // TutorialProvider is mounted and the home page is in the DOM.
+  const [pendingTour, setPendingTour] = useState(null);
+
+  // Ctrl+= / Ctrl+- / Ctrl+0 zoom shortcuts (mirrors Chrome). Persists each
+  // change to /api/settings so the choice survives a relaunch.
+  useEffect(() => {
+    return installZoomShortcuts((next) => {
+      apiFetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ui_font_scale: next }),
+      }).catch(() => {});
+    });
+  }, []);
 
   useEffect(() => {
     // Check for valid stored JWT first
@@ -376,6 +430,9 @@ export default function App() {
           // the img onError fallback in Layout/HomePage handles a 404 cleanly.
           if (data.avatar_url) setAvatarUrl(data.avatar_url);
           else if (data.user_id) setAvatarUrl(`/api/auth/avatar/${data.user_id}?t=${Date.now()}`);
+          if (data.layout_preference) setLayoutPreference(data.layout_preference);
+          if (Array.isArray(data.tutorials_seen)) setTutorialsSeen(data.tutorials_seen);
+          setTutorialsSeenLoaded(true);
           // Fetch language + lock timeout setting
           apiFetch('/api/settings').then(r => r.json()).then(s => {
             if (s.language) setLanguage(s.language);
@@ -386,6 +443,7 @@ export default function App() {
             try {
               if (s.dictate_mic) localStorage.setItem('liminal_dictate_mic', s.dictate_mic);
               if (s.whisper_model) localStorage.setItem('liminal_whisper_model', s.whisper_model);
+              if (s.ui_font_scale) setFontScale(s.ui_font_scale);
             } catch {}
           }).catch(() => {});
           if (data.onboarding_complete) {
@@ -430,8 +488,11 @@ export default function App() {
       .then((data) => {
         if (data.avatar_url) setAvatarUrl(data.avatar_url);
         else if (data.user_id) setAvatarUrl(`/api/auth/avatar/${data.user_id}?t=${Date.now()}`);
+        if (data.layout_preference) setLayoutPreference(data.layout_preference);
+        if (Array.isArray(data.tutorials_seen)) setTutorialsSeen(data.tutorials_seen);
+        setTutorialsSeenLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setTutorialsSeenLoaded(true); });
     // Same problem for language — fetch saved value so the UI restores it
     // after a fresh password-gate login (not just on auto-resume).
     apiFetch('/api/settings')
@@ -451,15 +512,30 @@ export default function App() {
   }
 
   function handleOnboardingComplete() {
-    // Re-fetch /me so any avatar uploaded during onboarding shows in the
-    // header without waiting for the next app launch.
+    // Re-fetch /me so anything written during onboarding (avatar upload,
+    // quiz result → users.layout_preference) lands in App state before the
+    // home page mounts. Without the layoutPreference refresh, useLayout
+    // would still default to 'liminal' until the next app launch.
     apiFetch('/api/auth/me')
       .then((r) => r.json())
       .then((d) => {
         if (d?.avatar_url) setAvatarUrl(d.avatar_url);
         else if (d?.user_id) setAvatarUrl(`/api/auth/avatar/${d.user_id}?t=${Date.now()}`);
+        if (d?.layout_preference) setLayoutPreference(d.layout_preference);
+        if (Array.isArray(d?.tutorials_seen)) setTutorialsSeen(d.tutorials_seen);
+        setTutorialsSeenLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setTutorialsSeenLoaded(true); });
+    // Queue the home tour to fire once AuthenticatedApp is mounted and the
+    // home page's data-tour-id elements are in the DOM. The actual start
+    // happens inside <PendingTourTrigger> which has access to the
+    // TutorialProvider context.
+    setPendingTour('home');
+    // Force the user onto the home page after onboarding. AuthenticatedApp
+    // initialises activeView from sessionStorage, so without this clear a
+    // prior session's view (e.g. Settings) wins and (a) the user lands in
+    // the wrong place, and (b) the tutorial fires with no DOM targets.
+    try { sessionStorage.setItem('liminal_view', 'home'); } catch {}
     setAuthStatus('ok');
   }
 
@@ -480,6 +556,11 @@ export default function App() {
     setAuthStatus('gate');
     setUsername('');
     setIsFirstSession(false);
+    // Reset tutorial hydration so the next login re-fetches before any
+    // first-visit auto-trigger fires. Without this, the previous session's
+    // (possibly non-default) seen list lingers and we'd briefly mismatch.
+    setTutorialsSeen([]);
+    setTutorialsSeenLoaded(false);
   }
 
   // Backup splash overlay — shown by Electron main process before quit
@@ -510,12 +591,35 @@ export default function App() {
       <CrisisGateProvider>
         {authStatus === 'gate' && <PasswordGate onSuccess={handleAuthSuccess} />}
         {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
-        {authStatus === 'ok' && <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} />}
+        {authStatus === 'ok' && (
+          <TutorialProvider initialSeen={tutorialsSeen} hydrated={tutorialsSeenLoaded}>
+            <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} layoutPreference={layoutPreference} />
+            <PendingTourTrigger pending={pendingTour} onConsumed={() => setPendingTour(null)} />
+          </TutorialProvider>
+        )}
         {backupSplash && <BackupSplash />}
         <TtsLoadingToast />
       </CrisisGateProvider>
     </LanguageProvider>
   );
+}
+
+// Drains a queued tour id (set by handleOnboardingComplete) once the
+// TutorialProvider is mounted. The provider's own first-visit auto-trigger
+// would also catch this for new users since tutorials_seen is empty, but
+// running a manual start ensures the home tour fires the instant the user
+// finishes onboarding rather than waiting for HomePage's mount effect.
+function PendingTourTrigger({ pending, onConsumed }) {
+  const { startTour } = useTutorial();
+  useEffect(() => {
+    if (!pending) return;
+    const t = setTimeout(() => {
+      startTour(pending);
+      onConsumed?.();
+    }, 400);
+    return () => clearTimeout(t);
+  }, [pending]);  // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
 }
 
 function TtsLoadingToast() {

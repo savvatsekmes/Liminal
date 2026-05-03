@@ -64,4 +64,11 @@ contextBridge.exposeInMainWorld('liminal', {
   setLoginItem(enabled) {
     return ipcRenderer.invoke('liminal:set-login-item', enabled);
   },
+
+  // ── UI zoom — uses webContents.setZoomFactor (the same path Chrome's
+  // Ctrl+/- uses) so layout reflows correctly. CSS-zoom didn't, hence the
+  // page cutoff at large levels.
+  setZoomFactor(value) {
+    return ipcRenderer.invoke('liminal:set-zoom-factor', value);
+  },
 });

@@ -1,8 +1,33 @@
 import { useState } from 'react';
 import { setStoredToken } from '../utils/api';
-import { useLanguage } from '../i18n/LanguageContext';
+import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 import TermsOfService from './TermsOfService';
 import { useTheme } from '../hooks/useTheme';
+
+// Inline language picker rendered inside each auth card so the user can
+// switch language before signing in — so onboarding lands translated.
+function AuthLanguagePicker() {
+  const { lang, setLanguage } = useLanguage();
+  return (
+    <select
+      value={lang}
+      onChange={(e) => setLanguage(e.target.value)}
+      style={{
+        ...s.btnSecondary,
+        marginTop: '14px',
+        textAlign: 'center',
+        textAlignLast: 'center',
+        appearance: 'none',
+        WebkitAppearance: 'none',
+        MozAppearance: 'none',
+      }}
+    >
+      {LANGUAGES.map((l) => (
+        <option key={l.code} value={l.code}>{l.label}</option>
+      ))}
+    </select>
+  );
+}
 
 /* CSS-based mobile override — guaranteed to work via media queries */
 const mobileCSS = `
@@ -216,6 +241,7 @@ export default function PasswordGate({ onSuccess }) {
 
 function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
   const { theme } = useTheme();
+  const { t } = useLanguage();
   const [confirmed, setConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -241,12 +267,10 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
 
         <div>
           <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--strong)', marginBottom: '8px' }}>
-            {isNewAccount ? 'Save your recovery key' : 'Your journal is now encrypted'}
+            {isNewAccount ? t('recoveryKey.titleNew') : t('recoveryKey.titleLegacy')}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: 1.6 }}>
-            {isNewAccount
-              ? 'This recovery key is the only way to get back into your account if you forget your password. Write it down somewhere safe — Liminal cannot show it to you again without your password.'
-              : 'Your entries are now encrypted with your password. If you forget your password, this recovery key is the only way to get your journal back. Save it somewhere safe now.'}
+            {isNewAccount ? t('recoveryKey.bodyNew') : t('recoveryKey.bodyLegacy')}
           </div>
         </div>
 
@@ -267,7 +291,7 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button type="button" style={{ ...s.btnSecondary, marginBottom: 0 }} onClick={copy}>
-            {copied ? 'Copied' : 'Copy to clipboard'}
+            {copied ? t('recoveryKey.copied') : t('recoveryKey.copy')}
           </button>
         </div>
 
@@ -278,7 +302,7 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
             onChange={(e) => setConfirmed(e.target.checked)}
             style={{ width: '14px', height: '14px', accentColor: 'var(--strong)', cursor: 'pointer' }}
           />
-          I've saved this recovery key somewhere I trust.
+          {t('recoveryKey.confirmCheckbox')}
         </label>
 
         <button
@@ -287,11 +311,11 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
           disabled={!confirmed}
           onClick={onConfirm}
         >
-          Continue
+          {t('common.continue')}
         </button>
 
         <div style={{ ...s.hint, textAlign: 'left', marginTop: 0 }}>
-          You can view or regenerate this key later from Settings, but only after entering your password.
+          {t('recoveryKey.hint')}
         </div>
       </div>
     </div>
@@ -398,6 +422,7 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
           >
             Forgot password?
           </button>
+          <AuthLanguagePicker />
         </div>
       </form>
     </div>
@@ -535,6 +560,7 @@ function RecoverForm({ onSuccess, onBack, onWipe }) {
               Don't want to recover — delete all data instead
             </button>
           )}
+          <AuthLanguagePicker />
         </div>
       </form>
     </div>
@@ -827,6 +853,7 @@ function RegisterForm({ onSuccess, onBack }) {
               <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
             ))}
           </div>
+          <AuthLanguagePicker />
         </div>
       </form>
     </div>

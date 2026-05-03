@@ -402,6 +402,7 @@ if (previewVersion) {
       {/* Footer */}
       <div style={s.footer}>
         <button
+          data-tour-id="journal-reflect"
           style={{ ...s.reflectBtn, flex: 1, ...(loading ? s.reflectBtnLoading : {}) }}
           onClick={() => onReflect(selectedArchetype)}
           disabled={loading}
@@ -411,6 +412,7 @@ if (previewVersion) {
 
         {/* Edit mode toggle */}
         <button
+          data-tour-id="journal-edit-reflections"
           onClick={() => setEditMode(v => !v)}
           title={editMode ? t('common.done') || 'Done' : t('common.edit') || 'Edit'}
           type="button"
@@ -453,6 +455,7 @@ if (previewVersion) {
 
         {/* Archetype picker button */}
         <button
+          data-tour-id="journal-mirror-archetype"
           onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
           title={t(BUILT_IN_ARCHETYPES.find(a => a.value === selectedArchetype)?.key || 'archetype.auto')}
           type="button"
@@ -476,6 +479,7 @@ if (previewVersion) {
 
         {/* Read all button */}
         <button
+          data-tour-id="journal-mirror-read-aloud"
           onClick={handleReadAll}
           title={readingAll ? t('common.stop') : t('common.readAloud')}
           type="button"

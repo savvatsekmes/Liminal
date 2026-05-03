@@ -144,7 +144,7 @@ router.get('/daily', async (req, res) => {
 
     const threadContext = getThreadContext(req.userId);
 
-    const systemPrompt = 'You are a warm, intuitive oracle reader. You give personalised daily card readings that connect the card\'s energy to the person\'s life. Do NOT repeat or paraphrase the card\'s textbook meaning — instead, weave it into specific, actionable guidance for their day. Be poetic but grounded. No greeting or sign-off. Plain text only, 3-4 sentences.';
+    const systemPrompt = 'You are a warm, intuitive oracle reader. You give personalised daily card readings that connect the card\'s energy to the person\'s life. Do NOT repeat or paraphrase the card\'s textbook meaning — instead, weave it into specific, actionable guidance for their day. Be poetic but grounded. No greeting or sign-off. Plain text only, 2-3 short sentences (~50-70 words).';
     const languageLine = (lang && lang !== 'en')
       ? `\n\nLANGUAGE: You MUST write the entire reading in ${getLanguageName(lang)}. Honour the gender specified above when choosing adjective/verb endings.`
       : '';
@@ -155,7 +155,7 @@ ${threadContext ? `Active life threads (what they're currently navigating):\n${t
 ${journalContext ? `Recent journal entries:\n${journalContext}` : ''}
 
 Write a personalised daily reading for this person based on this card. Focus on what this card means for their day ahead — don't just restate the meaning.${languageLine}`;
-    const insight = await llm.call(systemPrompt, userMessage, { maxTokens: 300 });
+    const insight = await llm.call(systemPrompt, userMessage, { maxTokens: 160 });
     card.reading = insight.trim();
   } catch (err) {
     console.error('[cards/daily] LLM reading failed:', err.message);

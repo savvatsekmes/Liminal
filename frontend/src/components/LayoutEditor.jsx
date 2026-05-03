@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { WIDGET_LABELS } from '../hooks/useLayout';
+import { WIDGET_LABELS, PRESET_KEYS, PRESET_LABELS } from '../hooks/useLayout';
 import { useLanguage } from '../i18n/LanguageContext';
 
 const s = {
@@ -102,14 +102,15 @@ const s = {
     color: 'var(--muted)',
   },
   linkBtn: {
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: '600',
     color: 'var(--strong)',
-    background: 'none',
-    border: 'none',
+    background: 'var(--white)',
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
     cursor: 'pointer',
-    padding: 0,
-    textDecoration: 'underline',
+    padding: '5px 14px',
+    fontFamily: 'var(--font)',
   },
   deleteBtn: {
     fontSize: '11px',
@@ -125,6 +126,7 @@ const s = {
 export default function LayoutEditor({
   savedLayouts,
   activeLayoutId,
+  activePresetKey,
   isLiminalDefault,
   dirty,
   availableWidgets,
@@ -145,10 +147,22 @@ export default function LayoutEditor({
       onSelectLayout(null);
     } else if (val === 'custom') {
       onSelectLayout('custom');
+    } else if (val.startsWith('preset:')) {
+      // Quiz-result preset: 'preset:witness' / 'preset:seeker' / 'preset:attuned'.
+      // useLayout's selectLayout knows how to apply the preset's widget array.
+      onSelectLayout(val);
     } else {
       onSelectLayout(Number(val));
     }
   }
+
+  // Compute the dropdown's `value`. Saved layouts win over presets which win
+  // over Liminal default.
+  let selectValue;
+  if (activeLayoutId) selectValue = String(activeLayoutId);
+  else if (dirty && !activeLayoutId) selectValue = 'custom';
+  else if (activePresetKey && activePresetKey !== 'liminal') selectValue = `preset:${activePresetKey}`;
+  else selectValue = 'liminal';
 
   async function handleSave() {
     const name = saveName.trim();
@@ -163,7 +177,7 @@ export default function LayoutEditor({
       <div style={s.header}>
         <span style={s.title}>Layout Editor</span>
         {!dirty && (
-          <button style={s.doneBtn} onClick={onDone}>Done</button>
+          <button style={s.doneBtn} onClick={onDone}>Exit</button>
         )}
       </div>
 
@@ -171,12 +185,17 @@ export default function LayoutEditor({
       <div style={s.row}>
         <div style={{ flex: 1 }}>
           <span style={s.label}>Layout</span>
-          <select style={{ ...s.selectHalf, width: '100%' }} value={isLiminalDefault ? 'liminal' : (activeLayoutId || 'custom')} onChange={handleLayoutChange}>
+          <select style={{ ...s.selectHalf, width: '100%' }} value={selectValue} onChange={handleLayoutChange}>
             <option value="liminal">Liminal (default)</option>
+            {PRESET_KEYS.map(key => (
+              <option key={key} value={`preset:${key}`}>{PRESET_LABELS[key]}</option>
+            ))}
             {savedLayouts.map(l => (
               <option key={l.id} value={l.id}>{l.name}</option>
             ))}
-            {!activeLayoutId && !isLiminalDefault && <option value="custom">Custom (unsaved)</option>}
+            {!activeLayoutId && dirty && (
+              <option value="custom">Custom (unsaved)</option>
+            )}
           </select>
         </div>
         <div style={{ flex: 1 }}>
@@ -203,7 +222,7 @@ export default function LayoutEditor({
           )}
           <button style={s.linkBtn} onClick={() => setShowSave(true)}>Save as new</button>
           <button style={s.linkBtn} onClick={() => { onDiscard(); }}>Discard</button>
-          <button style={s.doneBtn} onClick={onDone}>Done</button>
+          <button style={s.doneBtn} onClick={onDone}>Exit</button>
         </div>
       )}
 

@@ -340,7 +340,7 @@ router.get('/portrait-snippet', async (req, res) => {
   // 'v2' suffix in the hash forces regeneration after the gender-pronoun fix
   // shipped — previously this prompt skipped sex/pronouns entirely so the LLM
   // defaulted to feminine for any user (including male users).
-  const hash = `${portrait.updated_at || ''}:${lang}:v2`;
+  const hash = `${portrait.updated_at || ''}:${lang}:v4`;
   if (cached && cached.entry_hash === hash) {
     return res.json(JSON.parse(cached.data));
   }
@@ -371,8 +371,8 @@ router.get('/portrait-snippet', async (req, res) => {
   if (lines.length < 2) return res.json({ snippet: null });
 
   try {
-    const systemPrompt = `Write a 2-3 sentence character sketch of this person — vivid, warm, specific. Third person, present tense. No headers, no lists. Just prose that captures their essence. Use the pronouns specified in the user message strictly; do not default to feminine pronouns when masculine ones are given (or vice versa).`;
-    const text = await llm.call(systemPrompt, lines.join('\n'), { maxTokens: 120 });
+    const systemPrompt = `Write a 3-4 sentence character sketch of this person — vivid, warm, specific. Third person, present tense. No headers, no lists. Just prose that captures their essence. ~70-110 words. Use the pronouns specified in the user message strictly; do not default to feminine pronouns when masculine ones are given (or vice versa).`;
+    const text = await llm.call(systemPrompt, lines.join('\n'), { maxTokens: 180 });
     const result = { snippet: text.trim() };
 
     db.prepare(

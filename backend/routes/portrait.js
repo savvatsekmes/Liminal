@@ -132,6 +132,17 @@ router.put('/', (req, res) => {
     params.push(JSON.stringify(archetype_voices || {}));
   }
 
+  // Track manual edits to character_description: any PUT that sets a value
+  // different from what's currently stored counts as an edit (the regenerate
+  // path goes through /generate, which clears this flag). Auto-save sending
+  // the same description back is a no-op.
+  if (character_description !== undefined) {
+    const current = db.prepare('SELECT character_description FROM portrait WHERE user_id = ?').get(req.userId);
+    if (current && current.character_description !== character_description) {
+      fields.push('character_description_edited = 1');
+    }
+  }
+
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 
   fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -232,9 +243,9 @@ Return only the portrait text. No headers, no preamble.`;
     const description = await llm.call(systemPrompt, lines.join('\n'), { maxTokens: 1000 });
     const trimmed = description.trim();
 
-    db.prepare('UPDATE portrait SET character_description = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(trimmed, req.userId);
+    db.prepare('UPDATE portrait SET character_description = ?, character_description_edited = 0, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(trimmed, req.userId);
 
-    res.json({ character_description: trimmed });
+    res.json({ character_description: trimmed, character_description_edited: 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

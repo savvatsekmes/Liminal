@@ -45,10 +45,10 @@ const s = {
     zIndex: 1000,
   },
   card: {
-    width: '440px',
+    width: '520px',
     maxHeight: '85vh',
     overflowY: 'auto',
-    padding: '52px 48px',
+    padding: '52px 56px',
   },
   title: {
     fontSize: '28px',
@@ -150,7 +150,86 @@ const s = {
   },
 };
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
+
+// Personality quiz constants. Each question has 3 typed answers; the type with
+// the most picks (witness > seeker > attuned tie-break) determines the layout
+// preset and pre-fills the response-style sliders. Copy lives in en.js under
+// onboarding.quiz.q1..q7.{question,witness,seeker,attuned} and result labels
+// live under onboarding.quiz.result.<type>.{label,description}.
+const QUIZ_QUESTIONS = [
+  { questionKey: 'onboarding.quiz.q1.question', answers: [
+    { textKey: 'onboarding.quiz.q1.witness', type: 'witness' },
+    { textKey: 'onboarding.quiz.q1.seeker',  type: 'seeker'  },
+    { textKey: 'onboarding.quiz.q1.attuned', type: 'attuned' },
+  ] },
+  { questionKey: 'onboarding.quiz.q2.question', answers: [
+    { textKey: 'onboarding.quiz.q2.witness', type: 'witness' },
+    { textKey: 'onboarding.quiz.q2.seeker',  type: 'seeker'  },
+    { textKey: 'onboarding.quiz.q2.attuned', type: 'attuned' },
+  ] },
+  { questionKey: 'onboarding.quiz.q3.question', answers: [
+    { textKey: 'onboarding.quiz.q3.witness', type: 'witness' },
+    { textKey: 'onboarding.quiz.q3.seeker',  type: 'seeker'  },
+    { textKey: 'onboarding.quiz.q3.attuned', type: 'attuned' },
+  ] },
+  { questionKey: 'onboarding.quiz.q4.question', answers: [
+    { textKey: 'onboarding.quiz.q4.witness', type: 'witness' },
+    { textKey: 'onboarding.quiz.q4.seeker',  type: 'seeker'  },
+    { textKey: 'onboarding.quiz.q4.attuned', type: 'attuned' },
+  ] },
+  { questionKey: 'onboarding.quiz.q5.question', answers: [
+    { textKey: 'onboarding.quiz.q5.witness', type: 'witness' },
+    { textKey: 'onboarding.quiz.q5.seeker',  type: 'seeker'  },
+    { textKey: 'onboarding.quiz.q5.attuned', type: 'attuned' },
+  ] },
+  { questionKey: 'onboarding.quiz.q6.question', answers: [
+    { textKey: 'onboarding.quiz.q6.witness', type: 'witness' },
+    { textKey: 'onboarding.quiz.q6.seeker',  type: 'seeker'  },
+    { textKey: 'onboarding.quiz.q6.attuned', type: 'attuned' },
+  ] },
+  { questionKey: 'onboarding.quiz.q7.question', answers: [
+    { textKey: 'onboarding.quiz.q7.witness', type: 'witness' },
+    { textKey: 'onboarding.quiz.q7.seeker',  type: 'seeker'  },
+    { textKey: 'onboarding.quiz.q7.attuned', type: 'attuned' },
+  ] },
+];
+
+const QUIZ_RESULT_LABEL_KEYS = {
+  witness: 'onboarding.quiz.result.witness.label',
+  seeker:  'onboarding.quiz.result.seeker.label',
+  attuned: 'onboarding.quiz.result.attuned.label',
+};
+const QUIZ_RESULT_DESCRIPTION_KEYS = {
+  witness: 'onboarding.quiz.result.witness.description',
+  seeker:  'onboarding.quiz.result.seeker.description',
+  attuned: 'onboarding.quiz.result.attuned.description',
+};
+
+// Slider presets per quiz outcome. Pre-fill values for ResponseStyleStep so
+// the user lands on something already tuned to their result; they can still
+// nudge any slider before continuing. Extracted from the running build so the
+// experience matches what users were already getting.
+const QUIZ_SLIDER_PRESETS = {
+  witness: {
+    slider_rational_spiritual: 20, slider_gentle_direct: 55, slider_reflective_action: 35,
+    slider_light_deep: 65, slider_conversational_poetic: 28, slider_encouraging_challenging: 55,
+    slider_candor: 60, slider_character_influence: 35, slider_friend_stranger: 28,
+    slider_portrait_weight: 10, slider_sky_weight: 0,
+  },
+  seeker: {
+    slider_rational_spiritual: 55, slider_gentle_direct: 42, slider_reflective_action: 28,
+    slider_light_deep: 70, slider_conversational_poetic: 55, slider_encouraging_challenging: 42,
+    slider_candor: 52, slider_character_influence: 55, slider_friend_stranger: 42,
+    slider_portrait_weight: 42, slider_sky_weight: 20,
+  },
+  attuned: {
+    slider_rational_spiritual: 78, slider_gentle_direct: 38, slider_reflective_action: 25,
+    slider_light_deep: 78, slider_conversational_poetic: 68, slider_encouraging_challenging: 38,
+    slider_candor: 50, slider_character_influence: 72, slider_friend_stranger: 55,
+    slider_portrait_weight: 82, slider_sky_weight: 80,
+  },
+};
 
 export default function Onboarding({ username, onComplete }) {
   const [step, setStep] = useState(0);
@@ -333,42 +412,53 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 1 && (
-            <BirthDetailsStep
-              data={data}
-              set={set}
-              onContinue={() => goTo(2)}
-              onBack={() => goTo(0)}
-              saving={saving}
+            <QuizStep
+              onResult={(layoutKey) => {
+                // Merge the preset's slider defaults into running state so
+                // ResponseStyleStep shows them pre-filled. saveAndComplete()
+                // at the end flushes via PUT /api/portrait.
+                const sliders = QUIZ_SLIDER_PRESETS[layoutKey] || {};
+                setData((prev) => ({ ...prev, ...sliders }));
+                // Persist the layout choice immediately so it's set on
+                // /api/auth/me even if the user closes before finishing.
+                apiFetch('/api/auth/quiz-result', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ layout: layoutKey }),
+                }).catch(() => {});
+                goTo(2);
+              }}
             />
           )}
           {step === 2 && (
+            // Response Style runs right after the quiz so users can fine-tune
+            // the auto-applied slider preset. Skip on this step must NOT mark
+            // onboarding complete — the age gate lives on Birth Details (next).
+            <ResponseStyleStep
+              data={data}
+              set={set}
+              onContinue={() => goTo(3)}
+              onBack={() => goTo(1)}
+              onSkipForNow={() => goTo(3)}
+              onSkipCompletely={() => goTo(3)}
+              saving={saving}
+            />
+          )}
+          {step === 3 && (
+            <BirthDetailsStep
+              data={data}
+              set={set}
+              onContinue={() => goTo(4)}
+              onBack={() => goTo(2)}
+              saving={saving}
+            />
+          )}
+          {step === 4 && (
             <WhoYouAreStep
               data={data}
               set={set}
               avatarUrl={avatarUrl}
               onAvatarChange={setAvatarUrl}
-              onContinue={() => goTo(3)}
-              onBack={() => goTo(1)}
-              onSkipForNow={handleSkipForNow}
-              onSkipCompletely={handleSkipCompletely}
-              saving={saving}
-            />
-          )}
-          {step === 3 && (
-            <PersonalityStep
-              data={data}
-              set={set}
-              onContinue={() => goTo(4)}
-              onBack={() => goTo(2)}
-              onSkipForNow={handleSkipForNow}
-              onSkipCompletely={handleSkipCompletely}
-              saving={saving}
-            />
-          )}
-          {step === 4 && (
-            <ResponseStyleStep
-              data={data}
-              set={set}
               onContinue={() => goTo(5)}
               onBack={() => goTo(3)}
               onSkipForNow={handleSkipForNow}
@@ -377,7 +467,9 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 5 && (
-            <OllamaStep
+            <PersonalityStep
+              data={data}
+              set={set}
               onContinue={() => goTo(6)}
               onBack={() => goTo(4)}
               onSkipForNow={handleSkipForNow}
@@ -386,9 +478,7 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 6 && (
-            <BackupsStep
-              backup={backup}
-              setBackup={setBackupField}
+            <OllamaStep
               onContinue={() => goTo(7)}
               onBack={() => goTo(5)}
               onSkipForNow={handleSkipForNow}
@@ -397,10 +487,21 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 7 && (
+            <BackupsStep
+              backup={backup}
+              setBackup={setBackupField}
+              onContinue={() => goTo(8)}
+              onBack={() => goTo(6)}
+              onSkipForNow={handleSkipForNow}
+              onSkipCompletely={handleSkipCompletely}
+              saving={saving}
+            />
+          )}
+          {step === 8 && (
             <DoneStep
               data={data}
               onFinish={saveAndComplete}
-              onBack={() => goTo(6)}
+              onBack={() => goTo(7)}
               saving={saving}
             />
           )}
@@ -468,26 +569,20 @@ function WelcomeStep({ onContinue }) {
         marginBottom: '28px',
       }}>
         <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '11px', letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-          Before we begin
+          {t('onboarding.disclaimerHeading')}
         </div>
-        Liminal is a journaling companion, not a therapist, doctor, or psychologist.
-        The reflections you receive are AI-generated — sometimes surprisingly insightful,
-        sometimes way off. Think of it as a thoughtful friend with a good bookshelf,
-        not a licensed professional.
+        {t('onboarding.disclaimerBody1')}
         <br /><br />
-        If you're going through something heavy — grief, crisis, dark thoughts — please
-        reach out to a real human. A counsellor, a helpline, someone who knows you.
-        Liminal can't replace that, and it isn't trying to.
+        {t('onboarding.disclaimerBody2')}
         <br /><br />
         <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-          Crisis resources: <strong>988</strong> (USA), <strong>116 123</strong> (UK Samaritans),{' '}
+          {t('onboarding.disclaimerCrisisLabel')} <strong>988</strong> (USA), <strong>116 123</strong> (UK Samaritans),{' '}
           <strong>13 11 14</strong> (AU Lifeline), <strong>988</strong> (Canada),{' '}
-          <strong>112</strong> (EU) — or visit befrienders.org
+          <strong>112</strong> {t('onboarding.disclaimerCrisisSuffix')}
         </span>
         <br /><br />
         <span style={{ fontStyle: 'italic', color: 'var(--muted)' }}>
-          That said — if you show up honestly, you might be surprised what comes back.
-          Trust the process, but tie your camel.
+          {t('onboarding.disclaimerClosing')}
         </span>
       </div>
       <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>
@@ -496,6 +591,115 @@ function WelcomeStep({ onContinue }) {
 }
 
 // ── Step 1: Who You Are ──────────────────────────────────────────────────────
+
+// ── Quiz step ────────────────────────────────────────────────────────────────
+// Seven multi-choice questions, three-way scoring (witness / seeker /
+// attuned). The winning type sets the response-style slider preset and is
+// persisted via /api/auth/quiz-result so it survives a relaunch even if the
+// user closes the app before finishing onboarding.
+function QuizStep({ onResult }) {
+  const { t } = useLanguage();
+  // sub: 'questions' while answering, 'result' once we have a winner.
+  const [sub, setSub] = useState(0);          // 0..QUIZ_QUESTIONS.length-1 OR 'result'
+  const [picks, setPicks] = useState([]);     // accumulated 'witness'|'seeker'|'attuned'
+  const [result, setResult] = useState(null);
+
+  function pick(type) {
+    const next = [...picks, type];
+    if (next.length >= QUIZ_QUESTIONS.length) {
+      // Tally — tie-break order matches the quiz's intended fallback chain.
+      const scores = { witness: 0, seeker: 0, attuned: 0 };
+      for (const k of next) scores[k]++;
+      let bestKey = 'witness';
+      let bestScore = -1;
+      for (const k of ['witness', 'seeker', 'attuned']) {
+        if (scores[k] > bestScore) { bestKey = k; bestScore = scores[k]; }
+      }
+      setPicks(next);
+      setResult(bestKey);
+      setSub('result');
+    } else {
+      setPicks(next);
+      setSub(next.length);
+    }
+  }
+
+  function skip() {
+    onResult('witness');
+  }
+
+  if (sub === 'result' && result) {
+    return (
+      <div style={{ textAlign: 'center', padding: '20px 0' }}>
+        <div style={{ fontSize: '32px', marginBottom: '20px', color: 'var(--muted)' }}>✦</div>
+        <div style={{ ...s.title, marginBottom: '12px' }}>{t(QUIZ_RESULT_LABEL_KEYS[result])}</div>
+        <div style={{ ...s.subtitle, marginBottom: '8px', maxWidth: '360px', margin: '0 auto 8px' }}>
+          {t(QUIZ_RESULT_DESCRIPTION_KEYS[result])}
+        </div>
+        <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '32px', fontStyle: 'italic' }}>
+          {t('onboarding.quiz.adjustAnytime')}
+        </div>
+        <button style={{ ...s.btn, maxWidth: '240px', margin: '0 auto' }} onClick={() => onResult(result)}>
+          {t('common.continue')}
+        </button>
+      </div>
+    );
+  }
+
+  const q = QUIZ_QUESTIONS[sub];
+  return (
+    <>
+      <div style={{ ...s.title, fontSize: '20px', textAlign: 'center', marginBottom: '32px', lineHeight: '1.4' }}>
+        {t(q.questionKey)}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+        {q.answers.map((a) => (
+          <button
+            key={a.type}
+            type="button"
+            onClick={() => pick(a.type)}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--white)'; e.currentTarget.style.color = 'var(--body)'; }}
+            style={{
+              padding: '14px 18px',
+              fontSize: '13px',
+              lineHeight: '1.5',
+              textAlign: 'left',
+              background: 'var(--white)',
+              color: 'var(--body)',
+              border: 'var(--border-style)',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              fontFamily: 'var(--font)',
+              transition: 'background 0.15s, color 0.15s',
+            }}
+          >
+            {t(a.textKey)}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '16px' }}>
+        {QUIZ_QUESTIONS.map((_, i) => (
+          <div
+            key={i}
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: i <= sub ? 'var(--strong)' : 'var(--border)',
+              transition: 'background 0.2s',
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ textAlign: 'center' }}>
+        <button onClick={skip} style={{ ...s.skip, fontSize: '11px', color: 'var(--muted)' }}>
+          {t('onboarding.quiz.skipQuiz')}
+        </button>
+      </div>
+    </>
+  );
+}
 
 function WhoYouAreStep({ data, set, avatarUrl, onAvatarChange, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
   const { t } = useLanguage();
@@ -520,7 +724,7 @@ function WhoYouAreStep({ data, set, avatarUrl, onAvatarChange, onContinue, onBac
         setAvatarError(result.error);
       }
     } catch (err) {
-      setAvatarError('Upload failed. Try a smaller image (under 5 MB).');
+      setAvatarError(t('onboarding.avatarUploadFailed'));
     } finally {
       setUploadingAvatar(false);
       // Reset input so the same file can be selected again if needed.
@@ -536,7 +740,7 @@ function WhoYouAreStep({ data, set, avatarUrl, onAvatarChange, onContinue, onBac
         {t('onboarding.whoYouAreSubtitle')}
       </div>
 
-      <label style={s.label}>Profile photo</label>
+      <label style={s.label}>{t('onboarding.profilePhoto')}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '6px' }}>
         {avatarUrl ? (
           <img
@@ -585,7 +789,7 @@ function WhoYouAreStep({ data, set, avatarUrl, onAvatarChange, onContinue, onBac
             opacity: uploadingAvatar ? 0.6 : 1,
           }}
         >
-          {uploadingAvatar ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Upload photo'}
+          {uploadingAvatar ? t('onboarding.avatarUploading') : avatarUrl ? t('onboarding.avatarChange') : t('onboarding.avatarUpload')}
         </button>
         <input
           ref={avatarInputRef}
@@ -619,17 +823,17 @@ function WhoYouAreStep({ data, set, avatarUrl, onAvatarChange, onContinue, onBac
       />
       <div style={s.hint}>{t('common.optional')}</div>
 
-      <label style={s.label}>{t('onboarding.sex') || 'Sex'}</label>
+      <label style={s.label}>{t('onboarding.sex')}</label>
       <select
         style={s.input}
         value={data.sex}
         onChange={(e) => set('sex', e.target.value)}
       >
         <option value="">—</option>
-        <option value="male">Male</option>
-        <option value="female">Female</option>
-        <option value="intersex">Intersex</option>
-        <option value="prefer_not_to_say">Prefer not to say</option>
+        <option value="male">{t('onboarding.sexMale')}</option>
+        <option value="female">{t('onboarding.sexFemale')}</option>
+        <option value="intersex">{t('onboarding.sexIntersex')}</option>
+        <option value="prefer_not_to_say">{t('onboarding.sexPreferNotToSay')}</option>
       </select>
       <div style={s.hint}>{t('common.optional')}</div>
 
@@ -796,27 +1000,17 @@ function BirthDetailsStep({ data, set, onContinue, onBack, saving }) {
         </div>
       )}
 
-      {astroResults && !calculating && (
-        <div style={s.astroResult}>
-          {astroResults.sun_sign && <div>{t('astro.sun')}: <span style={s.astroValue}>{astroResults.sun_sign}</span></div>}
-          {astroResults.moon_sign && <div>{t('astro.moon')}: <span style={s.astroValue}>{astroResults.moon_sign}</span></div>}
-          {astroResults.rising_sign && <div>{t('astro.rising')}: <span style={s.astroValue}>{astroResults.rising_sign}</span></div>}
-          {astroResults.chinese_zodiac && (
-            <div>{t('astro.chineseZodiac')}: <span style={s.astroValue}>
-              {astroResults.chinese_element ? `${astroResults.chinese_element} ` : ''}{astroResults.chinese_zodiac}
-            </span></div>
-          )}
-          {data.life_path_number && <div>{t('astro.lifePath')}: <span style={s.astroValue}>{data.life_path_number}</span></div>}
-          {data.soul_card && <div>{t('astro.soulCard')}: <span style={s.astroValue}>{data.soul_card}</span></div>}
-        </div>
-      )}
+      {/* Calculated values (sun, moon, rising, Chinese zodiac, life path,
+          soul card) are computed silently in the background and saved to the
+          portrait. Onboarding doesn't display them — the user sees their
+          chart later in the Oracle/Portrait tab. */}
 
       <button
         style={{ ...s.btn, opacity: canContinue ? 1 : 0.5, cursor: canContinue ? 'pointer' : 'not-allowed' }}
         onClick={handleContinue}
         disabled={!canContinue}
       >
-        {calculating ? t('onboarding.calculating') : data.birth_date ? t('onboarding.calculateContinue') : t('common.continue')}
+        {calculating ? t('onboarding.calculating') : t('common.continue')}
       </button>
     </>
   );
@@ -834,7 +1028,7 @@ function PersonalityStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCo
         {t('onboarding.personalitySubtitle')}
       </div>
 
-      <label style={s.label}>MBTI Type</label>
+      <label style={s.label}>{t('onboarding.mbtiLabel')}</label>
       <input
         style={s.input}
         value={data.mbti}
@@ -844,10 +1038,10 @@ function PersonalityStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCo
         autoFocus
       />
       <div style={s.hint}>
-        Not sure? <a href="https://www.16personalities.com/free-personality-test" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--muted)' }}>{t('onboarding.takeTest')}</a>
+        {t('onboarding.notSure')} <a href="https://www.16personalities.com/free-personality-test" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--muted)' }}>{t('onboarding.takeTest')}</a>
       </div>
 
-      <label style={s.label}>Enneagram</label>
+      <label style={s.label}>{t('onboarding.enneagramLabel')}</label>
       <input
         style={s.input}
         value={data.enneagram}
@@ -855,7 +1049,7 @@ function PersonalityStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCo
         placeholder={t('onboarding.enneagramPlaceholder')}
       />
 
-      <label style={s.label}>Human Design</label>
+      <label style={s.label}>{t('onboarding.humanDesignLabel')}</label>
       <input
         style={s.input}
         value={data.human_design}
@@ -872,30 +1066,30 @@ function PersonalityStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCo
 // ── Step 4: Response Style ───────────────────────────────────────────────────
 
 const ONBOARDING_SLIDERS = [
-  { key: 'slider_rational_spiritual',      low: 'Rational',       high: 'Spiritual' },
-  { key: 'slider_gentle_direct',           low: 'Gentle',         high: 'Direct' },
-  { key: 'slider_reflective_action',       low: 'Reflective',     high: 'Action-oriented' },
-  { key: 'slider_light_deep',              low: 'Light touch',    high: 'Deep dive' },
-  { key: 'slider_conversational_poetic',   low: 'Conversational', high: 'Poetic' },
-  { key: 'slider_encouraging_challenging', low: 'Encouraging',    high: 'Challenging' },
-  { key: 'slider_candor',                  low: 'Agreeable',      high: 'Candid' },
-  { key: 'slider_friend_stranger',         low: 'Friend',         high: 'Stranger' },
+  { key: 'slider_rational_spiritual',      lowKey: 'context.sliderRational',     highKey: 'context.sliderSpiritual' },
+  { key: 'slider_gentle_direct',           lowKey: 'context.sliderGentle',       highKey: 'context.sliderDirect' },
+  { key: 'slider_reflective_action',       lowKey: 'context.sliderReflective',   highKey: 'context.sliderAction' },
+  { key: 'slider_light_deep',              lowKey: 'context.sliderLight',        highKey: 'context.sliderDeep' },
+  { key: 'slider_conversational_poetic',   lowKey: 'context.sliderConversational', highKey: 'context.sliderPoetic' },
+  { key: 'slider_encouraging_challenging', lowKey: 'context.sliderEncouraging',  highKey: 'context.sliderChallenging' },
+  { key: 'slider_candor',                  lowKey: 'context.sliderAgreeable',    highKey: 'context.sliderCandid' },
+  { key: 'slider_friend_stranger',         lowKey: 'context.sliderFriend',       highKey: 'context.sliderStranger' },
 ];
 
 function ResponseStyleStep({ data, set, onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
+  const { t } = useLanguage();
   return (
     <>
       <BackButton onClick={onBack} />
-      <div style={s.title}>Response style</div>
+      <div style={s.title}>{t('onboarding.responseStyleTitle')}</div>
       <div style={s.subtitle}>
-        How should the Mirror talk to you? These shape the tone of every reflection.
-        You can fine-tune these later in Settings.
+        {t('onboarding.responseStyleSubtitle')}
       </div>
 
-      {ONBOARDING_SLIDERS.map(({ key, low, high }) => (
+      {ONBOARDING_SLIDERS.map(({ key, lowKey, highKey }) => (
         <div key={key} style={{ marginBottom: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--muted)', width: '90px', textAlign: 'right', flexShrink: 0 }}>{low}</span>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', width: '90px', textAlign: 'right', flexShrink: 0 }}>{t(lowKey)}</span>
             <input
               type="range"
               min="0"
@@ -904,7 +1098,7 @@ function ResponseStyleStep({ data, set, onContinue, onBack, onSkipForNow, onSkip
               value={data[key] ?? (key === 'slider_friend_stranger' ? 30 : 50)}
               onChange={(e) => set(key, Number(e.target.value))}
             />
-            <span style={{ fontSize: '11px', color: 'var(--muted)', width: '90px', flexShrink: 0 }}>{high}</span>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', width: '90px', flexShrink: 0 }}>{t(highKey)}</span>
           </div>
           {key === 'slider_candor' && (data.slider_candor ?? 50) > 65 && (
             <div style={{
@@ -916,10 +1110,7 @@ function ResponseStyleStep({ data, set, onContinue, onBack, onSkipForNow, onSkip
               borderRadius: '2px',
               lineHeight: '1.5',
             }}>
-              <strong>Heads up.</strong> High candor means the Mirror will push back — name
-              avoidance, play devil's advocate, challenge your framing. This can be powerful,
-              but if you're in a vulnerable place, it might not be what you need right now.
-              You can always dial it back later.
+              <strong>{t('onboarding.candorWarningHeading')}</strong> {t('onboarding.candorWarningBody')}
             </div>
           )}
         </div>
@@ -933,11 +1124,10 @@ function ResponseStyleStep({ data, set, onContinue, onBack, onSkipForNow, onSkip
         marginBottom: '24px',
         lineHeight: '1.6',
       }}>
-        There are no wrong answers here. The defaults work well for most people.
-        These become more meaningful once you've written a few entries.
+        {t('onboarding.responseStyleFooter')}
       </div>
 
-      <button style={s.btn} onClick={onContinue}>Continue</button>
+      <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>
       <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
     </>
   );
@@ -949,9 +1139,9 @@ const PERFORMANCE_TIERS = [
   // qwen3.5:2b is intentionally absent — it produces too many comprehension
   // errors and invented aphorisms on /api/reflect to represent the product
   // well. 4b is the practical floor for usable reflection output.
-  { id: 'low',     label: 'Lightweight',        model: 'qwen3.5:4b',  size: '3.4 GB', desc: 'Modern laptops, 6-8 GB VRAM, GTX 1060+' },
-  { id: 'mid',     label: 'Recommended',        model: 'qwen3.5:9b',  size: '6.6 GB', desc: 'Gaming PC / M1 Pro+, 8-12 GB VRAM' },
-  { id: 'high',    label: 'High performance',   model: 'qwen3.5:27b', size: '17 GB',  desc: 'RTX 4080+, M2 Max/Ultra, 16+ GB VRAM' },
+  { id: 'low',  labelKey: 'onboarding.ollamaTier.low.label',  descKey: 'onboarding.ollamaTier.low.desc',  model: 'qwen3.5:4b',  size: '3.4 GB' },
+  { id: 'mid',  labelKey: 'onboarding.ollamaTier.mid.label',  descKey: 'onboarding.ollamaTier.mid.desc',  model: 'qwen3.5:9b',  size: '6.6 GB' },
+  { id: 'high', labelKey: 'onboarding.ollamaTier.high.label', descKey: 'onboarding.ollamaTier.high.desc', model: 'qwen3.5:27b', size: '17 GB'  },
 ];
 
 function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
@@ -975,7 +1165,7 @@ function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving
 
   useEffect(() => { checkOllama(); }, []);
 
-  const tier = PERFORMANCE_TIERS.find(t => t.id === selectedTier);
+  const tier = PERFORMANCE_TIERS.find(pt => pt.id === selectedTier);
   const isInstalled = tier && installedModels.has(tier.model);
 
   async function downloadModel() {
@@ -1065,7 +1255,7 @@ function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving
           </a>
         </div>
         <div>2. {t('onboarding.ollamaStep2')}</div>
-        <div>3. Choose a model below and download it</div>
+        <div>3. {t('onboarding.ollamaStep3Choose')}</div>
       </div>
 
       {/* Ollama status */}
@@ -1093,16 +1283,16 @@ function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving
       {ollamaStatus && (
         <div style={{ marginBottom: '16px' }}>
           <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '10px' }}>
-            Choose your computer's performance level
+            {t('onboarding.ollamaTierHeading')}
           </div>
 
-          {PERFORMANCE_TIERS.map(t => {
-            const active = selectedTier === t.id;
-            const installed = installedModels.has(t.model);
+          {PERFORMANCE_TIERS.map(pt => {
+            const active = selectedTier === pt.id;
+            const installed = installedModels.has(pt.model);
             return (
               <button
-                key={t.id}
-                onClick={() => { setSelectedTier(t.id); setPullDone(false); }}
+                key={pt.id}
+                onClick={() => { setSelectedTier(pt.id); setPullDone(false); }}
                 style={{
                   display: 'block',
                   width: '100%',
@@ -1118,11 +1308,11 @@ function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--strong)' }}>{t.label}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t.model} · {t.size}</span>
-                  {installed && <span style={{ fontSize: '10px', color: '#2ecc71', fontStyle: 'italic' }}>installed</span>}
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--strong)' }}>{t(pt.labelKey)}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{pt.model} · {pt.size}</span>
+                  {installed && <span style={{ fontSize: '10px', color: '#2ecc71', fontStyle: 'italic' }}>{t('onboarding.ollamaInstalled')}</span>}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>{t.desc}</div>
+                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>{t(pt.descKey)}</div>
               </button>
             );
           })}
@@ -1135,18 +1325,18 @@ function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving
                   onClick={handleSelectInstalled}
                   style={{ ...s.btn, background: 'var(--strong)', marginBottom: '0' }}
                 >
-                  Use {tier.model}
+                  {t('onboarding.ollamaUseModel').replace('{model}', tier.model)}
                 </button>
               ) : isInstalled || pullDone ? (
                 <div style={{ fontSize: '12px', color: '#2ecc71', fontWeight: '500', textAlign: 'center', padding: '8px' }}>
-                  {tier.model} is ready to go
+                  {t('onboarding.ollamaModelReady').replace('{model}', tier.model)}
                 </div>
               ) : (
                 <button
                   onClick={downloadModel}
                   style={{ ...s.btn, marginBottom: '0' }}
                 >
-                  Download {tier.model} ({tier.size})
+                  {t('onboarding.ollamaDownloadModel').replace('{model}', tier.model).replace('{size}', tier.size)}
                 </button>
               )}
             </div>
@@ -1183,7 +1373,7 @@ function BackupsStep({ backup, setBackup, onContinue, onBack, onSkipForNow, onSk
 
   async function pickFolder() {
     if (!window.liminal?.pickBackupFolder) {
-      alert('Folder picker is only available in the desktop app.');
+      alert(t('onboarding.backupDesktopOnlyAlert'));
       return;
     }
     const folder = await window.liminal.pickBackupFolder();
@@ -1198,21 +1388,18 @@ function BackupsStep({ backup, setBackup, onContinue, onBack, onSkipForNow, onSk
   return (
     <>
       <BackButton onClick={onBack} />
-      <div style={s.title}>Back up your journal</div>
+      <div style={s.title}>{t('onboarding.backupTitle')}</div>
       <div style={s.subtitle}>
-        Liminal stores everything on your machine — nothing is in the cloud.
-        That privacy comes with a tradeoff: if your disk fails and you don't
-        have a backup, your journal is gone. We can save an encrypted backup
-        every time you close the app.
+        {t('onboarding.backupSubtitle')}
       </div>
 
-      <label style={s.label}>Backup folder</label>
+      <label style={s.label}>{t('onboarding.backupFolderLabel')}</label>
       {backup.backup_location ? (
         <div style={{ ...s.astroResult, wordBreak: 'break-all' }}>
           <span style={s.astroValue}>{backup.backup_location}</span>
         </div>
       ) : (
-        <div style={s.hint}>No folder selected — auto-backup will stay off.</div>
+        <div style={s.hint}>{t('onboarding.backupNoFolder')}</div>
       )}
       <button
         style={{
@@ -1223,22 +1410,22 @@ function BackupsStep({ backup, setBackup, onContinue, onBack, onSkipForNow, onSk
         }}
         onClick={pickFolder}
       >
-        {backup.backup_location ? 'Change folder' : 'Pick folder'}
+        {backup.backup_location ? t('onboarding.backupChangeFolder') : t('onboarding.backupPickFolder')}
       </button>
 
       {backup.backup_location && (
         <>
-          <label style={s.label}>Auto-backup on quit</label>
+          <label style={s.label}>{t('onboarding.backupAutoLabel')}</label>
           <select
             style={s.input}
             value={backup.auto_backup_enabled ? 'on' : 'off'}
             onChange={(e) => setBackup('auto_backup_enabled', e.target.value === 'on')}
           >
-            <option value="on">Enabled</option>
-            <option value="off">Disabled</option>
+            <option value="on">{t('onboarding.backupEnabled')}</option>
+            <option value="off">{t('onboarding.backupDisabled')}</option>
           </select>
 
-          <label style={s.label}>Keep this many backups</label>
+          <label style={s.label}>{t('onboarding.backupKeepLabel')}</label>
           <select
             style={s.input}
             value={backup.max_backups}
@@ -1249,7 +1436,7 @@ function BackupsStep({ backup, setBackup, onContinue, onBack, onSkipForNow, onSk
             <option value="15">15</option>
             <option value="20">20</option>
           </select>
-          <div style={s.hint}>Older backups are deleted automatically.</div>
+          <div style={s.hint}>{t('onboarding.backupRetentionHint')}</div>
         </>
       )}
 

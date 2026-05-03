@@ -566,7 +566,34 @@ async function createWindow() {
     },
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Show on ready-to-show normally. But empirically the renderer can block
+  // for ~18s on first paint after a quit (heavy React bundle + initial
+  // /api/auth/me round-trip), so install a fallback that forces show after
+  // 1.2s if ready-to-show hasn't fired yet.
+  //
+  // On Windows, plain show() respects the OS anti-focus-stealing rules — if
+  // the spawning process didn't have foreground claim (which is the case for
+  // app.relaunch() and sometimes for fresh double-clicks too), the window
+  // appears registered with the OS but stays in the tray-equivalent state
+  // until the user clicks the taskbar / tray icon. The setAlwaysOnTop dance
+  // is the standard Electron pattern to force a real foreground promotion.
+  let shown = false;
+  const forceShow = () => {
+    if (shown || !mainWindow || mainWindow.isDestroyed()) return;
+    shown = true;
+    mainWindow.show();
+    if (process.platform === 'win32') {
+      mainWindow.setAlwaysOnTop(true);
+      mainWindow.setAlwaysOnTop(false);
+    }
+    mainWindow.focus();
+  };
+  mainWindow.once('ready-to-show', () => {
+    try { fs.appendFileSync(path.join(USER_DATA, 'electron-boot.log'),
+      `[${new Date().toISOString()}] ready-to-show fired (shown=${shown})\n`); } catch {}
+    forceShow();
+  });
+  setTimeout(forceShow, 1200);
 
   // Minimize to tray instead of closing
   mainWindow.on('close', (e) => {
@@ -696,10 +723,18 @@ app.on('web-contents-created', (_event, contents) => {
   });
 });
 
-// Detect if launched silently at login (openAtLogin + --hidden arg).
-// On Windows, Electron also reports `wasOpenedAsHidden` via getLoginItemSettings.
-const launchedHidden = process.argv.includes('--hidden')
-  || (process.platform === 'win32' && app.getLoginItemSettings().wasOpenedAsHidden);
+// Detect if launched silently at login. The earlier check also folded in
+// `app.getLoginItemSettings().wasOpenedAsHidden`, but on Windows that path
+// can flip true under conditions the user didn't intend (e.g. a stale
+// login-item registration), making a manual double-click of Liminal.exe
+// open into the tray with no window — looks like a 15-second freeze.
+// Only respect an explicit --hidden flag now; the openLoginItem helper
+// already passes it when the user opted into auto-start.
+const launchedHidden = process.argv.includes('--hidden');
+try {
+  fs.appendFileSync(path.join(USER_DATA, 'electron-boot.log'),
+    `[${new Date().toISOString()}] launchedHidden=${launchedHidden} argv=${JSON.stringify(process.argv)} wasOpenedAsHidden=${app.getLoginItemSettings().wasOpenedAsHidden} openAtLogin=${app.getLoginItemSettings().openAtLogin}\n`);
+} catch {}
 
 app.whenReady().then(async () => {
   await Promise.all([killOrphanBackend(), killOrphanTts()]);
@@ -714,11 +749,17 @@ app.whenReady().then(async () => {
 
   // Always create the tray so the user can bring up the window from it.
   createTray();
+  try { fs.appendFileSync(path.join(USER_DATA, 'electron-boot.log'),
+    `[${new Date().toISOString()}] tray created, launchedHidden=${launchedHidden}\n`); } catch {}
 
   // If auto-started at login, stay in the tray — only open the window when
   // the user explicitly clicks the tray icon.
   if (!launchedHidden) {
+    try { fs.appendFileSync(path.join(USER_DATA, 'electron-boot.log'),
+      `[${new Date().toISOString()}] calling createWindow()\n`); } catch {}
     await createWindow();
+    try { fs.appendFileSync(path.join(USER_DATA, 'electron-boot.log'),
+      `[${new Date().toISOString()}] createWindow() returned, isVisible=${mainWindow?.isVisible?.()}\n`); } catch {}
   }
 });
 
@@ -1000,6 +1041,17 @@ ipcMain.handle('liminal:clipboard-read', () => {
 });
 
 // ── Open on startup ─────────────────────────────────────────────────────────
+
+ipcMain.handle('liminal:set-zoom-factor', (_event, value) => {
+  const v = parseFloat(value);
+  if (!v || isNaN(v)) return false;
+  // Clamp to a sane range — matches Chrome's zoom min/max.
+  const clamped = Math.max(0.25, Math.min(5, v));
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.setZoomFactor(clamped);
+  }
+  return true;
+});
 
 ipcMain.handle('liminal:get-login-item', () => {
   return app.getLoginItemSettings();

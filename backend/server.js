@@ -1,7 +1,16 @@
+// Boot timing — each phase logs its delta from the very first line. Helps
+// diagnose "Liminal takes 15 seconds to start". Remove the markers once the
+// hot spots are addressed.
+const T0 = Date.now();
+const lap = (label) => console.log(`[boot +${(Date.now() - T0).toString().padStart(5)}ms] ${label}`);
+lap('server.js entered');
+
 require('dotenv').config();
+lap('dotenv loaded');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+lap('express + cors required');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,32 +36,39 @@ app.use('/api/tags',     extendTimeout);
 app.use('/api/threads',  extendTimeout);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth',     require('./routes/auth'));
-app.use('/api/entries',  require('./routes/entries'));
-app.use('/api/reflect',  require('./routes/reflect'));
-app.use('/api/portrait', require('./routes/portrait'));
-app.use('/api/tts',      require('./routes/tts'));
-app.use('/api/notion',   require('./routes/notion'));
-app.use('/api/settings', require('./routes/settings'));
-app.use('/api/notes',    require('./routes/notes'));
-app.use('/api/context',  require('./routes/context'));
-app.use('/api/ollama',   require('./routes/ollama'));
-app.use('/api/ask',      require('./routes/ask'));
-app.use('/api/oracle',   require('./routes/oracle'));
-app.use('/api/stt',      require('./routes/stt'));
-app.use('/api/youtube',  require('./routes/youtube'));
-app.use('/api/images',   require('./routes/images'));
-app.use('/api/memories', require('./routes/memories'));
-app.use('/api/cards',    require('./routes/cards'));
-app.use('/api/sky',      require('./routes/sky'));
-app.use('/api/home',     require('./routes/home'));
-app.use('/api/layouts',  require('./routes/layouts'));
-app.use('/api/version',  require('./routes/version'));
-app.use('/api/tags',     require('./routes/tags'));
-app.use('/api/threads',  require('./routes/threads'));
-app.use('/api/search',   require('./routes/search'));
-app.use('/api/media',    require('./routes/media'));
-app.use('/api/debuglog', require('./routes/debuglog'));
+function timedRoute(prefix, modulePath) {
+  const t = Date.now();
+  app.use(prefix, require(modulePath));
+  const dt = Date.now() - t;
+  if (dt > 50) lap(`route ${prefix} loaded (+${dt}ms)`);
+}
+timedRoute('/api/auth',     './routes/auth');
+timedRoute('/api/entries',  './routes/entries');
+timedRoute('/api/reflect',  './routes/reflect');
+timedRoute('/api/portrait', './routes/portrait');
+timedRoute('/api/tts',      './routes/tts');
+timedRoute('/api/notion',   './routes/notion');
+timedRoute('/api/settings', './routes/settings');
+timedRoute('/api/notes',    './routes/notes');
+timedRoute('/api/context',  './routes/context');
+timedRoute('/api/ollama',   './routes/ollama');
+timedRoute('/api/ask',      './routes/ask');
+timedRoute('/api/oracle',   './routes/oracle');
+timedRoute('/api/stt',      './routes/stt');
+timedRoute('/api/youtube',  './routes/youtube');
+timedRoute('/api/images',   './routes/images');
+timedRoute('/api/memories', './routes/memories');
+timedRoute('/api/cards',    './routes/cards');
+timedRoute('/api/sky',      './routes/sky');
+timedRoute('/api/home',     './routes/home');
+timedRoute('/api/layouts',  './routes/layouts');
+timedRoute('/api/version',  './routes/version');
+timedRoute('/api/tags',     './routes/tags');
+timedRoute('/api/threads',  './routes/threads');
+timedRoute('/api/search',   './routes/search');
+timedRoute('/api/media',    './routes/media');
+timedRoute('/api/debuglog', './routes/debuglog');
+lap('all routes loaded');
 
 // ── Production: serve built frontend SPA from same origin (no CORS needed) ──
 // Electron main process sets LIMINAL_FRONTEND_DIST to the absolute path of
@@ -90,6 +106,7 @@ app.get('/api/health', (req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
+  lap(`backend listening on :${PORT}`);
   console.log(`Liminal backend running on http://localhost:${PORT}`);
 
   // Warm up the embedding pipeline in the background so the first reflect

@@ -4,6 +4,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSwipeNav } from '../hooks/useSwipeNav';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
+import { useFirstTourTrigger } from '../components/TutorialContext';
 
 const s = {
   root: {
@@ -417,6 +418,7 @@ function NodeBadge({ type, t }) {
 }
 
 export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNavigateToOracle, initialThreadId, onThreadSelected }) {
+  useFirstTourTrigger('threads');
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('list'); // 'list' | 'detail'
@@ -768,12 +770,13 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
   return (
     <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
       <aside style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, borderRight: 'none', display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
-        <div style={s.sidebarHeader}>
+        <div data-tour-id="threads-intro" style={s.sidebarHeader}>
           <div style={s.sidebarTitle}>{t('threads.title') || 'Threads'}</div>
           <div style={s.sidebarTagline}>{t('threads.tagline') || 'The arcs weaving through your life'}</div>
         </div>
         <div style={s.detectRow}>
           <button
+            data-tour-id="threads-rethread"
             style={{ ...s.detectBtn, ...(detectJob.running ? s.detectBtnDisabled : {}) }}
             onClick={startDetect}
             disabled={detectJob.running}
@@ -817,9 +820,10 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
 
               {(grouped.canonical.length > 0 || grouped.novel.length > 0) && <div style={s.sectionDivider} />}
 
-              <div style={s.sectionLabel}>
+              <div data-tour-id="threads-novel" style={s.sectionLabel}>
                 <span>{t('threads.sectionNovel') || 'Novel'}</span>
                 <button
+                  data-tour-id="threads-add-novel"
                   style={s.addThreadBtn}
                   onClick={() => setShowCustomForm((v) => !v)}
                   title={t('threads.addCustom') || 'Add custom thread'}

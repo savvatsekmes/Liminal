@@ -188,6 +188,7 @@ const addColumnSafe = (table, column, typeAndDefault) => {
 addColumnSafe('portrait', 'chinese_zodiac', 'TEXT');
 addColumnSafe('portrait', 'chinese_element', 'TEXT');
 addColumnSafe('portrait', 'character_description', 'TEXT');
+addColumnSafe('portrait', 'character_description_edited', 'INTEGER DEFAULT 0');
 addColumnSafe('portrait', 'slider_character_influence', 'INTEGER');
 addColumnSafe('portrait', 'slider_candor', 'INTEGER DEFAULT 50');
 addColumnSafe('portrait', 'preferred_name', "TEXT DEFAULT ''");
@@ -214,6 +215,15 @@ addColumnSafe('portrait', 'weather_lng', 'REAL');
 addColumnSafe('users', 'onboarding_complete', 'INTEGER DEFAULT 0');
 addColumnSafe('users', 'avatar_path', 'TEXT');
 addColumnSafe('users', 'terms_accepted_at', 'DATETIME');
+// Onboarding personality quiz: classifies the user as 'witness' | 'seeker' |
+// 'attuned' which drives both home-screen layout and slider defaults.
+// 'liminal' is the legacy default for users who pre-date the quiz.
+addColumnSafe('users', 'layout_preference', "TEXT DEFAULT 'liminal'");
+addColumnSafe('users', 'quiz_completed', 'INTEGER DEFAULT 0');
+// Guided-tour state. JSON array of completed tour IDs (e.g. ["home"]).
+// Drives both first-visit auto-triggers (tour fires when its id is absent)
+// and the Settings → Replay tutorials UI.
+addColumnSafe('users', 'tutorials_seen', "TEXT DEFAULT '[]'");
 // Per-user encryption (see backend/services/userCrypto.js).
 // BLOB columns. encryption_version: 0 = legacy plaintext, 1 = row-encrypted.
 addColumnSafe('users', 'password_salt',             'BLOB');

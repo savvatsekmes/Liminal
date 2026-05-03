@@ -4,7 +4,7 @@ import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MicButton from '../components/MicButton';
 import { useDictation } from '../hooks/useDictation';
 import { useLanguage } from '../i18n/LanguageContext';
-import { getDailyQuote } from '../data/quotes';
+import { getDailyQuote, loadPool } from '../data/quotes';
 import { getHomeStrings } from '../data/homeStrings';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
@@ -13,6 +13,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import LayoutEditor from '../components/LayoutEditor';
 import ThemeToggle from '../components/ThemeToggle';
 import SearchPopup from '../components/SearchPopup';
+import { useFirstTourTrigger } from '../components/TutorialContext';
 import { useTheme } from '../hooks/useTheme';
 import WidgetWrapper from '../components/WidgetWrapper';
 import { DndContext, pointerWithin, rectIntersection, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -80,7 +81,7 @@ const s = {
   },
   statsTable: {
     display: 'grid',
-    gridTemplateColumns: 'auto auto auto minmax(200px, 500px) auto auto',
+    gridTemplateColumns: 'minmax(110px, max-content) minmax(120px, max-content) minmax(130px, max-content) minmax(160px, 1fr) auto auto',
     gap: '0',
     alignItems: 'center',
     overflow: 'hidden',
@@ -329,10 +330,10 @@ const s = {
   },
   dailyCardReading: {
     flex: 2,
-    fontSize: '11px',
+    fontSize: '14px',
     color: 'var(--body)',
     fontStyle: 'italic',
-    lineHeight: '1.6',
+    lineHeight: '1.7',
     minWidth: 0,
   },
   cardActions: {
@@ -537,7 +538,7 @@ const s = {
   },
   archetypePopup: {
     position: 'absolute',
-    bottom: '42px',
+    top: '42px',
     right: 0,
     background: 'var(--white)',
     borderRadius: '12px',
@@ -545,6 +546,8 @@ const s = {
     boxShadow: '0 4px 16px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.06)',
     zIndex: 50,
     minWidth: '160px',
+    maxHeight: '60vh',
+    overflowY: 'auto',
   },
   archetypeOption: {
     display: 'flex',
@@ -928,10 +931,11 @@ function pickRandom(arr, n) {
   return copy.slice(0, n);
 }
 
-export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNavigateToThreads, onNewEntry, onNewNote, onNewConversation, onLogout, onLock, onNavigateToSettings }) {
+export default function HomePage({ username, avatarUrl, layoutPreference, onNavigateToEntry, onNavigateToNote, onNavigateToOracle, onNavigateToSky, onNavigateToCards, onNavigateToPortrait, onNavigateToThreads, onNewEntry, onNewNote, onNewConversation, onLogout, onLock, onNavigateToSettings }) {
+  useFirstTourTrigger('home');
   const { t, lang } = useLanguage();
   const isMobile = useIsMobile();
-  const layout = useLayout(isMobile);
+  const layout = useLayout(isMobile, layoutPreference);
   const { theme } = useTheme();
   const [searchOpen, setSearchOpen] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -981,6 +985,10 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
 
   // Quick Ask state
   const [question, setQuestion] = useState('');
+  // Quick Action mode: the textarea on the home page is a 3-way input.
+  // 'entry' / 'note' create a new journal entry / note seeded with the typed
+  // text; 'ask' kicks off an inline ask-the-oracle response in place.
+  const [quickMode, setQuickMode] = useState('entry');
   const [archetype, setArchetype] = useState('Auto');
   const [archetypeOpen, setArchetypeOpen] = useState(false);
   const [customArchetypesList, setCustomArchetypesList] = useState([]);
@@ -1075,14 +1083,31 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   const quoteAudioRef = useRef(null);
   const quoteCancelRef = useRef(false);
   const [quoteSaved, setQuoteSaved] = useState(false);
+  // Quote pool is now dynamic-imported per language to keep the main bundle
+  // small. We render nothing in the quote widget until the pool resolves.
+  const [quotePoolReady, setQuotePoolReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setQuotePoolReady(false);
+    loadPool(lang).then(() => { if (!cancelled) setQuotePoolReady(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [lang]);
   const [pulseSaved, setPulseSaved] = useState(false);
   const [insightSaved, setInsightSaved] = useState(false);
 
   const homeStrings = useMemo(() => getHomeStrings(lang), [lang]);
 
-  // Suggested questions — pick 4 once per session, re-pick when language changes
-  const suggested = useMemo(() => pickRandom(homeStrings.questionPool, 4), [homeStrings]);
-  const dailyPrompt = useMemo(() => getDailyPrompt(homeStrings.quickAskPrompts), [homeStrings]);
+  // Daily Quick Action placeholder, scoped to the current mode. Each mode has
+  // its own prompt pool in homeStrings; we pick today's index out of the
+  // active list so the textarea hint matches what pressing Enter will do.
+  const dailyPrompt = useMemo(() => {
+    const pool = quickMode === 'entry'
+      ? homeStrings.quickEntryPrompts
+      : quickMode === 'note'
+        ? homeStrings.quickNotePrompts
+        : homeStrings.quickAskPrompts;
+    return getDailyPrompt(pool || homeStrings.quickAskPrompts);
+  }, [homeStrings, quickMode]);
 
   const textareaRef = useRef(null);
   const greetingRowRef = useRef(null);
@@ -1283,6 +1308,28 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, [archetypeOpen]);
+
+  // Dispatcher for the Quick Action submit. In 'entry' / 'note' mode the
+  // typed text seeds a new journal entry / note via sessionStorage so the
+  // destination editor can pick it up; in 'ask' mode it streams an answer
+  // inline. This is what the home tour's mode toggle controls.
+  function handleQuickSubmit() {
+    const q = question.trim();
+    if (!q || loading) return;
+    if (quickMode === 'entry') {
+      try { sessionStorage.setItem('liminal_pending_entry_body', q); } catch {}
+      setQuestion('');
+      onNewEntry?.();
+      return;
+    }
+    if (quickMode === 'note') {
+      try { sessionStorage.setItem('liminal_pending_note_body', q); } catch {}
+      setQuestion('');
+      onNewNote?.();
+      return;
+    }
+    handleAsk();
+  }
 
   async function handleAsk() {
     const q = question.trim();
@@ -1517,6 +1564,21 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
     setTimeout(() => textareaRef.current?.focus(), 50);
   }
 
+  // Switching to entry / note mode while the Quick Ask answer panel is open
+  // collapses it — the split-pane layout only makes sense for ask. Doing the
+  // reset here keeps the toggle behaviour predictable: clicking Journal or
+  // Note instantly returns the home to a single pill.
+  function handleQuickModeChange(nextMode) {
+    if (quickMode === 'ask' && nextMode !== 'ask' && (loading || answer)) {
+      setAnswer(null);
+      setAnsweredQuestion('');
+      setAnsweredArchetype('');
+      setRowHeight(null);
+      stopSpeak(audioRef, cancelRef); setPlaying(false);
+    }
+    setQuickMode(nextMode);
+  }
+
   // ── Custom collision: pointer-first, then rect intersection fallback ──────
   function customCollision(args) {
     const pointer = pointerWithin(args);
@@ -1538,13 +1600,18 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
   function renderWidget(widgetId, size) {
     switch (widgetId) {
       case 'quote': {
-        const q = getDailyQuote(lang, userQuotes);
+        const q = quotePoolReady ? getDailyQuote(lang, userQuotes) : null;
+        if (!q) {
+          return (
+            <div style={{ ...s.quoteBlock, ...(isMobile ? { marginBottom: '16px', paddingLeft: '10px' } : {}) }} />
+          );
+        }
         return (
           <div style={{ ...s.quoteBlock, ...(isMobile ? { marginBottom: '16px', paddingLeft: '10px' } : {}) }}>
             <span style={s.quoteText}>"{q.text}"</span>
             <span style={s.pulseAttribution}>
               {q.author && <span>— {q.author}</span>}
-              <button style={s.pulseSpeaker} onClick={() => handleQuoteSpeak(q.text)} title="Read aloud">
+              <button data-tour-id="home-quote-speak" style={s.pulseSpeaker} onClick={() => handleQuoteSpeak(q.text)} title="Read aloud">
                 <WaveformIcon playing={quotePlaying} />
               </button>
               <button style={s.cardActionBtn} onClick={() => handleSaveQuote(q)}>{quoteSaved ? '✓ Saved' : '+ Save to journal'}</button>
@@ -1797,7 +1864,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                       : { borderLeft: '1px solid var(--border)', paddingLeft: '20px' }),
                     display: 'flex', flexDirection: 'column', justifyContent: 'center',
                   }}>
-                    <p style={{ fontSize: '12px', lineHeight: '1.6', color: 'var(--body)', margin: 0, fontStyle: 'italic', opacity: 0.85 }}>{portraitSnippet}</p>
+                    <p style={{ fontSize: '14px', lineHeight: '1.7', color: 'var(--body)', margin: 0, fontStyle: 'italic', opacity: 0.85 }}>{portraitSnippet}</p>
                     <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                       <button style={{ ...s.cardActionBtn, color: snippetPlaying ? 'var(--strong)' : 'var(--muted)' }} onClick={handleSnippetSpeak} title="Read aloud">
                         <WaveformIcon playing={snippetPlaying} />
@@ -2238,8 +2305,9 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             </div>
             {!layout.editMode && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                <ThemeToggle size="sm" />
+                <span data-tour-id="home-theme-toggle" style={{ display: 'inline-flex' }}><ThemeToggle size="sm" /></span>
                 <button
+                  data-tour-id="home-edit-layout"
                   onClick={() => layout.setEditMode(true)}
                   style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
                   title="Edit layout"
@@ -2248,6 +2316,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                   Edit
                 </button>
                 <button
+                  data-tour-id="home-search"
                   onClick={() => setSearchOpen(true)}
                   title="Search"
                   style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px' }}
@@ -2260,7 +2329,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           </div>
 
           {/* ── Quick Ask (compact) ── */}
-          <div style={{ ...s.askCard, marginBottom: '16px' }}>
+          <div data-tour-id="home-quick-action" style={{ ...s.askCard, marginBottom: '16px' }}>
             <textarea
               ref={textareaRef}
               style={{ ...s.textarea, padding: '14px 14px 8px', minHeight: '48px', fontSize: '14px' }}
@@ -2268,84 +2337,76 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); }
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSubmit(); }
               }}
               rows={2}
             />
             <div style={{ ...s.askCardFooter, padding: '6px 10px 10px' }}>
-              {!loading && !answer && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', flex: 1, alignItems: 'center', overflow: 'hidden' }}>
-                  {suggested.slice(0, 2).map((q) => (
-                    <button
-                      key={q}
-                      style={{ ...s.suggestedPill, margin: 0, fontSize: '10px', padding: '2px 8px' }}
-                      onClick={() => setQuestion(q)}
-                    >
-                      {q}
-                    </button>
-                  ))}
+              <div style={{ flex: 1 }} />
+              {/* Archetype picker is only relevant when asking the oracle —
+                  journal entries and notes don't run through an archetype
+                  voice, so the icon is hidden in those modes. */}
+              {quickMode === 'ask' && (
+                <div style={{ position: 'relative' }} ref={archetypeRef}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
+                    title={archetype}
+                    type="button"
+                    style={{
+                      ...s.charBtn,
+                      width: '30px', height: '30px',
+                      background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                      color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
+                      boxShadow: archetypeOpen
+                        ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                        : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    {(() => {
+                      const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
+                      const custom = customArchetypesList.find(a => a.name === archetype);
+                      if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={18} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
+                      if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={18} color={custom.color || 'var(--strong)'} />;
+                      return <ArchetypeIcon />;
+                    })()}
+                  </button>
+                  {archetypeOpen && (
+                    <div style={{ ...s.archetypePopup, top: '38px' }}>
+                      {BUILT_IN_ARCHETYPES.map((a) => (
+                        <button
+                          key={a.value}
+                          style={{
+                            ...s.archetypeOption,
+                            fontWeight: archetype === a.value ? '600' : '400',
+                            color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
+                          }}
+                          onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
+                        >
+                          <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
+                          <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
+                        </button>
+                      ))}
+                      {customArchetypesList.length > 0 && (
+                        <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
+                      )}
+                      {customArchetypesList.map((c) => (
+                        <button
+                          key={c.name}
+                          style={{
+                            ...s.archetypeOption,
+                            fontWeight: archetype === c.name ? '600' : '400',
+                            color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
+                          }}
+                          onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
+                        >
+                          <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
+                          <span style={{ marginLeft: '8px' }}>{c.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-              {(loading || answer) && <div style={{ flex: 1 }} />}
-              <div style={{ position: 'relative' }} ref={archetypeRef}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
-                  title={archetype}
-                  type="button"
-                  style={{
-                    ...s.charBtn,
-                    width: '30px', height: '30px',
-                    background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
-                    color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
-                    boxShadow: archetypeOpen
-                      ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
-                      : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
-                  }}
-                >
-                  {(() => {
-                    const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
-                    const custom = customArchetypesList.find(a => a.name === archetype);
-                    if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={18} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
-                    if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={18} color={custom.color || 'var(--strong)'} />;
-                    return <ArchetypeIcon />;
-                  })()}
-                </button>
-                {archetypeOpen && (
-                  <div style={{ ...s.archetypePopup, bottom: '38px' }}>
-                    {BUILT_IN_ARCHETYPES.map((a) => (
-                      <button
-                        key={a.value}
-                        style={{
-                          ...s.archetypeOption,
-                          fontWeight: archetype === a.value ? '600' : '400',
-                          color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
-                        }}
-                        onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
-                      >
-                        <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
-                        <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
-                      </button>
-                    ))}
-                    {customArchetypesList.length > 0 && (
-                      <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
-                    )}
-                    {customArchetypesList.map((c) => (
-                      <button
-                        key={c.name}
-                        style={{
-                          ...s.archetypeOption,
-                          fontWeight: archetype === c.name ? '600' : '400',
-                          color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
-                        }}
-                        onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
-                      >
-                        <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
-                        <span style={{ marginLeft: '8px' }}>{c.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
               <MicButton
                 isRecording={isDictating}
                 isProcessing={isDictatingProcessing}
@@ -2354,11 +2415,16 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
               />
               <button
                 style={{ ...s.askBtn, opacity: loading || !question.trim() ? 0.4 : 1, padding: '6px 14px', fontSize: '12px' }}
-                onClick={handleAsk}
+                onClick={handleQuickSubmit}
                 disabled={loading || !question.trim()}
               >
-                {t('home.ask')}
+                {quickMode === 'entry'
+                  ? `+ ${t('nav.journal')}`
+                  : quickMode === 'note'
+                    ? `+ ${t('nav.notes')}`
+                    : t('home.ask')}
               </button>
+              <QuickModeToggle mode={quickMode} onChange={handleQuickModeChange} />
             </div>
           </div>
 
@@ -2489,8 +2555,9 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
             </div>
             {!layout.editMode && (
               <div style={{ alignSelf: 'flex-end', marginTop: 'auto', marginRight: '-14px', marginBottom: '-4px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ThemeToggle size="sm" />
+                <span data-tour-id="home-theme-toggle" style={{ display: 'inline-flex' }}><ThemeToggle size="sm" /></span>
                 <button
+                  data-tour-id="home-edit-layout"
                   onClick={() => layout.setEditMode(true)}
                   style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.color = 'var(--strong)'; }}
@@ -2500,6 +2567,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                   Edit layout
                 </button>
                 <button
+                  data-tour-id="home-search"
                   onClick={() => setSearchOpen(true)}
                   title="Search"
                   style={{ background: 'none', border: 'var(--border-style)', borderRadius: '19px', cursor: 'pointer', fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', transition: 'background 0.12s, color 0.12s' }}
@@ -2514,7 +2582,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           </div>
           {/* Quick Ask inline */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'row', gap: '14px', minWidth: 0 }}>
-            <div style={{ ...s.askCard, marginBottom: 0, flex: (loading || answer) ? 1 : 1, display: 'flex', flexDirection: 'column', transition: 'flex 0.3s ease' }}>
+            <div data-tour-id="home-quick-action" style={{ ...s.askCard, marginBottom: 0, flex: (loading || answer) ? 1 : 1, display: 'flex', flexDirection: 'column', transition: 'flex 0.3s ease' }}>
               <textarea
                 ref={textareaRef}
                 style={s.textarea}
@@ -2522,89 +2590,77 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSubmit(); }
                 }}
                 rows={2}
               />
               <div style={{ ...s.askCardFooter, marginTop: 'auto' }}>
-                {!loading && !answer && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', flex: 1, alignItems: 'center', overflow: 'hidden' }}>
-                    {suggested.map((q) => (
-                      <button
-                        key={q}
-                        style={{ ...s.suggestedPill, margin: 0, fontSize: '11px', padding: '3px 10px' }}
-                        onClick={() => setQuestion(q)}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--near-white)'; e.currentTarget.style.borderColor = 'var(--strong)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--white)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
-                      >
-                        {q}
-                      </button>
-                    ))}
+                <div style={{ flex: 1 }} />
+                {/* Hidden in entry / note modes — only Quick Ask uses an archetype voice. */}
+                {quickMode === 'ask' && (
+                  <div style={{ position: 'relative' }} ref={archetypeRef}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
+                      title={archetype}
+                      type="button"
+                      style={{
+                        ...s.charBtn,
+                        background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                        color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
+                        boxShadow: archetypeOpen
+                          ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                          : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+                      }}
+                    >
+                      {(() => {
+                        const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
+                        const custom = customArchetypesList.find(a => a.name === archetype);
+                        if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
+                        if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={20} color={custom.color || 'var(--strong)'} />;
+                        return <ArchetypeIcon />;
+                      })()}
+                    </button>
+                    {archetypeOpen && (
+                      <div style={s.archetypePopup}>
+                        {BUILT_IN_ARCHETYPES.map((a) => (
+                          <button
+                            key={a.value}
+                            style={{
+                              ...s.archetypeOption,
+                              fontWeight: archetype === a.value ? '600' : '400',
+                              color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
+                            }}
+                            onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
+                            <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
+                          </button>
+                        ))}
+                        {customArchetypesList.length > 0 && (
+                          <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
+                        )}
+                        {customArchetypesList.map((c) => (
+                          <button
+                            key={c.name}
+                            style={{
+                              ...s.archetypeOption,
+                              fontWeight: archetype === c.name ? '600' : '400',
+                              color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
+                            }}
+                            onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
+                            <span style={{ marginLeft: '8px' }}>{c.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-                {(loading || answer) && <div style={{ flex: 1 }} />}
-                <div style={{ position: 'relative' }} ref={archetypeRef}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setArchetypeOpen(!archetypeOpen); }}
-                    title={archetype}
-                    type="button"
-                    style={{
-                      ...s.charBtn,
-                      background: archetypeOpen ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
-                      color: archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)',
-                      boxShadow: archetypeOpen
-                        ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
-                        : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
-                    }}
-                  >
-                    {(() => {
-                      const builtIn = BUILT_IN_ARCHETYPES.find(a => a.value === archetype);
-                      const custom = customArchetypesList.find(a => a.name === archetype);
-                      if (builtIn) return <ArchetypeAvatar archetype={builtIn} size={20} color={archetype !== 'Auto' ? 'var(--strong)' : 'var(--muted)'} />;
-                      if (custom) return <ArchetypeAvatar archetype={{ value: custom.name, image: custom.image }} size={20} color={custom.color || 'var(--strong)'} />;
-                      return <ArchetypeIcon />;
-                    })()}
-                  </button>
-                  {archetypeOpen && (
-                    <div style={s.archetypePopup}>
-                      {BUILT_IN_ARCHETYPES.map((a) => (
-                        <button
-                          key={a.value}
-                          style={{
-                            ...s.archetypeOption,
-                            fontWeight: archetype === a.value ? '600' : '400',
-                            color: archetype === a.value ? 'var(--strong)' : 'var(--body)',
-                          }}
-                          onClick={() => { setArchetype(a.value); setArchetypeOpen(false); }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <ArchetypeAvatar archetype={a} size={18} color={archetype === a.value ? 'var(--strong)' : 'var(--muted)'} />
-                          <span style={{ marginLeft: '8px' }}>{t(a.key)}</span>
-                        </button>
-                      ))}
-                      {customArchetypesList.length > 0 && (
-                        <div style={{ height: '1px', background: 'var(--border)', margin: '4px 8px' }} />
-                      )}
-                      {customArchetypesList.map((c) => (
-                        <button
-                          key={c.name}
-                          style={{
-                            ...s.archetypeOption,
-                            fontWeight: archetype === c.name ? '600' : '400',
-                            color: archetype === c.name ? 'var(--strong)' : 'var(--body)',
-                          }}
-                          onClick={() => { setArchetype(c.name); setArchetypeOpen(false); }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'var(--near-white)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <ArchetypeAvatar archetype={{ value: c.name, image: c.image }} size={18} color={c.color || 'var(--muted)'} />
-                          <span style={{ marginLeft: '8px' }}>{c.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
                 <MicButton
                   isRecording={isDictating}
                   isProcessing={isDictatingProcessing}
@@ -2613,11 +2669,16 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
                 />
                 <button
                   style={{ ...s.askBtn, opacity: loading || !question.trim() ? 0.4 : 1 }}
-                  onClick={handleAsk}
+                  onClick={handleQuickSubmit}
                   disabled={loading || !question.trim()}
                 >
-                  {t('home.ask')}
+                  {quickMode === 'entry'
+                    ? `+ ${t('nav.journal')}`
+                    : quickMode === 'note'
+                      ? `+ ${t('nav.notes')}`
+                      : t('home.ask')}
                 </button>
+                <QuickModeToggle mode={quickMode} onChange={handleQuickModeChange} />
               </div>
             </div>
             {/* Inline answer panel */}
@@ -2666,6 +2727,7 @@ export default function HomePage({ username, avatarUrl, onNavigateToEntry, onNav
           <LayoutEditor
             savedLayouts={layout.savedLayouts}
             activeLayoutId={layout.activeLayoutId}
+            activePresetKey={layout.activePresetKey}
             isLiminalDefault={layout.isLiminalDefault}
             dirty={layout.dirty}
             availableWidgets={layout.availableWidgets}
@@ -2738,6 +2800,84 @@ function ArchetypeIcon() {
       <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.2" />
       <path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// Quick Action mode-toggle icons. Open book = journal entry, page = note,
+// chat-bubble = ask. Stroke-only so they pick up `currentColor` from the
+// active/inactive button styling.
+// Match the left-nav icons exactly so the Quick Action toggles read as the
+// same actions you'd take from the sidebar.
+function QuickEntryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 4c2-1 4-1.5 6-1.5S12 3.5 12 4.5c0-1 3.5-2 6-1.5s4 .5 4 1.5v14c0-.5-2-1-4-1s-4.5.5-6 1.5c-1.5-1-3.5-1.5-6-1.5s-3.5.5-4 1V4z" />
+      <line x1="12" y1="4.5" x2="12" y2="19.5" />
+    </svg>
+  );
+}
+function QuickNoteIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="16 2 16 8 22 8" />
+      <line x1="10" y1="13" x2="18" y2="13" />
+      <line x1="10" y1="17" x2="15" y2="17" />
+    </svg>
+  );
+}
+function QuickAskIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="13" height="7" rx="3" />
+      <rect x="8" y="13.5" width="13" height="7" rx="3" fill="currentColor" />
+    </svg>
+  );
+}
+
+// 3-mode toggle row used by the Quick Action card. Renders three icon buttons
+// with `data-tour-id="home-quick-mode-${id}"` so the home tour can spotlight
+// each mode in turn.
+function QuickModeToggle({ mode, onChange }) {
+  const items = [
+    { id: 'entry', label: 'Journal entry', Icon: QuickEntryIcon },
+    { id: 'note',  label: 'Note',          Icon: QuickNoteIcon  },
+    { id: 'ask',   label: 'Ask',           Icon: QuickAskIcon   },
+  ];
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+      {items.map((it) => {
+        const active = mode === it.id;
+        return (
+          <button
+            key={it.id}
+            type="button"
+            data-tour-id={`home-quick-mode-${it.id}`}
+            onClick={() => onChange(it.id)}
+            title={it.label}
+            style={{
+              width: '30px',
+              height: '30px',
+              borderRadius: '50%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: active ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+              color: active ? 'var(--strong)' : 'var(--muted)',
+              border: 'none',
+              cursor: 'pointer',
+              flexShrink: 0,
+              boxShadow: active
+                ? 'inset 0 1px 2px rgba(0,0,0,0.08)'
+                : '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+              transition: 'background 0.12s, color 0.12s',
+            }}
+          >
+            <it.Icon />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

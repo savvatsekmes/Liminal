@@ -92,6 +92,65 @@ export const LIMINAL_LAYOUT = [
   { id: 'rhythm', width: 60 },
 ];
 
+// Onboarding-quiz preset layouts. Selected via the "preset:<name>" token in
+// selectLayout, or auto-applied at boot from users.layout_preference. Live
+// in code (never stored in home_layouts) so they stay editable across
+// versions without DB migrations.
+export const WITNESS_LAYOUT = [
+  // Psychology / self-inquiry — clean, no astrology or tarot.
+  { id: 'quote',   width: 100 },
+  { id: 'stats',   width: 50 },
+  { id: 'threads', width: 50 },
+  { id: 'pulse',   width: 100 },
+  { id: 'goals',   width: 50 },
+  { id: 'rhythm',  width: 50 },
+  { id: 'insight', width: 100 },
+  { id: 'themes',  width: 50 },
+  { id: 'lookback', width: 50 },
+];
+export const SEEKER_LAYOUT = [
+  // Spiritual / contemplative — tarot stays, portrait isn't here. The home
+  // portrait widget would render in personality-only mode for Seeker if it
+  // ever appears (driven by users.layout_preference).
+  { id: 'quote',   width: 100 },
+  { id: 'stats',   width: 50 },
+  { id: 'threads', width: 50 },
+  { id: 'pulse',   width: 100 },
+  { id: 'tarot',   width: 60 },
+  { id: 'goals',   width: 40 },
+  { id: 'insight', width: 100 },
+  { id: 'themes',  width: 40 },
+  { id: 'rhythm',  width: 60 },
+];
+export const ATTUNED_LAYOUT = [
+  // Full cosmic — pulled from the user's saved "The Attuned" iteration so the
+  // default attuned layout matches what they tuned by hand.
+  { id: 'quote',    width: 100 },
+  { id: 'moon',     width: 40 },
+  { id: 'tarot',    width: 60 },
+  { id: 'pulse',    width: 100 },
+  { id: 'stats',    width: 50 },
+  { id: 'portrait', width: 50 },
+  { id: 'insight',  width: 100 },
+  { id: 'goals',    width: 20 },
+  { id: 'themes',   width: 30 },
+  { id: 'rhythm',   width: 50 },
+];
+
+const PRESET_LAYOUTS = {
+  witness: WITNESS_LAYOUT,
+  seeker:  SEEKER_LAYOUT,
+  attuned: ATTUNED_LAYOUT,
+  liminal: LIMINAL_LAYOUT,
+};
+// Display labels for the layout-editor dropdown.
+export const PRESET_LABELS = {
+  witness: 'The Witness',
+  seeker:  'The Seeker',
+  attuned: 'The Attuned',
+};
+export const PRESET_KEYS = ['witness', 'seeker', 'attuned'];
+
 // Mobile uses a single layout persisted locally — separate from the
 // backend-synced desktop layouts so the two can be tuned independently.
 const MOBILE_STORAGE_KEY = 'liminal_mobile_layout';
@@ -120,10 +179,16 @@ function loadMobileLayout() {
   }
 }
 
-export function useLayout(isMobile = false) {
+export function useLayout(isMobile = false, layoutPreference = 'liminal') {
   const [savedLayouts, setSavedLayouts] = useState([]);
-  const [activeLayoutId, setActiveLayoutId] = useState(null); // null = Liminal default
-  const [desktopLayout, setDesktopLayout] = useState(LIMINAL_LAYOUT);
+  const [activeLayoutId, setActiveLayoutId] = useState(null); // null = preset/default
+  // When no saved layout is active, the desktop falls back to whichever
+  // preset matches `layoutPreference` (set by the onboarding quiz). The
+  // legacy 'liminal' value resolves to LIMINAL_LAYOUT, so existing users
+  // see no change.
+  const initialPreset = PRESET_LAYOUTS[layoutPreference] || LIMINAL_LAYOUT;
+  const [desktopLayout, setDesktopLayout] = useState(initialPreset);
+  const [activePresetKey, setActivePresetKey] = useState(layoutPreference || 'liminal');
   const [mobileLayout, setMobileLayout] = useState(() => loadMobileLayout());
   const [editMode, setEditModeRaw] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -163,6 +228,19 @@ export function useLayout(isMobile = false) {
     }).catch(() => setLoaded(true));
   }, [isMobile]);
 
+  // React to a mid-session change in layoutPreference (e.g. user re-takes
+  // the quiz from settings). Only swap if no saved layout is active and
+  // the user isn't mid-edit — otherwise we'd nuke their in-progress work.
+  useEffect(() => {
+    if (isMobile) return;
+    if (activeLayoutId !== null) return;
+    if (dirty) return;
+    const preset = PRESET_LAYOUTS[layoutPreference];
+    if (!preset) return;
+    setActivePresetKey(layoutPreference);
+    setDesktopLayout(preset);
+  }, [layoutPreference, activeLayoutId, dirty, isMobile]);
+
   // Normalize widget_order: ensure each item is { id, width }
   function normalizeWidgetOrder(order) {
     if (!Array.isArray(order)) return LIMINAL_LAYOUT;
@@ -175,14 +253,32 @@ export function useLayout(isMobile = false) {
     });
   }
 
-  // Switch to a saved layout
+  // Switch to a saved layout (numeric id), the Liminal default (null), the
+  // custom-unsaved mode ('custom'), or one of the quiz presets via a
+  // 'preset:witness' | 'preset:seeker' | 'preset:attuned' | 'preset:liminal' token.
   const selectLayout = useCallback((layoutId) => {
     if (layoutId === null) {
-      // Liminal default
+      // Liminal default — alias for the 'liminal' preset.
       setActiveLayoutId(null);
+      setActivePresetKey('liminal');
       setCurrentLayout(LIMINAL_LAYOUT);
       setDirty(false);
       apiFetch('/api/layouts/deactivate', { method: 'PUT' }).catch(() => {});
+    } else if (typeof layoutId === 'string' && layoutId.startsWith('preset:')) {
+      const key = layoutId.slice('preset:'.length);
+      const preset = PRESET_LAYOUTS[key];
+      if (!preset) return;
+      setActiveLayoutId(null);
+      setActivePresetKey(key);
+      setCurrentLayout(preset);
+      setDirty(false);
+      // Persist as the user's preference + clear any active saved layout.
+      apiFetch('/api/layouts/deactivate', { method: 'PUT' }).catch(() => {});
+      apiFetch('/api/auth/quiz-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout: key }),
+      }).catch(() => {});
     } else if (layoutId === 'custom') {
       // Switch to custom unsaved mode, keep current layout
       setActiveLayoutId(null);
@@ -299,13 +395,16 @@ export function useLayout(isMobile = false) {
   // Which widgets are available to add
   const availableWidgets = ALL_WIDGET_IDS.filter(id => !currentLayout.some(w => w.id === id));
 
-  // Is the current layout the locked Liminal default?
-  const isLiminalDefault = activeLayoutId === null && !dirty;
+  // Is the current layout the locked Liminal default? The 3 quiz presets
+  // (witness/seeker/attuned) deliberately don't count — users can edit them
+  // and save as a new custom layout.
+  const isLiminalDefault = activeLayoutId === null && !dirty && activePresetKey === 'liminal';
 
   return {
     currentLayout,
     savedLayouts,
     activeLayoutId,
+    activePresetKey, // which preset is in effect when no saved layout is active
     editMode,
     setEditMode,
     dirty,

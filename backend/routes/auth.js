@@ -268,13 +268,18 @@ router.post('/recovery-key/regenerate', requireAuth, async (req, res) => {
 
 // ── GET /api/auth/me ─────────────────────────────────────────────────────────
 router.get('/me', requireAuth, (req, res) => {
-  const user = db.prepare('SELECT username, onboarding_complete, avatar_path FROM users WHERE id = ?').get(req.userId);
+  const user = db.prepare('SELECT username, onboarding_complete, avatar_path, layout_preference, quiz_completed, tutorials_seen FROM users WHERE id = ?').get(req.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  let tutorialsSeen = [];
+  try { const parsed = JSON.parse(user.tutorials_seen || '[]'); if (Array.isArray(parsed)) tutorialsSeen = parsed; } catch {}
   res.json({
     user_id: req.userId,
     username: user.username,
     onboarding_complete: !!user.onboarding_complete,
     avatar_url: user.avatar_path ? `/api/auth/avatar/${req.userId}?t=${Date.now()}` : null,
+    layout_preference: user.layout_preference || 'liminal',
+    quiz_completed: !!user.quiz_completed,
+    tutorials_seen: tutorialsSeen,
     key_loaded: rowCrypto.hasUserKey(req.userId),
   });
 });
@@ -300,6 +305,46 @@ router.get('/avatar/:userId', (req, res) => {
 router.post('/complete-onboarding', requireAuth, (req, res) => {
   db.prepare('UPDATE users SET onboarding_complete = 1 WHERE id = ?').run(req.userId);
   res.json({ success: true });
+});
+
+// ── POST /api/auth/quiz-result { layout: 'witness' | 'seeker' | 'attuned' } ─
+// Recorded when the user finishes (or skips) the onboarding personality quiz.
+// Drives the home-screen layout and slider defaults — the actual slider
+// values are written separately to /api/portrait by the onboarding flow.
+const VALID_LAYOUT_PREFS = new Set(['witness', 'seeker', 'attuned', 'liminal']);
+router.post('/quiz-result', requireAuth, (req, res) => {
+  const layout = String(req.body?.layout || '').toLowerCase();
+  if (!VALID_LAYOUT_PREFS.has(layout)) {
+    return res.status(400).json({ error: `layout must be one of ${Array.from(VALID_LAYOUT_PREFS).join(', ')}` });
+  }
+  db.prepare('UPDATE users SET layout_preference = ?, quiz_completed = 1 WHERE id = ?').run(layout, req.userId);
+  res.json({ success: true, layout_preference: layout });
+});
+
+// ── POST /api/auth/tutorial-seen { id: 'home' | ... } ───────────────────────
+// Append a tour id to users.tutorials_seen (idempotent — won't double-add).
+function readTutorialsSeen(userId) {
+  const row = db.prepare('SELECT tutorials_seen FROM users WHERE id = ?').get(userId);
+  try { const parsed = JSON.parse(row?.tutorials_seen || '[]'); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
+router.post('/tutorial-seen', requireAuth, (req, res) => {
+  const id = String(req.body?.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  const seen = readTutorialsSeen(req.userId);
+  if (!seen.includes(id)) seen.push(id);
+  db.prepare('UPDATE users SET tutorials_seen = ? WHERE id = ?').run(JSON.stringify(seen), req.userId);
+  res.json({ success: true, tutorials_seen: seen });
+});
+
+// ── POST /api/auth/tutorial-reset { id: 'home' | 'all' } ────────────────────
+// Remove a single tour id (so its first-visit auto-trigger fires again) or
+// clear the whole array. Used by the Settings → Replay tutorials buttons.
+router.post('/tutorial-reset', requireAuth, (req, res) => {
+  const id = String(req.body?.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id is required' });
+  const next = id === 'all' ? [] : readTutorialsSeen(req.userId).filter((x) => x !== id);
+  db.prepare('UPDATE users SET tutorials_seen = ? WHERE id = ?').run(JSON.stringify(next), req.userId);
+  res.json({ success: true, tutorials_seen: next });
 });
 
 // Wipe all data for a user. Shared between password-authenticated delete and

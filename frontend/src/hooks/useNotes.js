@@ -51,6 +51,14 @@ export function useNotes() {
   useEffect(() => { fetchNotes(); }, []);
   useEffect(() => { fetchCustomTags(); }, []);
 
+  // Mirror useEntries: refetch when something outside this hook changes notes
+  // (e.g. an oracle session delete that nullifies linked_session_id on a note).
+  useEffect(() => {
+    function onChanged() { fetchNotes(); }
+    window.addEventListener('liminal:notes-changed', onChanged);
+    return () => window.removeEventListener('liminal:notes-changed', onChanged);
+  }, [fetchNotes]);
+
   // Auto-select first note when filters change and active note is no longer visible
   useEffect(() => {
     if (activeNote && !notes.find((n) => n.id === activeNote.id)) {
@@ -68,10 +76,20 @@ export function useNotes() {
     setActiveFilters([]);
   }
 
-  async function createNote(type = 'idea', customTag = null, tags = []) {
+  async function createNote(type = 'idea', customTag = null, tags = [], initialBody = '') {
+    // Pull pending body from sessionStorage if HomePage's QuickModeToggle
+    // stashed the user's typed text before navigating here.
+    let pending = '';
+    try {
+      const stash = sessionStorage.getItem('liminal_pending_note_body');
+      if (stash) {
+        pending = stash;
+        sessionStorage.removeItem('liminal_pending_note_body');
+      }
+    } catch {}
     const body = {
       type,
-      body: '',
+      body: initialBody || (pending ? `<p>${pending}</p>` : ''),
       tags,
       ...(type === 'custom' && customTag ? { custom_tag: customTag } : {}),
     };

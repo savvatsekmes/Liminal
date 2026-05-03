@@ -44,6 +44,7 @@ import { lockbug } from '../utils/lockbugLog';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useFirstTourTrigger } from './TutorialContext';
 
 const s = {
   root: {
@@ -134,7 +135,7 @@ const s = {
   },
 };
 
-function ToolbarButton({ label, active, onClick, children }) {
+function ToolbarButton({ label, active, onClick, children, ...rest }) {
   return (
     <button
       style={{ ...s.toolbarBtn, ...(active ? s.toolbarBtnActive : {}) }}
@@ -142,6 +143,7 @@ function ToolbarButton({ label, active, onClick, children }) {
       title={label}
       aria-label={label}
       type="button"
+      {...rest}
     >
       {children}
     </button>
@@ -175,6 +177,7 @@ export default function WritingCanvas({
   allTags = [],
   onTalkAboutThis,
 }) {
+  useFirstTourTrigger('journal');
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const { confirmIfCrisis } = useCrisisGate();
@@ -507,7 +510,7 @@ const editor = useEditor({
   return (
     <div style={s.root} data-canvas-root>
       {/* Toolbar */}
-      <div style={s.toolbar}>
+      <div data-tour-id="journal-toolbar" style={s.toolbar}>
         <button
           style={s.toggleListBtn}
           onClick={toggleEntryList}
@@ -596,6 +599,7 @@ const editor = useEditor({
         </ToolbarButton>
 
         <ToolbarButton
+          data-tour-id="journal-toggle-block"
           label="Toggle"
           active={editor?.isActive('detailsBlock')}
           onClick={() => editor?.chain().focus().setDetailsBlock().run()}
@@ -615,6 +619,7 @@ const editor = useEditor({
         <div style={s.toolbarDivider} />
 
         <ToolbarButton
+          data-tour-id="journal-card-pull"
           label={t('cards.pullCards')}
           onClick={() => setCardModalOpen(true)}
         >
@@ -622,6 +627,7 @@ const editor = useEditor({
         </ToolbarButton>
 
         <ToolbarButton
+          data-tour-id="journal-drawing"
           label={t('doodle.title')}
           onClick={() => setDoodleModalOpen(true)}
         >
@@ -637,6 +643,7 @@ const editor = useEditor({
         )}
 
         <button
+          data-tour-id="journal-lock"
           style={{
             ...s.toolbarBtn,
             ...(editMode ? {} : { background: 'rgba(0,0,0,0.06)', color: 'var(--strong)' }),
@@ -658,6 +665,7 @@ const editor = useEditor({
         </button>
 
         <button
+          data-tour-id="journal-versions"
           style={{ ...s.toolbarBtn, fontSize: '14px' }}
           title={t('journal.versionHistory')}
           onClick={() => { setVersionsOpen(true); fetchVersions(); }}
@@ -673,6 +681,7 @@ const editor = useEditor({
       {/* Tag selector */}
       {entry && (
         <TagSelector
+          data-tour-id="journal-tags"
           tags={entry.tags || []}
           autoTags={entry.auto_tags || []}
           allTags={allTags}
@@ -726,6 +735,7 @@ const editor = useEditor({
       {entry && (
         <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)', display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
+            data-tour-id="journal-polish"
             style={{
               flex: 1,
               fontSize: '12px',
@@ -747,6 +757,7 @@ const editor = useEditor({
             {polishing ? t('journal.polishing') : t('journal.polish')}
           </button>
           <button
+            data-tour-id="journal-generate-title"
             onClick={handleGenerateTitle}
             title="Generate title"
             disabled={titling || words === 0}
@@ -769,12 +780,15 @@ const editor = useEditor({
           >
             {titling ? <SpinnerIcon /> : <TitleIcon />}
           </button>
+          <span data-tour-id="journal-dictate" style={{ display: 'inline-flex' }}>
           <MicButton
             isRecording={isRecording}
             isProcessing={isProcessing}
             onClick={toggleDictation}
           />
+          </span>
           <button
+            data-tour-id="journal-read-aloud"
             onClick={handleReadAloud}
             title={reading ? t('common.stop') : t('common.readAloud')}
             type="button"
@@ -802,6 +816,7 @@ const editor = useEditor({
           </button>
           {onTalkAboutThis && (
             <button
+              data-tour-id="journal-send-to-chat"
               onClick={() => onTalkAboutThis(entry)}
               title={entry.linked_session_id ? t('journal.goToChat') : t('journal.talkAboutThis')}
               type="button"
@@ -925,7 +940,7 @@ function ChatBubbleIcon({ linked }) {
   );
 }
 
-function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismissSuggestion, onTagsChange, onAutoTagsChange }) {
+function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismissSuggestion, onTagsChange, onAutoTagsChange, ...rest }) {
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState('');
 
@@ -1014,7 +1029,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
   const sortedOther = [...otherTags].sort();
 
   return (
-    <div style={{
+    <div {...rest} style={{
       display: 'flex',
       alignItems: 'center',
       gap: '5px',

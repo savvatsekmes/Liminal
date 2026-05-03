@@ -352,21 +352,25 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
   }
 
   // 5. Sky context (respects sky weight)
+  // Default + low slider: BACKGROUND only. Without an explicit "don't open on
+  // this" cue, models pivot to moon-phase / planetary detail when the user's
+  // signal is light (a short journal entry, a "hi" in oracle), since it's
+  // the most concrete topical chunk in the prompt. Only the high slider
+  // (>70) actively asks for astrological weaving.
   if (skyWeight > 0) {
     try {
       const { getSkyContext } = require('./skyService');
       const skyCtx = getSkyContext();
-      if (skyWeight < 30) {
-        sections.push(`Sky context (background only): ${skyCtx}\n(Mention astrological context only if directly relevant to what the user wrote.)`);
-      } else if (skyWeight > 70) {
+      if (skyWeight > 70) {
         sections.push(`Sky context (important): ${skyCtx}\n(The user values astrological context. Actively weave moon phase, planetary positions, and their symbolic meaning into your reflections.)`);
       } else {
-        sections.push(`Sky context: ${skyCtx}`);
+        sections.push(`Sky context (background only — do not raise unless what the user wrote explicitly touches astrology, moon, planets, or sky): ${skyCtx}`);
       }
     } catch (e) { /* skip if skyService unavailable */ }
   }
 
-  // 6. Weather context
+  // 6. Weather context — same treatment as sky. Background only unless the
+  // user's writing actually mentions weather.
   try {
     const { getWeather, getWeatherContext } = require('./weatherService');
     const lat = portrait?.weather_lat;
@@ -375,7 +379,7 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     if (lat && lng) {
       const weather = await getWeather(lat, lng, city);
       const ctx = getWeatherContext(weather);
-      if (ctx) sections.push(ctx);
+      if (ctx) sections.push(`Weather (background only — do not raise unless what the user wrote mentions weather): ${ctx}`);
     }
   } catch {}
 
@@ -830,9 +834,11 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   if (skyWeight > 0) {
     try {
       const { getSkyContext } = require('./skyService');
-      sections.push(skyWeight > 70
-        ? `Sky context (important): ${getSkyContext()}`
-        : `Sky context: ${getSkyContext()}`);
+      if (skyWeight > 70) {
+        sections.push(`Sky context (important): ${getSkyContext()}\n(The user values astrological context. Weave moon phase / planetary positions in actively.)`);
+      } else {
+        sections.push(`Sky context (background only — do not raise unless the user explicitly asks about astrology, moon, planets, or sky): ${getSkyContext()}`);
+      }
     } catch {}
   }
 
@@ -842,7 +848,7 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
     if (lat && lng) {
       const w = await getWeather(lat, lng, portrait?.weather_city || portrait?.birth_location || '');
       const ctx = getWeatherContext(w);
-      if (ctx) sections.push(ctx);
+      if (ctx) sections.push(`Weather (background only — do not raise unless the user mentions weather): ${ctx}`);
     }
   } catch {}
 
@@ -967,9 +973,15 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null
   if (skyWeight > 0) {
     try {
       const { getSkyContext } = require('./skyService');
-      sections.push(skyWeight > 70
-        ? `Sky context (important): ${getSkyContext()}`
-        : `Sky context: ${getSkyContext()}`);
+      // Default + low slider: BACKGROUND only. The model used to latch onto
+      // moon-phase / planetary detail on a vague "hi" because the line read
+      // as topical content with no instruction to keep it ambient. Only the
+      // explicit high slider (>70) actively asks for astrological weaving.
+      if (skyWeight > 70) {
+        sections.push(`Sky context (important): ${getSkyContext()}\n(The user values astrological context. Actively weave moon phase / planetary positions / their symbolic meaning into your replies.)`);
+      } else {
+        sections.push(`Sky context (background only — do not raise unless the user explicitly asks about astrology, moon, planets, or sky): ${getSkyContext()}`);
+      }
     } catch {}
   }
 
@@ -979,7 +991,9 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null
     if (lat && lng) {
       const w = await getWeather(lat, lng, portrait?.weather_city || portrait?.birth_location || '');
       const ctx = getWeatherContext(w);
-      if (ctx) sections.push(ctx);
+      // Same treatment as sky — weather is ambient context, not a topic to
+      // open on. Only surface if the user mentions it.
+      if (ctx) sections.push(`Weather (background only — do not raise unless the user mentions weather): ${ctx}`);
     }
   } catch {}
 

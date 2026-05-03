@@ -296,6 +296,15 @@ router.delete('/sessions/:id', (req, res) => {
     'SELECT id FROM oracle_sessions WHERE id = ? AND user_id = ?'
   ).get(req.params.id, req.userId);
   if (!session) return res.status(404).json({ error: 'Session not found' });
+  // Clear any inbound entry / note links that point at this session before
+  // dropping it. Without this, `entries.linked_session_id` and
+  // `notes.linked_session_id` stay set to the now-orphaned session id and
+  // the journal entry keeps showing a "Continue conversation" affordance
+  // that opens a ghost session.
+  db.prepare('UPDATE entries SET linked_session_id = NULL WHERE linked_session_id = ? AND user_id = ?')
+    .run(session.id, req.userId);
+  db.prepare('UPDATE notes SET linked_session_id = NULL WHERE linked_session_id = ? AND user_id = ?')
+    .run(session.id, req.userId);
   db.prepare('DELETE FROM oracle_sessions WHERE id = ?').run(session.id);
   res.json({ success: true });
 });

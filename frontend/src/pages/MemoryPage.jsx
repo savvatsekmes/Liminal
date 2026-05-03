@@ -6,6 +6,34 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { BUILT_IN_ARCHETYPES, isBuiltIn } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import { confirmUploadRights } from '../utils/confirmUploadRights';
+import { useFirstTourTrigger } from '../components/TutorialContext';
+
+// Inline icons for memory item actions (modern replacements for ✎/★/×).
+function PencilIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
+      <path d="M10 4l2 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function StarIcon({ filled = false, size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill={filled ? 'currentColor' : 'none'}>
+      <path d="M8 1.6l1.96 4 4.42.64-3.2 3.12.76 4.4L8 11.7l-3.94 2.06.76-4.4-3.2-3.12 4.42-.64L8 1.6z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function TrashIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M2.5 4h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M6 4V2.6c0-.3.2-.6.5-.6h3c.3 0 .5.3.5.6V4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M3.5 4l.7 9.4c0 .3.3.6.6.6h6.4c.3 0 .6-.3.6-.6L12.5 4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
+      <path d="M6.5 7v4M9.5 7v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 const SLIDER_AXES = [
   { key: 'slider_rational_spiritual',      lowKey: 'context.sliderRational',       highKey: 'context.sliderSpiritual' },
@@ -237,8 +265,41 @@ const TAB_LABELS = { style: 'context.responseStyle', archetypes: 'Archetypes', m
 
 export default function MemoryPage({ onNavigateToPortrait }) {
   const { t } = useLanguage();
+  useFirstTourTrigger('context');
   const isMobile = useIsMobile();
   const [tab, setTab] = useState('style');
+  // Tutorial steps fire 'liminal:set-context-tab' so the tour can walk the
+  // user across all three tabs without them clicking each one manually.
+  useEffect(() => {
+    function onSetTab(e) {
+      const next = e.detail;
+      if (next && TABS.includes(next)) setTab(next);
+    }
+    window.addEventListener('liminal:set-context-tab', onSetTab);
+    return () => window.removeEventListener('liminal:set-context-tab', onSetTab);
+  }, []);
+  // Demo memory injected into the list while the Memory tour walks the user
+  // through edit / mark-as-core / delete on a real-looking row. Pure UI; never
+  // hits the backend, never appears outside the tour.
+  const [tutorialMockOn, setTutorialMockOn] = useState(false);
+  useEffect(() => {
+    function on(e) { setTutorialMockOn(!!e.detail); }
+    function off() { setTutorialMockOn(false); }
+    window.addEventListener('liminal:tutorial-memory-mock', on);
+    window.addEventListener('liminal:tutorial-closed', off);
+    return () => {
+      window.removeEventListener('liminal:tutorial-memory-mock', on);
+      window.removeEventListener('liminal:tutorial-closed', off);
+    };
+  }, []);
+  const TUTORIAL_MOCK_MEMORY = {
+    id: 'tutorial-mock',
+    content: 'I write best in the morning, before the day fills up.',
+    is_core: false,
+    pinned: 1,
+    created_at: new Date().toISOString(),
+    effective_date: new Date().toISOString(),
+  };
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newText, setNewText] = useState('');
@@ -355,6 +416,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
   }
 
   function startEdit(m) {
+    if (m.id === 'tutorial-mock') return;
     setEditingId(m.id);
     setEditingText(m.content || '');
   }
@@ -395,6 +457,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
   }
 
   async function toggleCore(id, currentValue) {
+    if (id === 'tutorial-mock') return;
     const next = currentValue ? 0 : 1;
     setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, is_core: next } : m))));
     try {
@@ -409,6 +472,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
   }
 
   async function deleteMemory(id) {
+    if (id === 'tutorial-mock') return;
     setMemories((prev) => prev.filter((m) => m.id !== id));
     await apiFetch(`/api/memories/${id}`, { method: 'DELETE' }).catch(() => {});
   }
@@ -590,7 +654,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
       <div style={s.pageSubtitle}>{t('context.subtitle')}</div>
 
       {/* Tab bar */}
-      <div style={s.tabBar}>
+      <div style={s.tabBar} data-tour-id="context-tabs">
         {TABS.map((t_) => (
           <button
             key={t_}
@@ -604,7 +668,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
       {/* Response Style tab */}
       {tab === 'style' && (
-        <>
+        <div data-tour-id="context-sliders">
           {SLIDER_AXES.map(({ key, lowKey, highKey, hintKey }) => (
             <div key={key}>
               <div style={s.sliderRow}>
@@ -629,7 +693,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
           {/* Friend / Stranger slider */}
           <div style={{ marginBottom: '20px' }}>
             <div style={s.sliderRow}>
-              <span style={s.sliderLabel}>Friend</span>
+              <span style={s.sliderLabel}>{t('context.sliderFriend')}</span>
               <input
                 type="range"
                 min="0"
@@ -638,7 +702,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                 value={sliders.slider_friend_stranger ?? 30}
                 onChange={(e) => setSlider('slider_friend_stranger', Number(e.target.value))}
               />
-              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Stranger</span>
+              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t('context.sliderStranger')}</span>
             </div>
             <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
               {(sliders.slider_friend_stranger ?? 30) < 25
@@ -656,7 +720,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
           <div style={{ marginBottom: '20px' }}>
             <div style={s.sliderRow}>
-              <span style={s.sliderLabel}>Off</span>
+              <span style={s.sliderLabel}>{t('context.sliderWooOff')}</span>
               <input
                 type="range"
                 min="0"
@@ -665,7 +729,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                 value={sliders.slider_portrait_weight ?? 50}
                 onChange={(e) => setSlider('slider_portrait_weight', Number(e.target.value))}
               />
-              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Full</span>
+              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t('context.sliderWooFull')}</span>
             </div>
             <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
               Portrait weight — how much your MBTI, enneagram, birth chart, and profile shape responses
@@ -674,7 +738,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
           <div style={{ marginBottom: '20px' }}>
             <div style={s.sliderRow}>
-              <span style={s.sliderLabel}>Off</span>
+              <span style={s.sliderLabel}>{t('context.sliderSkyOff')}</span>
               <input
                 type="range"
                 min="0"
@@ -683,7 +747,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                 value={sliders.slider_sky_weight ?? 50}
                 onChange={(e) => setSlider('slider_sky_weight', Number(e.target.value))}
               />
-              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Full</span>
+              <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t('context.sliderSkyFull')}</span>
             </div>
             <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
               Sky weight — how much moon phase, planetary positions, and retrogrades colour reflections
@@ -777,16 +841,16 @@ export default function MemoryPage({ onNavigateToPortrait }) {
             </button>
             {slidersSaved && <span style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>{t('common.saved')}</span>}
           </div>
-        </>
+        </div>
       )}
 
       {/* Archetypes tab */}
       {tab === 'archetypes' && (
-        <>
+        <div data-tour-id="context-archetypes">
           {/* Built-in archetypes */}
           <div style={s.sectionTitle}>Built-in</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '32px' }}>
-            {BUILT_IN_ARCHETYPES.filter(a => a.value !== 'Auto').map((arch) => (
+            {BUILT_IN_ARCHETYPES.filter(a => a.value !== 'Auto').map((arch, idx) => (
               <div key={arch.value} style={{ ...s.archCard, ...(isMobile ? { flexDirection: 'column', alignItems: 'stretch', gap: '10px' } : {}) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
                   <ArchetypeAvatar archetype={arch} size={36} color={arch.color} />
@@ -796,6 +860,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                   </div>
                 </div>
                 <select
+                  data-tour-id={idx === 0 ? 'archetype-voice' : undefined}
                   style={{ ...s.voiceSelect, ...(isMobile ? { maxWidth: 'none' } : {}) }}
                   value={archetypeVoices[arch.value] || ''}
                   onChange={(e) => setArchetypeVoice(arch.value, e.target.value)}
@@ -936,21 +1001,23 @@ export default function MemoryPage({ onNavigateToPortrait }) {
             </div>
           ) : (
             <button
+              data-tour-id="context-create-archetype"
               style={{ ...s.btn, padding: '8px 18px', fontSize: '12px' }}
               onClick={() => setEditingArch({ name: '', prompt: '', color: '#888', isNew: true })}
             >
               + Create Archetype
             </button>
           )}
-        </>
+        </div>
       )}
 
       {/* Memory tab */}
       {tab === 'memory' && (
-        <>
+        <div data-tour-id="context-memory">
           {/* Manual add + search */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <input
+              data-tour-id="memory-add-input"
               style={{ ...s.input, flex: 1 }}
               placeholder={t('context.addPlaceholder')}
               value={newText}
@@ -958,6 +1025,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               onKeyDown={(e) => e.key === 'Enter' && addMemory()}
             />
             <button
+              data-tour-id="memory-add-btn"
               style={{ ...s.btn, opacity: adding || !newText.trim() ? 0.5 : 1 }}
               onClick={addMemory}
               disabled={adding || !newText.trim()}
@@ -965,6 +1033,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               {adding ? t('context.adding') : t('context.add')}
             </button>
             <input
+              data-tour-id="memory-search"
               style={{ ...s.input, width: '180px' }}
               placeholder={t('common.search')}
               value={memorySearch}
@@ -974,9 +1043,10 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
           {(() => {
             const q = memorySearch.trim().toLowerCase();
+            const baseList = tutorialMockOn ? [TUTORIAL_MOCK_MEMORY, ...memories] : memories;
             const filtered = q
-              ? memories.filter((m) => (m.content || '').toLowerCase().includes(q))
-              : memories;
+              ? baseList.filter((m) => (m.content || '').toLowerCase().includes(q))
+              : baseList;
 
             // Age gradient across non-core memories: newest = fresh teal,
             // oldest = faded gray. Core memories keep their gold styling
@@ -1025,7 +1095,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               {filtered.map((m) => {
                 const isEditing = editingId === m.id;
                 return (
-                <div key={m.id} style={{ ...s.memoryItem, ...(m.is_core ? s.memoryItemCore : gradientStyle(memoryDate(m))) }}>
+                <div key={m.id} data-tour-id={m.id === 'tutorial-mock' ? 'memory-row' : undefined} style={{ ...s.memoryItem, ...(m.is_core ? s.memoryItemCore : gradientStyle(memoryDate(m))) }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {isEditing ? (
                       <textarea
@@ -1072,31 +1142,33 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                   {!isEditing && (
                     <>
                       <button
-                        style={{ ...s.memoryDelete, fontSize: '13px' }}
+                        data-tour-id={m.id === 'tutorial-mock' ? 'memory-edit' : undefined}
+                        style={{ ...s.memoryDelete, fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
                         onClick={() => startEdit(m)}
                         title="Edit memory"
                         onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; }}
                         onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.6; }}
                       >
-                        ✎
+                        <PencilIcon />
                       </button>
                       <button
-                        style={{ ...s.coreBtn, color: m.is_core ? '#d4a843' : 'var(--muted)', opacity: m.is_core ? 1 : 0.5 }}
+                        data-tour-id={m.id === 'tutorial-mock' ? 'memory-core' : undefined}
+                        style={{ ...s.coreBtn, color: m.is_core ? '#d4a843' : 'var(--muted)', opacity: m.is_core ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
                         onClick={() => toggleCore(m.id, m.is_core)}
                         title={m.is_core ? 'Unmark as core memory' : 'Mark as core memory (keeps full weight regardless of age)'}
                         onMouseEnter={(e) => { if (!m.is_core) e.currentTarget.style.opacity = 1; }}
-                        onMouseLeave={(e) => { if (!m.is_core) e.currentTarget.style.opacity = 0.5; }}
+                        onMouseLeave={(e) => { if (!m.is_core) e.currentTarget.style.opacity = 0.55; }}
                       >
-                        {m.is_core ? '★' : '☆'}
+                        <StarIcon filled={!!m.is_core} />
                       </button>
                       <button
-                        style={s.memoryDelete}
+                        style={{ ...s.memoryDelete, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
                         onClick={() => deleteMemory(m.id)}
                         title={t('context.removeMemory')}
                         onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; }}
                         onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.6; }}
                       >
-                        ×
+                        <TrashIcon />
                       </button>
                     </>
                   )}
@@ -1177,12 +1249,13 @@ export default function MemoryPage({ onNavigateToPortrait }) {
           )}
 
           {/* Maintenance */}
-          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: 'var(--border-style)' }}>
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: 'var(--border-style)' }} data-tour-id="memory-maintenance">
             <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: '1.6', marginBottom: '10px' }}>
               {t('context.reindexDesc')}
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <button
+                data-tour-id="memory-reindex"
                 style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: reindexing ? 0.5 : 1 }}
                 onClick={reindex}
                 disabled={reindexing}
@@ -1190,6 +1263,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                 {reindexing ? t('context.reindexing') : t('context.reindex')}
               </button>
               <button
+                data-tour-id="memory-extract"
                 style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: extractJob.running ? 0.5 : 1 }}
                 onClick={extractAllMemories}
                 disabled={extractJob.running}
@@ -1201,6 +1275,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               </button>
               {!clearStep && (
                 <button
+                  data-tour-id="memory-delete-all"
                   style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: '#b33', opacity: memories.length === 0 ? 0.5 : 1 }}
                   onClick={() => setClearStep('choose')}
                   disabled={memories.length === 0}
@@ -1230,7 +1305,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

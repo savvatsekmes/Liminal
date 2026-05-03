@@ -7,6 +7,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import SkyPage from './SkyPage';
 import AILabel from '../components/AILabel';
+import { useFirstTourTrigger } from '../components/TutorialContext';
 
 const s = {
   root: {
@@ -232,6 +233,7 @@ const tabActiveStyle = {
 };
 
 export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded }) {
+  useFirstTourTrigger('oracle');
   const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [pageTab, setPageTab] = useState(initialTab || 'portrait');
@@ -249,6 +251,14 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
   const [generating, setGenerating] = useState(false);
   const [editingPortrait, setEditingPortrait] = useState(false);
   const astroTimer = useRef(null);
+  // Auto-save: any change to `portrait` after the initial fetch debounces a
+  // PUT. Replaces the manual "Save portrait" button. The skip-flag suppresses
+  // the next effect run after we apply a server response back into state.
+  const loadedRef = useRef(false);
+  const saveTimer = useRef(null);
+  const skipNextSaveRef = useRef(false);
+  const portraitRef = useRef(null);
+  portraitRef.current = portrait;
   const [portraitPanelWidth, startPortraitPanelDrag, setPortraitPanelWidth] = useResizable(
     Math.floor((window.innerWidth - 48) / 2),
     { min: 280, max: window.innerWidth - 48 - 280 }
@@ -282,9 +292,20 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
           if (tarot) p.life_path_card = `${tarot.card} ${tarot.number}`;
         }
         setPortrait(p);
+        // Mark loaded AFTER initial state lands so the auto-save effect
+        // doesn't fire on hydration.
+        loadedRef.current = true;
       })
       .catch(() => {});
   }, []);
+
+  // Debounced auto-save trigger. Called from `set()` whenever the user edits
+  // a field. 700ms after the last edit, save() runs.
+  function scheduleSave() {
+    if (!loadedRef.current) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { save(); }, 700);
+  }
 
   function set(key, value) {
     setPortrait((p) => {
@@ -299,6 +320,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
       return next;
     });
     setSaved(false);
+    scheduleSave();
   }
 
   async function calcAstrology(p) {
@@ -330,18 +352,21 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
         soul_card: soulTarot ? `${soulTarot.card} ${soulTarot.number}` : prev.soul_card,
         life_path_card: lifePathTarot ? `${lifePathTarot.card} ${lifePathTarot.number}` : prev.life_path_card,
       }));
+      // Persist the calculated fields too — this is part of the same edit.
+      scheduleSave();
     } catch {}
     finally { setAstroCalcing(false); }
   }
 
   async function save() {
-    if (!portrait) return;
+    if (!portraitRef.current) return;
+    clearTimeout(saveTimer.current);
     setSaving(true);
     try {
       const res = await apiFetch('/api/portrait', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(portrait),
+        body: JSON.stringify(portraitRef.current),
       });
       const updated = await res.json();
       // Re-derive tarot fields that may not come back from server
@@ -356,9 +381,10 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
         const tarot = LIFE_PATH_TO_TAROT[updated.life_path_number];
         if (tarot) updated.life_path_card = `${tarot.card} ${tarot.number}`;
       }
+      skipNextSaveRef.current = true;
       setPortrait(updated);
       setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setTimeout(() => setSaved(false), 1800);
     } catch {}
     finally { setSaving(false); }
   }
@@ -371,7 +397,10 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
       const res = await apiFetch('/api/portrait/generate', { method: 'POST' });
       const data = await res.json();
       if (data.character_description) {
-        setPortrait(p => ({ ...p, character_description: data.character_description }));
+        // Skip auto-save: /generate already wrote the new description and
+        // cleared the edited flag server-side.
+        skipNextSaveRef.current = true;
+        setPortrait(p => ({ ...p, character_description: data.character_description, character_description_edited: 0 }));
       }
     } catch {}
     finally { setGenerating(false); }
@@ -381,12 +410,12 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
   const oracleHeader = (
     <div style={{ padding: isMobile ? '20px 16px 0' : '40px 48px 0' }}>
-      <div style={s.pageTitle}>The Oracle</div>
+      <div data-tour-id="oracle-intro" style={s.pageTitle}>The Oracle</div>
       <div style={s.pageSubtitle}>Do not try and bend the spoon — that's impossible. Instead, only try to realise the truth: there is no spoon.</div>
       <AILabel compact />
-      <div style={tabBarStyle}>
+      <div data-tour-id="oracle-tabs" style={tabBarStyle}>
         {['portrait', 'cards', 'sky'].map(tb => (
-          <button key={tb} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>
+          <button key={tb} data-tour-id={`oracle-tab-${tb}`} style={{ ...tabStyle, ...(pageTab === tb ? tabActiveStyle : {}) }} onClick={() => setPageTab(tb)}>
             {tb === 'portrait' ? 'Portrait' : tb === 'sky' ? 'Sky' : 'Cards'}
           </button>
         ))}
@@ -413,7 +442,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
       <>
       {/* Personality */}
-      <div style={s.section}>
+      <div data-tour-id="oracle-personality" style={s.section}>
         <div style={s.sectionTitle}>{t('portrait.personality')}</div>
         <div style={{ ...s.grid, ...(isMobile ? { gridTemplateColumns: '1fr' } : {}) }}>
           <div style={s.field}>
@@ -451,7 +480,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
       </div>
 
       {/* Astrology */}
-      <div style={s.section}>
+      <div data-tour-id="oracle-astrology" style={s.section}>
         <div style={s.sectionTitle}>
           {t('portrait.astrology')}
           {astroCalcing && <span style={{ fontWeight: '400', marginLeft: '8px', fontStyle: 'italic' }}>{t('portrait.calculating')}</span>}
@@ -523,10 +552,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
           >
             {astroCalcing ? t('portrait.calculating') : t('portrait.calculateAstrology')}
           </button>
-          <button style={{ ...s.saveBtn, opacity: saving ? 0.5 : 1 }} onClick={save} disabled={saving}>
-            {saving ? t('common.saving') : t('portrait.savePortrait')}
-          </button>
-          {saved && <span style={s.savedMsg}>{t('common.saved')}</span>}
+          {saved && <span style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>{t('common.saved')}</span>}
         </div>
       </div>
       </>
@@ -539,13 +565,15 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
         width={isMobile ? '100%' : portraitPanelWidth}
         isMobile={isMobile}
         description={portrait.character_description || ''}
+        edited={!!portrait.character_description_edited}
         generating={generating}
         editing={editingPortrait}
         onGenerate={generateCharacterPortrait}
         onEdit={() => setEditingPortrait(true)}
         onEditDone={(text) => {
-          setPortrait(p => ({ ...p, character_description: text }));
+          setPortrait(p => ({ ...p, character_description: text, character_description_edited: 1 }));
           setEditingPortrait(false);
+          scheduleSave();
         }}
         onEditCancel={() => setEditingPortrait(false)}
       />
@@ -556,7 +584,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
 // ── Character Portrait Panel ──────────────────────────────────────────────────
 
-function CharacterPortraitPanel({ description, generating, editing, onGenerate, onEdit, onEditDone, onEditCancel, width = 320, isMobile = false }) {
+function CharacterPortraitPanel({ description, edited = false, generating, editing, onGenerate, onEdit, onEditDone, onEditCancel, width = 320, isMobile = false }) {
   const { t } = useLanguage();
   const [editText, setEditText] = useState(description);
   const [playing, setPlaying] = useState(false);
@@ -579,7 +607,7 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
   }
 
   return (
-    <div style={{
+    <div data-tour-id="oracle-character" style={{
       width: isMobile ? '100%' : width + 'px',
       flexShrink: 0,
       background: 'var(--near-white)',
@@ -597,6 +625,17 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
           <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
             {t('portrait.characterPortrait')}
+            {edited && description && !editing && (
+              <span style={{
+                marginLeft: 8,
+                fontSize: '10px',
+                fontWeight: 400,
+                fontStyle: 'italic',
+                color: 'var(--muted)',
+                letterSpacing: '0.3px',
+                textTransform: 'none',
+              }}>edited</span>
+            )}
           </div>
         </div>
         <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
@@ -683,6 +722,15 @@ function CharacterPortraitPanel({ description, generating, editing, onGenerate, 
               >
                 {generating ? t('portrait.generating') : description ? t('portrait.regenerate') : t('portrait.generate')}
               </button>
+              {description && !generating && (
+                <button
+                  className="btn-ghost"
+                  style={{ fontSize: '12px', padding: '9px 14px' }}
+                  onClick={onEdit}
+                >
+                  {t('common.edit') || 'Edit'}
+                </button>
+              )}
               <button
                 onClick={handleListen}
                 title={playing ? t('common.stop') : t('common.readAloud')}
