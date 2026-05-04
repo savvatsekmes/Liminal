@@ -74,21 +74,22 @@ export function LanguageProvider({ children, initialLang = 'en' }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ language: code }),
     }).catch(() => {});
-    // If TTS is already running, pre-warm the right model for this language
-    // under the standard loading toast so the user sees feedback during the
-    // swap. Skip if TTS isn't running (don't force-spawn just for a language
-    // change — the swap will happen naturally on the next read-aloud).
+    // Pre-warm the TTS model for this language under the standard loading
+    // toast so the user sees feedback during the swap and is ready for the
+    // next read-aloud without delay. Spawn Chatterbox first if it isn't
+    // already running — without this, the popup only appeared when the
+    // model happened to be warm, which felt inconsistent.
     try {
-      const { isChatterboxOnline, withLoadingToast } = await import('../utils/ttsStatus');
-      if (isChatterboxOnline()) {
-        withLoadingToast(() =>
-          apiFetch('/api/tts/preload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ language: code }),
-          })
-        ).catch(() => {});
-      }
+      const { withLoadingToast, waitForChatterbox } = await import('../utils/ttsStatus');
+      withLoadingToast(async () => {
+        const ok = await waitForChatterbox(45000);
+        if (!ok) return;
+        await apiFetch('/api/tts/preload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language: code }),
+        });
+      }).catch(() => {});
     } catch {}
   }, []);
 

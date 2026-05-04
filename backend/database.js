@@ -232,6 +232,13 @@ addColumnSafe('users', 'user_key_by_password',      'BLOB');
 addColumnSafe('users', 'user_key_by_recovery',      'BLOB');
 addColumnSafe('users', 'recovery_key_by_password',  'BLOB');
 addColumnSafe('users', 'encryption_version',        'INTEGER DEFAULT 0');
+// Brute-force unlock lockout. Counts wrong password / recovery-key attempts.
+// After 5 wrong attempts: cooldown by `consecutive_lockouts` (1h, 1h, 3h, 6h,
+// 12h, 24h capped). Successful unlock zeros both counters. See services/
+// lockout.js for the schedule + helper functions.
+addColumnSafe('users', 'failed_attempts',       'INTEGER NOT NULL DEFAULT 0');
+addColumnSafe('users', 'consecutive_lockouts',  'INTEGER NOT NULL DEFAULT 0');
+addColumnSafe('users', 'lockout_until',         'INTEGER');
 // Mark pre-existing users as onboarded
 db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete = 0 AND last_login IS NOT NULL').run();
 

@@ -829,7 +829,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                     contexts; the four tiers produced almost identical output
                     in practice. Checkbox writes 60 ("heavy" tier) when on,
                     0 when off — the backend prompt logic is unchanged. */}
-                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '122px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--body)' }}>
                     <input
                       type="checkbox"
@@ -844,7 +844,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                   </span>
                 </div>
 
-                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '122px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--body)' }}>
                     <input
                       type="checkbox"

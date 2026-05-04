@@ -10,6 +10,17 @@ const { signToken, requireAuth } = require('../middleware/auth');
 const userCrypto = require('../services/userCrypto');
 const rowCrypto = require('../services/rowCrypto');
 const { migrateLegacyUserRows } = require('../services/legacyRowMigration');
+const lockout = require('../services/lockout');
+
+// Localised "you're locked out" message — caller can override.
+function lockoutErrorPayload(state) {
+  return {
+    error: 'Account temporarily locked due to repeated failed attempts.',
+    locked: true,
+    seconds_remaining: state.secondsRemaining,
+    consecutive_lockouts: state.consecutive_lockouts,
+  };
+}
 
 const avatarDir = path.join(DATA_DIR, 'avatars');
 if (!fs.existsSync(avatarDir)) fs.mkdirSync(avatarDir, { recursive: true });
@@ -86,8 +97,21 @@ router.post('/login', async (req, res) => {
   const user = db.prepare(`SELECT id, username, password_hash, onboarding_complete, ${KEY_FIELDS} FROM users WHERE username = ?`).get(username.trim());
   if (!user) return res.status(401).json({ error: 'Invalid username or password' });
 
+  // Lockout gate. Refuse all unlock attempts while lockout_until is in the
+  // future, regardless of credential correctness — even a correct password
+  // doesn't bypass an active cooldown.
+  const preState = lockout.getStateByUserId(user.id);
+  if (preState?.locked) return res.status(429).json(lockoutErrorPayload(preState));
+
   const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Invalid username or password' });
+  if (!valid) {
+    const post = lockout.recordFailure(user.id);
+    if (post?.locked) return res.status(429).json(lockoutErrorPayload(post));
+    return res.status(401).json({
+      error: 'Invalid username or password',
+      attempts_before_lockout: post?.attempts_before_lockout,
+    });
+  }
 
   let recoveryKeyToShow = null;
 
@@ -127,6 +151,9 @@ router.post('/login', async (req, res) => {
   }
 
   db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+  // Successful unlock — clear the failed-attempt streak and any consecutive-
+  // lockouts counter so the schedule starts fresh on the next bad streak.
+  lockout.recordSuccess(user.id);
   const token = signToken(user.id, user.username);
   res.json({
     token,
@@ -188,8 +215,19 @@ router.post('/recover', async (req, res) => {
     return res.status(401).json({ error: 'Account not found or not recoverable' });
   }
 
+  // Lockout gate — recovery shares the same counter as login.
+  const preState = lockout.getStateByUserId(user.id);
+  if (preState?.locked) return res.status(429).json(lockoutErrorPayload(preState));
+
   const userKey = userCrypto.unlockWithRecovery(recovery_key, user);
-  if (!userKey) return res.status(401).json({ error: 'Recovery key did not match' });
+  if (!userKey) {
+    const post = lockout.recordFailure(user.id);
+    if (post?.locked) return res.status(429).json(lockoutErrorPayload(post));
+    return res.status(401).json({
+      error: 'Recovery key did not match',
+      attempts_before_lockout: post?.attempts_before_lockout,
+    });
+  }
 
   // Rewrap with the new password. The recovery key itself is unchanged — the
   // user may still have it written down. rewrapPassword needs the current
@@ -214,6 +252,8 @@ router.post('/recover', async (req, res) => {
   );
 
   rowCrypto.setUserKey(user.id, userKey);
+  // Successful unlock via recovery key — clear the lockout streak.
+  lockout.recordSuccess(user.id);
   const token = signToken(user.id, user.username);
   res.json({ token, username: user.username });
 });
@@ -423,11 +463,50 @@ router.post('/wipe-with-recovery-key', (req, res) => {
     return res.status(401).json({ error: 'Account not found or not recoverable' });
   }
 
-  const userKey = userCrypto.unlockWithRecovery(recovery_key, user);
-  if (!userKey) return res.status(401).json({ error: 'Recovery key did not match' });
+  // Lockout gate — wipe-with-recovery-key shares the same counter. Stops a
+  // brute-force attacker from skipping the login lockout by switching to
+  // this endpoint to guess recovery keys.
+  const preState = lockout.getStateByUserId(user.id);
+  if (preState?.locked) return res.status(429).json(lockoutErrorPayload(preState));
 
+  const userKey = userCrypto.unlockWithRecovery(recovery_key, user);
+  if (!userKey) {
+    const post = lockout.recordFailure(user.id);
+    if (post?.locked) return res.status(429).json(lockoutErrorPayload(post));
+    return res.status(401).json({
+      error: 'Recovery key did not match',
+      attempts_before_lockout: post?.attempts_before_lockout,
+    });
+  }
+
+  // No need to call recordSuccess here — wipeUserData destroys the row.
   wipeUserData(user.id);
   res.json({ success: true });
+});
+
+// ── GET /api/auth/lockout/:username ─────────────────────────────────────────
+// Public status endpoint for the unlock UI's countdown. Returns the state
+// object that the frontend polls. Returns the same shape with locked:false /
+// failed_attempts:0 for non-existent usernames so we don't leak which
+// usernames exist.
+router.get('/lockout/:username', (req, res) => {
+  const state = lockout.getStateByUsername(req.params.username);
+  if (!state) {
+    return res.json({
+      locked: false,
+      seconds_remaining: 0,
+      failed_attempts: 0,
+      attempts_before_lockout: lockout.MAX_ATTEMPTS,
+      consecutive_lockouts: 0,
+    });
+  }
+  res.json({
+    locked: state.locked,
+    seconds_remaining: state.secondsRemaining,
+    failed_attempts: state.failed_attempts,
+    attempts_before_lockout: state.attempts_before_lockout,
+    consecutive_lockouts: state.consecutive_lockouts,
+  });
 });
 
 module.exports = router;

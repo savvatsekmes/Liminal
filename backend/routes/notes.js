@@ -334,14 +334,14 @@ ${typePrompt}
 Respond with a JSON object:
 {
   "blocks": [
-    { "title": "A Theme Title (replace with one drawn from THIS note)", "body": "There's a specific honesty in how a vending machine glows on an empty street at night. It isn't asking for anything; it's just available. **The light wasn't trying to be seen — it just couldn't help being visible.** That's what attention is, sometimes. (NOTE: format example only — setup, ONE bolded landing sentence, release. Replace the vending-machine imagery entirely with content drawn from THIS note. Do NOT mention vending machines or glow.)", "quote": null, "archetype": "${singleArchetype}" }
+    { "title": "A Theme Title", "body": "There's a specific honesty in how a vending machine glows on an empty street at night. It isn't asking for anything; it's just available. **The light wasn't trying to be seen — it just couldn't help being visible.** That's what attention is, sometimes.", "quote": null, "archetype": "${singleArchetype}" }
   ]
 }
 
 Rules:
+- Wrap the strongest sentence in the block body in **double asterisks** (markup, not speech — frontend renders it as visible bold). Match the example body's shape: setup → bolded line → release. Don't copy the example's vending-machine content; generate from the note.
 - 1-2 blocks only (notes are shorter than journal entries)
 - Each block body must be 100-150 words. Not shorter, not longer.
-- Bold the strongest line in each block using **double asterisks**. REQUIRED — every block must contain exactly one bolded key sentence or phrase (never more than one bold span per block). Pick the line that lands hardest.
 - Write in prose, no bullet points
 - Speak directly to the person ("you")
 - Return ONLY the JSON
@@ -361,14 +361,14 @@ ${candorBlockNote ? `${candorBlockNote}\n` : ''}
 Respond with a JSON object:
 {
   "blocks": [
-    { "title": "A Theme Title (replace with one drawn from THIS note)", "body": "There's a specific honesty in how a vending machine glows on an empty street at night. It isn't asking for anything; it's just available. **The light wasn't trying to be seen — it just couldn't help being visible.** That's what attention is, sometimes. (NOTE: format example only — setup, ONE bolded landing sentence, release. Replace the vending-machine imagery entirely with content drawn from THIS note. Do NOT mention vending machines or glow.)", "quote": null, "archetype": "Lens name" }
+    { "title": "A Theme Title", "body": "There's a specific honesty in how a vending machine glows on an empty street at night. It isn't asking for anything; it's just available. **The light wasn't trying to be seen — it just couldn't help being visible.** That's what attention is, sometimes.", "quote": null, "archetype": "Lens name" }
   ]
 }
 
 Rules:
+- Wrap the strongest sentence in the block body in **double asterisks** (markup, not speech — frontend renders it as visible bold). Match the example body's shape: setup → bolded line → release. Don't copy the example's vending-machine content; generate from the note.
 - 1-2 blocks only (notes are shorter than journal entries)
 - Each block body must be 100-150 words. Not shorter, not longer.
-- Bold the strongest line in each block using **double asterisks**. REQUIRED — every block must contain exactly one bolded key sentence or phrase (never more than one bold span per block). Pick the line that lands hardest.
 - Write in prose, no bullet points
 - Speak directly to the person ("you")
 - Return ONLY the JSON
@@ -423,6 +423,21 @@ ${toneBlockNote}`;
       let body = b.body;
       const stars = (body.match(/\*\*/g) || []).length;
       if (stars % 2 !== 0) body = body.replace(/\*\*(?=[^*]*$)/, '');
+      // Bold safety net (see reflect.js for rationale). Wrap the last sentence
+      // if the model didn't bold anything.
+      const hasBold = /\*\*[^*]+\*\*/.test(body);
+      if (!hasBold) {
+        const m = body.match(/([.!?])\s+([^.!?]+[.!?])\s*$/);
+        if (m) {
+          const lastSentence = m[2].trim();
+          const idx = body.lastIndexOf(lastSentence);
+          if (idx >= 0) {
+            body = body.slice(0, idx) + `**${lastSentence}**` + body.slice(idx + lastSentence.length);
+          }
+        } else if (body.trim()) {
+          body = `**${body.trim()}**`;
+        }
+      }
       b = { ...b, body: body.trim() };
     }
     if (b && typeof b.body === 'string') {

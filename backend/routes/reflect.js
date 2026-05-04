@@ -107,6 +107,30 @@ router.post('/', async (req, res) => {
         let body = b.body;
         const stars = (body.match(/\*\*/g) || []).length;
         if (stars % 2 !== 0) body = body.replace(/\*\*(?=[^*]*$)/, '');
+        // Bold safety net: if the model didn't bold a landing line, wrap the
+        // last sentence ourselves. The prompt asks for one bolded sentence
+        // per block but the model has a strong training prior against
+        // markdown in narrative prose and drops it ~20-30% of the time
+        // (worse on lyrical voice settings). Last sentence is the takeaway
+        // ~80% of the time in reflection prose, so this lands a reasonable
+        // bold even when the model fails. Skip if the body already has a
+        // matched **...** pair.
+        const hasBold = /\*\*[^*]+\*\*/.test(body);
+        if (!hasBold) {
+          // Match the final sentence: trailing punctuation, then capture
+          // the sentence text back to the previous sentence terminator (or
+          // string start). Fall back to the whole body if no match.
+          const m = body.match(/([.!?])\s+([^.!?]+[.!?])\s*$/);
+          if (m) {
+            const lastSentence = m[2].trim();
+            const idx = body.lastIndexOf(lastSentence);
+            if (idx >= 0) {
+              body = body.slice(0, idx) + `**${lastSentence}**` + body.slice(idx + lastSentence.length);
+            }
+          } else if (body.trim()) {
+            body = `**${body.trim()}**`;
+          }
+        }
         b = { ...b, body: body.trim() };
       }
       if (b && typeof b.body === 'string') {

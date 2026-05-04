@@ -1,8 +1,90 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { setStoredToken } from '../utils/api';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 import TermsOfService from './TermsOfService';
 import { useTheme } from '../hooks/useTheme';
+
+// Format remaining seconds as "47m" / "2h 15m" / "23s" / "1d 4h" — used by
+// the lockout banner and submit-button label. Server returns seconds as an
+// integer; we format on the client so the countdown ticks smoothly.
+function formatLockoutRemaining(seconds) {
+  if (!seconds || seconds <= 0) return '0s';
+  const s = Math.ceil(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  if (h < 24) return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  const remH = h % 24;
+  return remH > 0 ? `${d}d ${remH}h` : `${d}d`;
+}
+
+// Polls /api/auth/lockout/:username every 5s normally and every 1s while
+// locked, so the countdown ticks visibly. Returns the state plus a refetch
+// function the form can call right after a failed attempt to update the UI
+// without waiting for the next poll tick. Callers pass a trimmed username;
+// when the username is empty we skip polling and return a safe default.
+function useLockoutState(username) {
+  const trimmed = (username || '').trim();
+  const [state, setState] = useState({
+    locked: false,
+    secondsRemaining: 0,
+    failedAttempts: 0,
+    attemptsBeforeLockout: 5,
+    consecutiveLockouts: 0,
+  });
+
+  const refetch = useCallback(async () => {
+    if (!trimmed) return;
+    try {
+      const res = await fetch(`/api/auth/lockout/${encodeURIComponent(trimmed)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setState({
+        locked: !!data.locked,
+        secondsRemaining: data.seconds_remaining || 0,
+        failedAttempts: data.failed_attempts || 0,
+        attemptsBeforeLockout: data.attempts_before_lockout ?? 5,
+        consecutiveLockouts: data.consecutive_lockouts || 0,
+      });
+    } catch {
+      // Network errors are non-fatal — leave state as-is so the UI doesn't
+      // flicker between "locked" and "unlocked" if a poll request flakes.
+    }
+  }, [trimmed]);
+
+  useEffect(() => {
+    if (!trimmed) {
+      setState({ locked: false, secondsRemaining: 0, failedAttempts: 0, attemptsBeforeLockout: 5, consecutiveLockouts: 0 });
+      return;
+    }
+    refetch();
+    const interval = state.locked ? 1000 : 5000;
+    const handle = setInterval(refetch, interval);
+    return () => clearInterval(handle);
+  }, [trimmed, state.locked, refetch]);
+
+  // Local countdown — drop one second per second between server polls so the
+  // banner doesn't appear frozen between 1s ticks while locked.
+  useEffect(() => {
+    if (!state.locked) return;
+    const handle = setInterval(() => {
+      setState((prev) => {
+        if (!prev.locked) return prev;
+        const next = Math.max(0, prev.secondsRemaining - 1);
+        // When the local countdown reaches zero, optimistically flip to
+        // unlocked — the next poll (within 5s) will confirm.
+        if (next === 0) return { ...prev, secondsRemaining: 0, locked: false };
+        return { ...prev, secondsRemaining: next };
+      });
+    }, 1000);
+    return () => clearInterval(handle);
+  }, [state.locked]);
+
+  return { ...state, refetch };
+}
 
 // Inline language picker rendered inside each auth card so the user can
 // switch language before signing in — so onboarding lands translated.
@@ -331,12 +413,15 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const lockoutState = useLockoutState(username);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     if (!username.trim()) { setError(t('auth.errorUsername')); return; }
     if (!password) { setError(t('auth.errorPassword')); return; }
+    // Frontend gate — backend re-checks; this just avoids a wasted round-trip.
+    if (lockoutState.locked) return;
 
     setLoading(true);
     try {
@@ -349,6 +434,9 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
       if (!res.ok) {
         setError(data.error || t('auth.errorLoginFailed'));
         setPassword('');
+        // Refetch so the "X attempts left" hint and the locked banner update
+        // immediately after a failed attempt instead of on the next poll tick.
+        lockoutState.refetch();
       } else {
         // Legacy-user migrations return a recovery_key on their first
         // post-encryption login; finishAuth will route us through the
@@ -373,6 +461,10 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
         </div>
         <div style={s.formCol}>
           <label style={s.label} htmlFor="login-username">{t('auth.username')}</label>
+          {/* Username stays editable even when this account is locked, so the
+              user can switch to a different account. The lockout hook
+              refetches whenever the username field changes — typing a name
+              that isn't locked re-enables the form automatically. */}
           <input
             id="login-username"
             style={s.input}
@@ -387,18 +479,42 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
           <label style={s.label} htmlFor="login-password">{t('auth.password')}</label>
           <input
             id="login-password"
-            style={{ ...s.input, marginBottom: error ? '0' : '20px' }}
+            style={{ ...s.input, marginBottom: error ? '0' : '20px', opacity: lockoutState.locked ? 0.5 : 1 }}
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={t('auth.placeholderPassword')}
+            disabled={lockoutState.locked}
           />
 
-          {error && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
+          {/* "X attempts left" hint when failed_attempts is 1..4. Hidden at
+              0 (clean state) and replaced by the lockout note below at 5+. */}
+          {!lockoutState.locked && lockoutState.failedAttempts > 0 && lockoutState.attemptsBeforeLockout > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px', fontStyle: 'italic' }}>
+              {lockoutState.attemptsBeforeLockout} {lockoutState.attemptsBeforeLockout === 1 ? 'attempt' : 'attempts'} left before lockout
+            </div>
+          )}
 
-          <button style={{ ...s.btn, opacity: loading ? 0.5 : 1, marginTop: '8px' }} type="submit" disabled={loading}>
-            {loading ? '…' : t('auth.login')}
+          {/* Locked-out note — replaces the inline error / hint when locked.
+              The disabled submit-button label shows the countdown; this just
+              adds the "X consecutive lockouts" detail when relevant. */}
+          {lockoutState.locked && lockoutState.consecutiveLockouts > 1 && (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px', fontStyle: 'italic' }}>
+              {lockoutState.consecutiveLockouts} consecutive lockouts — each escalates the cooldown.
+            </div>
+          )}
+
+          {error && !lockoutState.locked && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
+
+          <button
+            style={{ ...s.btn, opacity: (loading || lockoutState.locked) ? 0.5 : 1, marginTop: '8px', cursor: lockoutState.locked ? 'not-allowed' : 'pointer' }}
+            type="submit"
+            disabled={loading || lockoutState.locked}
+          >
+            {lockoutState.locked
+              ? `Locked — ${formatLockoutRemaining(lockoutState.secondsRemaining)} left`
+              : (loading ? '…' : t('auth.login'))}
           </button>
 
           <button type="button" style={s.btnSecondary} onClick={onRegister}>
@@ -442,6 +558,10 @@ function RecoverForm({ onSuccess, onBack, onWipe }) {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Same per-user lockout counter as login. Five wrong recovery keys triggers
+  // the same cooldown — this is intentional so an attacker can't bypass the
+  // login lockout by switching to recovery.
+  const lockoutState = useLockoutState(username);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -450,6 +570,7 @@ function RecoverForm({ onSuccess, onBack, onWipe }) {
     if (!recoveryKey.trim()) { setError('Recovery key is required.'); return; }
     if (newPassword.length < 4) { setError('Password must be at least 4 characters.'); return; }
     if (newPassword !== confirm) { setError('Passwords do not match.'); return; }
+    if (lockoutState.locked) return;
 
     setLoading(true);
     try {
@@ -465,6 +586,7 @@ function RecoverForm({ onSuccess, onBack, onWipe }) {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Recovery failed.');
+        lockoutState.refetch();
       } else {
         // Straight into the app — recovery key is unchanged, no reveal needed.
         onSuccess(data.token, data.username, false, newPassword, null, false);
@@ -490,6 +612,7 @@ function RecoverForm({ onSuccess, onBack, onWipe }) {
           </div>
 
           <label style={s.label} htmlFor="rec-username">Username</label>
+          {/* Stays editable — see LoginForm comment. */}
           <input
             id="rec-username"
             style={s.input}
@@ -503,38 +626,59 @@ function RecoverForm({ onSuccess, onBack, onWipe }) {
           <label style={s.label} htmlFor="rec-key">Recovery key</label>
           <input
             id="rec-key"
-            style={{ ...s.input, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: '0.05em' }}
+            style={{ ...s.input, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: '0.05em', opacity: lockoutState.locked ? 0.5 : 1 }}
             type="text"
             autoComplete="off"
             value={recoveryKey}
             onChange={(e) => setRecoveryKey(e.target.value)}
             placeholder="xxxx-xxxx-xxxx-xxxx"
+            disabled={lockoutState.locked}
           />
 
           <label style={s.label} htmlFor="rec-newpass">New password</label>
           <input
             id="rec-newpass"
-            style={s.input}
+            style={{ ...s.input, opacity: lockoutState.locked ? 0.5 : 1 }}
             type="password"
             autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
+            disabled={lockoutState.locked}
           />
 
           <label style={s.label} htmlFor="rec-confirm">Confirm new password</label>
           <input
             id="rec-confirm"
-            style={{ ...s.input, marginBottom: error ? '0' : '20px' }}
+            style={{ ...s.input, marginBottom: error ? '0' : '20px', opacity: lockoutState.locked ? 0.5 : 1 }}
             type="password"
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
+            disabled={lockoutState.locked}
           />
 
-          {error && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
+          {!lockoutState.locked && lockoutState.failedAttempts > 0 && lockoutState.attemptsBeforeLockout > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px', fontStyle: 'italic' }}>
+              {lockoutState.attemptsBeforeLockout} {lockoutState.attemptsBeforeLockout === 1 ? 'attempt' : 'attempts'} left before lockout
+            </div>
+          )}
 
-          <button style={{ ...s.btn, opacity: loading ? 0.5 : 1, marginTop: '8px' }} type="submit" disabled={loading}>
-            {loading ? '…' : 'Recover account'}
+          {lockoutState.locked && lockoutState.consecutiveLockouts > 1 && (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px', fontStyle: 'italic' }}>
+              {lockoutState.consecutiveLockouts} consecutive lockouts — each escalates the cooldown.
+            </div>
+          )}
+
+          {error && !lockoutState.locked && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
+
+          <button
+            style={{ ...s.btn, opacity: (loading || lockoutState.locked) ? 0.5 : 1, marginTop: '8px', cursor: lockoutState.locked ? 'not-allowed' : 'pointer' }}
+            type="submit"
+            disabled={loading || lockoutState.locked}
+          >
+            {lockoutState.locked
+              ? `Locked — ${formatLockoutRemaining(lockoutState.secondsRemaining)} left`
+              : (loading ? '…' : 'Recover account')}
           </button>
 
           <button type="button" style={s.btnSecondary} onClick={onBack}>
@@ -580,6 +724,10 @@ function WipeForm({ onDone, onBack }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  // Same lockout counter as login + recover. Stops an attacker from skipping
+  // the password lockout by bouncing to wipe-with-recovery-key to grind
+  // through recovery keys.
+  const lockoutState = useLockoutState(username);
 
   const CONFIRM_PHRASE = 'DELETE EVERYTHING';
 
@@ -592,6 +740,7 @@ function WipeForm({ onDone, onBack }) {
       setError(`Type ${CONFIRM_PHRASE} to confirm. This cannot be undone.`);
       return;
     }
+    if (lockoutState.locked) return;
 
     setLoading(true);
     try {
@@ -603,6 +752,7 @@ function WipeForm({ onDone, onBack }) {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Could not delete account.');
+        lockoutState.refetch();
       } else {
         setDone(true);
       }
@@ -649,6 +799,7 @@ function WipeForm({ onDone, onBack }) {
           </div>
 
           <label style={s.label} htmlFor="wipe-username">Username</label>
+          {/* Stays editable — see LoginForm comment. */}
           <input
             id="wipe-username"
             style={s.input}
@@ -662,32 +813,48 @@ function WipeForm({ onDone, onBack }) {
           <label style={s.label} htmlFor="wipe-key">Recovery key</label>
           <input
             id="wipe-key"
-            style={{ ...s.input, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: '0.05em' }}
+            style={{ ...s.input, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', letterSpacing: '0.05em', opacity: lockoutState.locked ? 0.5 : 1 }}
             type="text"
             autoComplete="off"
             value={recoveryKey}
             onChange={(e) => setRecoveryKey(e.target.value)}
             placeholder="xxxx-xxxx-xxxx-xxxx"
+            disabled={lockoutState.locked}
           />
 
           <label style={s.label} htmlFor="wipe-confirm">Type {CONFIRM_PHRASE} to confirm</label>
           <input
             id="wipe-confirm"
-            style={{ ...s.input, marginBottom: error ? '0' : '20px' }}
+            style={{ ...s.input, marginBottom: error ? '0' : '20px', opacity: lockoutState.locked ? 0.5 : 1 }}
             type="text"
             autoComplete="off"
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
+            disabled={lockoutState.locked}
           />
 
-          {error && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
+          {!lockoutState.locked && lockoutState.failedAttempts > 0 && lockoutState.attemptsBeforeLockout > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px', fontStyle: 'italic' }}>
+              {lockoutState.attemptsBeforeLockout} {lockoutState.attemptsBeforeLockout === 1 ? 'attempt' : 'attempts'} left before lockout
+            </div>
+          )}
+
+          {lockoutState.locked && lockoutState.consecutiveLockouts > 1 && (
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px', fontStyle: 'italic' }}>
+              {lockoutState.consecutiveLockouts} consecutive lockouts — each escalates the cooldown.
+            </div>
+          )}
+
+          {error && !lockoutState.locked && <div style={{ ...s.error, marginTop: '12px' }}>{error}</div>}
 
           <button
-            style={{ ...s.btn, opacity: loading ? 0.5 : 1, marginTop: '8px', background: 'var(--strong)' }}
+            style={{ ...s.btn, opacity: (loading || lockoutState.locked) ? 0.5 : 1, marginTop: '8px', background: 'var(--strong)', cursor: lockoutState.locked ? 'not-allowed' : 'pointer' }}
             type="submit"
-            disabled={loading}
+            disabled={loading || lockoutState.locked}
           >
-            {loading ? '…' : 'Delete account and all data'}
+            {lockoutState.locked
+              ? `Locked — ${formatLockoutRemaining(lockoutState.secondsRemaining)} left`
+              : (loading ? '…' : 'Delete account and all data')}
           </button>
 
           <button type="button" style={s.btnSecondary} onClick={onBack}>
