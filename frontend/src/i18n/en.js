@@ -651,7 +651,7 @@ export default {
   "portrait.regenerate": "↺ Regenerate",
   "portrait.generate": "✦ Generate portrait",
   "portrait.editManually": "Edit manually",
-  "portrait.characterInfluenceHint": "Adjust \"Character influence\" slider to control how much this shapes your Mirror responses.",
+  "portrait.characterInfluenceHint": "Adjust the \"Portrait weight\" slider on the Context page to control how much this shapes your Mirror responses.",
   "portrait.generating": "Generating…",
   "portrait.generatingLabel": "Generating",
   "portrait.selectCard": "— Select a card —",

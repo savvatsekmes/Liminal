@@ -311,6 +311,7 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
   ]);
 
   const sections = [];
+  sections.push(buildTimeContext());
 
   const portraitWeight = portrait?.slider_portrait_weight ?? 50;
   const skyWeight = portrait?.slider_sky_weight ?? 50;
@@ -319,11 +320,21 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
   if (portraitWeight > 0) {
     const portraitSection = buildPortraitSection(portrait);
     if (portraitWeight < 30) {
-      sections.push(`${portraitSection}\n\n(Note: The user prefers minimal emphasis on their profile in reflections. Reference it lightly.)`);
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: LOW\nThe user has dialed their profile weight down. Do NOT lean on MBTI / Enneagram / astrology / Human Design / tarot / archetype lenses to frame the reflection. Meet them as the specific person who wrote this entry, not as their type chart. Treat the portrait above as far-background only.`);
     } else if (portraitWeight > 70) {
-      sections.push(`${portraitSection}\n\n(The user values their profile context highly. Weave it naturally into your reflections.)`);
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: HIGH\nThe user values their profile context highly. Actively weave their portrait identity into the reflection — at least ONE block must directly reference a portrait detail (MBTI, Enneagram, sun/moon/rising signs, Human Design, soul card, life-path card, archetype). Concrete examples of active weaving:
+- "your Taurus need for grounding shows up in the 4am tea ritual — that's the earth element doing its thing"
+- "this is the Hermit phase your soul card describes — the withdrawal isn't avoidance, it's the chapter you're in"
+- "your ENFP wiring is exhausted by the constant pattern-noticing; the entry is your Ne overheating"
+- "with your Aries moon under that Taurus sun, the chest tightening makes sense — fire wanting to move, earth refusing to"
+Speak to them as someone you know through this lens — not generically. Generic reflections at this setting are a failure.`);
     } else {
-      sections.push(portraitSection);
+      // Mid range: include the portrait but explicitly forbid type-chart
+      // references anywhere in the reflection unless the entry directly
+      // maps to one. Without this, the model would slip type names into
+      // mid-block ("the contradiction of your ENFP nature") even though it
+      // wasn't allowed to open with them.
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: BALANCED\nUse the portrait above to understand who the user is, but do NOT invoke MBTI / Enneagram / sun, moon, or rising signs / Human Design / tarot / type-chart references anywhere in the reflection ("as a Taurus…", "your ENFP nature…", "the Hermit in you…") unless something the user wrote directly maps to that detail. Default mode is to reflect on what they wrote, not to describe their chart back at them.`);
     }
   }
 
@@ -357,15 +368,20 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
   // signal is light (a short journal entry, a "hi" in oracle), since it's
   // the most concrete topical chunk in the prompt. Only the high slider
   // (>70) actively asks for astrological weaving.
-  if (skyWeight > 0) {
+  // Sky context is included ONLY at high slider (>70). Below that we used to
+  // pass it in tagged as "background only", but the model latched onto moon
+  // phase / planetary detail on vague openers anyway — concrete data in the
+  // prompt always beats a soft "don't lead with this" instruction. Treat
+  // mid + low as effectively "no sky data given" so the slider's extremes
+  // produce a real difference instead of a tone hint the model can ignore.
+  if (skyWeight > 70) {
     try {
       const { getSkyContext } = require('./skyService');
-      const skyCtx = getSkyContext();
-      if (skyWeight > 70) {
-        sections.push(`Sky context (important): ${skyCtx}\n(The user values astrological context. Actively weave moon phase, planetary positions, and their symbolic meaning into your reflections.)`);
-      } else {
-        sections.push(`Sky context (background only — do not raise unless what the user wrote explicitly touches astrology, moon, planets, or sky): ${skyCtx}`);
-      }
+      sections.push(`Sky context (important): ${getSkyContext()}\n## SKY EMPHASIS: HIGH\nAt least ONE block in the reflection must directly reference the current sky context (moon phase / sign / planetary position / aspect) and tie its symbolic meaning to what the user wrote. Concrete examples:
+- "the waning gibbous in Sagittarius matches the release you're feeling about old habits"
+- "Mercury station retrograde tomorrow — that 4am clarity is a preview of the inward turn coming"
+- "with the moon in Cancer, the call to mum and the food lie aren't coincidence — water is asking to be felt"
+A reflection at this setting that contains zero sky / moon / planetary references is a failure.`);
     } catch (e) { /* skip if skyService unavailable */ }
   }
 
@@ -456,13 +472,22 @@ function buildPortraitSection(portrait) {
 
   const lines = ['## YOUR PORTRAIT'];
 
+  // Gate astrology + tarot behind their respective sliders so the model doesn't
+  // open a chat with "your Taurus soil and Aries fire" when the user has the sky
+  // slider off and the rational/spiritual slider low. Astrology + Chinese zodiac
+  // follow the Sky slider; Tarot follows the rational/spiritual ("woo") slider.
+  const skyWeight = portrait.slider_sky_weight ?? 50;
+  const rationalSpiritual = portrait.slider_rational_spiritual ?? 50;
+  const includeAstrology = skyWeight > 30;
+  const includeTarot = rationalSpiritual > 30;
+
   if (portrait.mbti) lines.push(`MBTI: ${portrait.mbti}`);
   if (portrait.enneagram) lines.push(`Enneagram: ${portrait.enneagram}`);
   if (portrait.human_design) lines.push(`Human Design: ${portrait.human_design}`);
-  if (portrait.sun_sign || portrait.moon_sign || portrait.rising_sign) {
+  if (includeAstrology && (portrait.sun_sign || portrait.moon_sign || portrait.rising_sign)) {
     lines.push(`Astrology: Sun ${portrait.sun_sign || '?'}, Moon ${portrait.moon_sign || '?'}, Rising ${portrait.rising_sign || '?'}`);
   }
-  if (portrait.chinese_zodiac) {
+  if (includeAstrology && portrait.chinese_zodiac) {
     const czLine = portrait.chinese_element
       ? `Chinese zodiac: ${portrait.chinese_element} ${portrait.chinese_zodiac}`
       : `Chinese zodiac: ${portrait.chinese_zodiac}`;
@@ -472,17 +497,17 @@ function buildPortraitSection(portrait) {
 
   // Tarot
   const tarotLines = [];
-  if (portrait.soul_card) {
+  if (includeTarot && portrait.soul_card) {
     const cardName = portrait.soul_card.replace(/ [IVXLCDM0]+$/, '');
     const desc = TAROT_DESCRIPTIONS[cardName];
     tarotLines.push(`- Soul Card (Sun Sign): ${portrait.soul_card}${desc ? ' — ' + desc : ''}`);
   }
-  if (portrait.life_path_card) {
+  if (includeTarot && portrait.life_path_card) {
     const cardName = portrait.life_path_card.replace(/ [IVXLCDM0]+$/, '');
     const desc = TAROT_DESCRIPTIONS[cardName];
     tarotLines.push(`- Life Path Card (Life Path ${portrait.life_path_number || '?'}): ${portrait.life_path_card}${desc ? ' — ' + desc : ''}`);
   }
-  if (portrait.working_tarot_card) {
+  if (includeTarot && portrait.working_tarot_card) {
     const desc = TAROT_DESCRIPTIONS[portrait.working_tarot_card];
     tarotLines.push(`- Working Card (current): ${portrait.working_tarot_card}${desc ? ' — ' + desc : ''}`);
   }
@@ -494,15 +519,11 @@ function buildPortraitSection(portrait) {
   if (portrait.current_intention) currentLines.push(`- Intention: ${portrait.current_intention}`);
   if (currentLines.length) lines.push(`\nCurrent chapter:\n${currentLines.join('\n')}`);
 
-  // Character portrait — scaled by influence slider
-  const influence = portrait.slider_character_influence ?? 50;
-  if (portrait.character_description && influence > 10) {
-    const emphasis = influence > 65
-      ? '\n(High weight — let this character portrait strongly colour your tone and reflections.)'
-      : influence < 35
-      ? '\n(Low weight — use this as light background context only.)'
-      : '';
-    lines.push(`\nCHARACTER PORTRAIT:\n${portrait.character_description}${emphasis}`);
+  // Character portrait — included whenever set. The character_influence slider
+  // was removed (overlapped with portrait_weight); the whole portrait section
+  // including this is gated by slider_portrait_weight at the call sites.
+  if (portrait.character_description) {
+    lines.push(`\nCHARACTER PORTRAIT:\n${portrait.character_description}`);
   }
 
   // Sliders
@@ -525,7 +546,6 @@ function buildSliderDescription(portrait) {
     [portrait.slider_reflective_action, 'Reflective', 'Action-oriented'],
     [portrait.slider_light_deep, 'Light touch', 'Deep dive'],
     [portrait.slider_conversational_poetic, 'Conversational', 'Poetic'],
-    [portrait.slider_encouraging_challenging, 'Encouraging', 'Challenging'],
   ];
 
   const lines = axes
@@ -591,56 +611,49 @@ function translateSlidersToVoice(portrait) {
   // conversational_poetic
   const cp = v('slider_conversational_poetic');
   if (cp < 30) {
-    instructions.push('Write conversationally — like a thoughtful friend speaking directly.');
+    instructions.push('Conversational — plain talk only. Strip metaphor and imagery; say what you mean the way a friend would over coffee. If you reach for a poetic image, swap it for the literal claim. Short clear sentences over lyrical ones.');
   } else if (cp > 70) {
-    instructions.push('Write with poetic quality — use imagery, metaphor, and lyrical prose.');
+    instructions.push('Poetic — let imagery and rhythm do the heavy lifting. Lean into metaphor, figurative compression, and slower cadence. Where you could explain something plainly OR show it with an image, choose the image. Density of figurative language is the goal.');
   } else {
     instructions.push('Write clearly with occasional moments of poetic language.');
   }
 
-  // encouraging_challenging
-  const ec = v('slider_encouraging_challenging');
-  if (ec < 30) {
-    instructions.push('Lead with encouragement and affirmation.');
-  } else if (ec > 70) {
-    instructions.push('Be willing to challenge — ask hard questions, name difficult patterns, don\'t just validate.');
-  } else {
-    instructions.push('Encourage where warranted but also show the other side — both/and not either/or.');
-  }
-
-  // candor
+  // candor — the unified COMFORT ↔ CONFRONTATION axis. Replaces the old
+  // separate challenging slider (the model conflated them in practice; LLMs
+  // trained on therapy corpora treat "challenge" and "candor" as the same
+  // move). High = both name uncomfortable truths AND push for movement.
+  // Low = both soften observations AND hold space without probing.
   const candor = v('slider_candor');
   if (candor > 65) {
-    instructions.push('Be candid — say what you actually see, even if it\'s uncomfortable. Name avoidance. Play devil\'s advocate. Truth over comfort.');
+    instructions.push('State what you actually see, even when it\'s uncomfortable, AND push them. Name avoidance, projection, contradiction. End on a question that demands a concrete move ("what would the smallest version look like?", "by when?"). Interrogate vague phrases. Truth and friction together.');
   } else if (candor < 35) {
-    instructions.push('Prioritise emotional safety and validation. Meet them where they are.');
-  }
-
-  // character influence
-  const ci = v('slider_character_influence');
-  if (ci > 65) {
-    instructions.push('Bring full presence and personality — don\'t be generic or bland.');
+    instructions.push('Comfort first. Soften observations and validate their framing. Do NOT name avoidance, denial, or contradictions. Hold space — no probing questions, no demands for movement. Receive what they wrote and let them sit with it.');
   }
 
   // friend ↔ stranger
   const fs = v('slider_friend_stranger');
   if (fs < 25) {
-    instructions.push('Speak like a close friend — casual, warm, blunt when needed. Use slang, contractions, short sentences. Drop the therapist distance. Talk like you actually know them. Call them out affectionately. "Dude", "honestly", "look" are fine. You\'re not a coach or a stranger.');
+    instructions.push(`Speak like an actual close friend who knows them well, not a Mirror or a guide.
+- Use contractions everywhere — "you're", "don't", "it's", "isn't". Never "you are" or "do not" unless you'd literally say it out loud.
+- Drop literary register. AVOID phrases like "fossil record", "the curtain falls", "the architecture of", "load-bearing", "calcified", "the universe is trying to tell you", "frequency", "echoes", "tendrils", "standing at the edge of a quiet river", "watching the water flow". If a sentence could be in a Sufi poem or a self-help book, rewrite it.
+- Short sentences. Casual openings: "honestly", "look", "yeah", "okay so". Sentence fragments are fine.
+- Affectionate bluntness is welcome — call them out the way a friend at 11pm would. "Dude" or first-name address is fine.
+- IMPORTANT: block titles can stay polished (e.g. "The 4AM Void") — that's a label, not speech. But the body prose underneath must NOT match the title's literary register. The body is HOW YOU TALK. If your body prose sounds like the same voice that wrote the title, you've failed this setting. Mismatch is the goal: literary title, casual body.`);
   } else if (fs < 45) {
-    instructions.push('Speak like a trusted friend — warm and direct, not clinical. Casual tone, but still thoughtful. You know this person.');
+    instructions.push('Speak like a trusted friend — warm and direct, not clinical. Casual tone with contractions, but still thoughtful. You know this person.');
   } else if (fs > 75) {
-    instructions.push('Maintain professional distance — thoughtful, measured, considered. You are a wise guide, not a friend.');
+    instructions.push('Maintain professional distance — thoughtful, measured, considered. You are a wise guide, not a friend. Wise-guide voice does NOT mean reaching for astrology, type-chart, or archetype framing ("as a Taurus", "your Aries Moon", "the Hermit in you") — that is governed by the portrait emphasis setting and is forbidden at the default. Stay grounded in what the user actually wrote.');
   }
 
   // swearing (slider: 0 = none, 100 = heavy)
   const sw = v('slider_swearing');
   if (sw > 0) {
     if (sw < 30) {
-      instructions.push('You may occasionally use mild profanity ("damn", "hell", "crap") when it fits naturally. Keep it rare and low-key.');
+      instructions.push('You may occasionally use mild profanity ("damn", "hell", "crap") when it fits naturally. Keep it rare and low-key. The Mirror reflection format does NOT prohibit this — if you\'d say "damn" out loud reading the entry, write "damn" in the reflection.');
     } else if (sw < 60) {
-      instructions.push('You may use profanity naturally where it fits the tone — "shit", "damn", "fuck" etc. Don\'t force it or overdo it. Swear like a real person would in casual conversation, not for shock value.');
+      instructions.push('Use profanity naturally where it fits the tone — "shit", "damn", "fuck" etc. Don\'t force it or overdo it, but the reflection IS your speech, not a polished essay ABOUT speech. If you\'d say "fuck, this one\'s heavy" to a friend looking at this entry with you, write that in the reflection. At least one swear is expected somewhere across the blocks at this setting.');
     } else {
-      instructions.push('Swear freely and naturally — "shit", "fuck", "damn", "bullshit" etc. Use it the way a close friend would when being real with you. Don\'t hold back, but don\'t be gratuitous either. Match or exceed the energy of what they wrote.');
+      instructions.push('Swear freely and naturally — "shit", "fuck", "damn", "bullshit" etc. Use it the way a close friend would when being real with you. The reflection format does NOT override this — if anything the format should bend to match the register. Match or exceed the energy of what they wrote. Multiple swears across the blocks are expected at this setting.');
     }
   }
 
@@ -724,20 +737,24 @@ const REFUSAL_DISCIPLINE = '';
 
 function buildCandorInstruction(portrait) {
   const v = portrait?.slider_candor ?? 50;
+  // Candor is the unified COMFORT ↔ CONFRONTATION axis (formerly two
+  // sliders — see comment in translateSlidersToVoice for rationale).
+  // High = state uncomfortable truths AND push for movement.
+  // Low = soften AND hold space.
   if (v > 65) {
     return `## CANDOR MODE: HIGH
-The user has explicitly asked for truth over comfort. This is their most important setting.
-- Do NOT simply validate. Actively look for where they may be wrong, in denial, or avoiding something.
-- Name the uncomfortable thing directly. Be the voice they are not giving themselves.
-- Ask the question they are not asking. Surface the pattern they may not want to see.
-- Devil's advocate is not cruelty — it is respect. Treat them as capable of handling truth.
-- Challenge is the gift. Comfort is the last resort, not the first.
-- Challenge THE USER's framings, not the third parties they describe. When the entry authors someone else's interior — "she's blocked", "he's avoiding", "she's bypassing" — name the act of authoring as the pattern. Do NOT agree with the diagnosis, extend it, or make your own confident claims about that person's inner state. They are not in the room. The user is.`;
+The user has dialed truth and friction up. Both NAME and PUSH — not one or the other.
+- NAME (statements): name what they appear to be avoiding, projecting, or contradicting. Surface the pattern out loud. Be the voice they are not giving themselves on the page.
+- PUSH (questions): REQUIRED — the final block MUST end with a question that demands a concrete move. Examples: "so what's the smallest version of starting you could try this week?", "by when?", "what would actually change tomorrow if you stopped pretending?", "what's the first hour of doing it look like?". Interrogate vague phrases — if they wrote "I should", ask "by when?". A reflection at this setting that has zero such questions is incomplete — both halves must fire.
+- Comfort is not the first instinct here, but say things with care, not as accusations.
+- Apply this to THE USER's framings, not the third parties they describe. When the entry authors someone else's interior — "she's blocked", "he's avoiding", "she's bypassing" — name the act of authoring as the pattern. Do NOT agree with the diagnosis, extend it, or make your own confident claims about that person's inner state. They are not in the room. The user is.`;
   }
   if (v < 35) {
     return `## CANDOR MODE: LOW
-The user needs emotional support right now. Prioritise warmth and validation over challenge.
-- Meet them where they are. Don't push or reframe unless they explicitly ask.
+The user has dialed comfort up — both soften AND hold space.
+- Soften what you see. Don't name avoidance, denial, or contradictions even when you spot them.
+- Do NOT push or probe. No demands for movement, no "what will you do?" questions. Receive what they wrote and let them sit with it.
+- Meet them inside their own frame; don't reframe unless they explicitly ask.
 - Comfort first.`;
   }
   return null;
@@ -784,8 +801,8 @@ Your response must be structured as JSON with this exact shape:
   "opening": "A personal, visceral 1-3 sentence opening that addresses the person by name and captures the emotional essence of the whole entry. This should feel like a friend who just read something real — not a summary, but a felt response. e.g. '[NAME]… this reads like someone who just walked out of a furnace and is still checking if their eyebrows are intact.' Replace [NAME] with the actual name given above. Be real. Be vivid. Match the energy of what they wrote.",
   "blocks": [
     {
-      "title": "A Named Theme",
-      "body": "Prose reflection...",
+      "title": "A Theme Title (replace with one drawn from THIS user's entry)",
+      "body": "There's a specific honesty in how a vending machine glows on an empty street at night. It isn't asking for anything; it's just available. **The light wasn't trying to be seen — it just couldn't help being visible.** That's what attention is, sometimes: the thing was always there, you just turned in its direction. (NOTE: this example exists ONLY to demonstrate the format — setup sentences, then exactly ONE bolded landing sentence wrapped in double asterisks, then release sentences. Replace the vending-machine content entirely with a reflection drawn from THIS user's entry. Do NOT mention vending machines, glow, or street light in your output.)",
       "quote": "Optional short quote or null",
       "archetype": "Auto"
     }
@@ -802,10 +819,11 @@ Rules:
     • 500-1000 words  → 5-6 blocks
     • 1000+ words     → 6-7 blocks
   Never fewer than 2. Never more than 7. If two themes restate the same observation, collapse them into one block; if you only see two distinct threads in a long entry, write two blocks rather than padding.
+- Each block body must be **100–150 words**. Not shorter (a one-paragraph answer doesn't earn its block); not longer (essays drown the entry). If a theme can't be said in 150 words, you have two themes — split or cut. Counting includes the body only, not the title or quote.
 - Each paragraph has a short title that names the theme (e.g. "A Softer Nervous System", "The Timing Irony"), NOT the archetype.
 - Write each paragraph in your blended voice — draw on whichever wisdom tradition is most relevant to that specific theme naturally, without labelling which one you are using.
 - Write in prose paragraphs. No bullet points ever. No lists.
-- Bold sparingly — at most 1-2 key phrases per block using **bold**. Not whole sentences.
+- Bold the strongest line in each block using **double asterisks**. REQUIRED, not optional — every block must contain exactly one bolded key sentence (or a single bolded phrase, never more than one bold span per block). Pick the line that lands hardest; the bold is the takeaway the user's eye should catch.
 - The "quote" field on each block must always be null. Do NOT generate, recall, or invent quotes from wisdom traditions, philosophers, or any named author — the backend fills this slot in by selecting a real, attributable quote from a curated bank that thematically matches the block. Anything you put in this field will be discarded.
 - Write a closing paragraph with a final integrating thought.
 - End with one open question for the person to sit with.
@@ -824,21 +842,54 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
+  const portraitWeight = portrait?.slider_portrait_weight ?? 50;
+  sections.push(buildTimeContext());
 
-  if (portrait) sections.push(buildPortraitSection(portrait));
+  // Honour slider_portrait_weight (same directive form as Oracle — see
+  // buildOracleSystemPrompt for rationale).
+  if (portrait && portraitWeight > 0) {
+    const portraitSection = buildPortraitSection(portrait);
+    if (portraitWeight < 30) {
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: LOW\nThe user has dialed their profile weight down. Do NOT lean on MBTI / Enneagram / astrology / Human Design / tarot / archetype lenses to frame the reply. Meet them as the specific person asking right now, not as their type chart. Treat the portrait above as far-background only.`);
+    } else if (portraitWeight > 70) {
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: HIGH\nThe user values their profile context highly. Actively weave their portrait identity into the reply — at least one type-chart / sign / archetype connection should appear. Concrete examples of active weaving:
+- "your Taurus need for grounding is what's brewing the 4am tea"
+- "this is the Hermit phase your soul card describes"
+- "your ENFP wiring is exhausted by the constant pattern-noticing"
+- "Aries moon under Taurus sun — fire wanting to move, earth refusing"
+Speak to them as someone you know through this lens — not generically. Generic responses at this setting are a failure.`);
+    } else {
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: BALANCED\nUse the portrait above to understand who the user is, but do NOT invoke sign / type-chart / archetype references anywhere in the reply — not in the opener, not mid-sentence, not as a closer ("as a Taurus…", "your Aries Moon…", "your ENFP nature…", "the Hermit in you…"). Only invoke a specific portrait detail if the question directly maps to it. Default mode is to answer what they actually asked, not to describe their chart back at them.`);
+    }
+  } else if (portrait) {
+    sections.push(`## PORTRAIT EMPHASIS: OFF\nThe user has turned profile weighting off. Respond to what they actually asked. Do NOT invoke MBTI / Enneagram / astrology / Human Design / tarot / archetype framing — meet them as a person, not a chart.`);
+  }
+  // Memory narrative — softened (see buildOracleSystemPrompt comment).
   const memSection = await buildMemorySection(userId);
-  if (memSection) sections.push(memSection);
+  if (memSection) {
+    const ASK_MEM_CAP = 600;
+    const trimmed = memSection.length > ASK_MEM_CAP
+      ? memSection.slice(0, ASK_MEM_CAP) + '…'
+      : memSection;
+    sections.push(`${trimmed}\n\n(BACKGROUND ONLY — this is what's been learned from past journaling. Use it to understand the person. Do NOT quote specific scenes, rituals, or images from it; answer the question they actually asked.)`);
+  }
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
 
-  if (skyWeight > 0) {
+  // Rich voice instructions from the response-style sliders. Without this
+  // block Ask only saw the terse "Response style: Lean Direct, Lean Action"
+  // line embedded in the portrait — sliders like friend_stranger, light_deep,
+  // and conversational_poetic had effectively no teeth on this surface.
+  const sliderVoiceAsk = translateSlidersToVoice(portrait);
+  if (sliderVoiceAsk) sections.push(`## RESPONSE STYLE\n${sliderVoiceAsk}`);
+
+  // Sky context only at high slider (>70). See buildReflectSystemPrompt for
+  // the rationale — soft "background only" hints don't hold against concrete
+  // data in the prompt, so mid + low effectively mean "no sky".
+  if (skyWeight > 70) {
     try {
       const { getSkyContext } = require('./skyService');
-      if (skyWeight > 70) {
-        sections.push(`Sky context (important): ${getSkyContext()}\n(The user values astrological context. Weave moon phase / planetary positions in actively.)`);
-      } else {
-        sections.push(`Sky context (background only — do not raise unless the user explicitly asks about astrology, moon, planets, or sky): ${getSkyContext()}`);
-      }
+      sections.push(`Sky context (important): ${getSkyContext()}\n## SKY EMPHASIS: HIGH\nThe reply must directly reference the current sky context (moon phase / sign / planetary position / aspect). Concrete examples: "the waning gibbous in Sagittarius...", "Mercury station retrograde tomorrow...", "with the moon in Cancer...". A reply at this setting with zero sky references is a failure.`);
     } catch {}
   }
 
@@ -881,16 +932,85 @@ async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
   return sections.join('\n\n');
 }
 
+// Light time-of-day context. Without this the model would hallucinate
+// "tonight" / "this morning" based on what the memory section happened to
+// emphasise (e.g. a memory about 4am wakeups would make every reply assume
+// it was night). Single-user desktop app — server time is the user's time.
+function buildTimeContext() {
+  const now = new Date();
+  const h = now.getHours();
+  const timeOfDay =
+    h < 5  ? 'late night' :
+    h < 12 ? 'morning'    :
+    h < 17 ? 'afternoon'  :
+    h < 21 ? 'evening'    :
+             'night';
+  const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const clock   = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `## CURRENT TIME\nIt is ${dayName} ${timeOfDay}, ${clock} the user's local time. Reference this only if it's directly relevant — do NOT assume the user is awake at an unusual hour, struggling to sleep, journaling at 4am, etc. unless they explicitly say so right now.`;
+}
+
 async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null) {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
+  const portraitWeight = portrait?.slider_portrait_weight ?? 50;
+  sections.push(buildTimeContext());
 
-  if (portrait) sections.push(buildPortraitSection(portrait));
+  // Honour slider_portrait_weight the same way Reflect does — when the user
+  // has dialed the portrait down, don't dump it into the system prompt; when
+  // they've dialed it up, mark it as primary context. We previously used a
+  // soft hint ("reference lightly") at low weight and "weave naturally" at
+  // high — but the memory narrative below is a much louder signal, so the
+  // soft hint had no audible effect. The directive form below makes the
+  // slider's extremes actually shape the reply.
+  if (portrait && portraitWeight > 0) {
+    const portraitSection = buildPortraitSection(portrait);
+    if (portraitWeight < 30) {
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: LOW\nThe user has dialed their profile weight down. Do NOT lean on MBTI / Enneagram / astrology / Human Design / tarot / archetype lenses to frame the reply. Meet them as the specific person speaking right now, not as their type chart. Treat the portrait above as far-background only.`);
+    } else if (portraitWeight > 70) {
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: HIGH\nThe user values their profile context highly. Actively weave their portrait identity into the reply — at least one type-chart / sign / archetype connection should appear. Concrete examples of active weaving:
+- "your Taurus need for grounding is what's brewing the 4am tea"
+- "this is the Hermit phase your soul card describes"
+- "your ENFP wiring is exhausted by the constant pattern-noticing"
+- "Aries moon under Taurus sun — fire wanting to move, earth refusing"
+Speak to them as someone you know through this lens — not generically. Generic responses at this setting are a failure.`);
+    } else {
+      // Mid range used to fall through with no directive — and the model
+      // would latch onto the most evocative line in the portrait (almost
+      // always the natal signs, e.g. "Sun Taurus, Moon Aries") and use it
+      // as an opener on every reply. Explicitly forbid lead-with-type
+      // framing at the default position.
+      sections.push(`${portraitSection}\n\n## PORTRAIT EMPHASIS: BALANCED\nUse the portrait above to understand who the user is, but do NOT invoke sign / type-chart / archetype references anywhere in the reply — not in the opener, not mid-paragraph, not as a closer ("as a Taurus…", "your Aries Moon…", "your ENFP nature…", "the Hermit in you…"). Only invoke a specific portrait detail if what the user just said directly maps to it. Default mode is to respond to what they wrote, not to describe their chart back at them.`);
+    }
+  } else if (portrait) {
+    // Weight === 0: portrait section is omitted entirely. Add an explicit
+    // directive so the model treats the absence as a signal, not as missing
+    // data to compensate for.
+    sections.push(`## PORTRAIT EMPHASIS: OFF\nThe user has turned profile weighting off. Respond to what they actually wrote. Do NOT invoke MBTI / Enneagram / astrology / Human Design / tarot / archetype framing — meet them as a person, not a chart.`);
+  }
+  // Memory narrative — softened for conversations. The full ~800-token
+  // synthesis is rich enough that the model used to grab specific imagery
+  // from it as opening hooks ("your 4 AM tea ritual...") on every reply.
+  // Truncate + tag as background-only so the model has the context but
+  // doesn't quote scenes back at the user.
   const memSection = await buildMemorySection(userId);
-  if (memSection) sections.push(memSection);
+  if (memSection) {
+    const ORACLE_MEM_CAP = 600;
+    const trimmed = memSection.length > ORACLE_MEM_CAP
+      ? memSection.slice(0, ORACLE_MEM_CAP) + '…'
+      : memSection;
+    sections.push(`${trimmed}\n\n(BACKGROUND ONLY — this is what's been learned about the user from past journaling. Use it to understand them. Do NOT quote specific scenes, rituals, or images from it as conversational openers; respond to what the user actually says now.)`);
+  }
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
+
+  // Rich voice instructions from the response-style sliders. Without this
+  // block Oracle only saw the terse "Response style: Lean Direct, Lean Action"
+  // line embedded in the portrait — sliders like friend_stranger, light_deep,
+  // and conversational_poetic had effectively no teeth on this surface.
+  const sliderVoiceOracle = translateSlidersToVoice(portrait);
+  if (sliderVoiceOracle) sections.push(`## RESPONSE STYLE\n${sliderVoiceOracle}`);
 
   // Inject linked entry/note context when this session was created from "Let's talk about this".
   // Title/body/tags are encrypted at rest — decrypt before handing to the LLM, otherwise the
@@ -929,7 +1049,7 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null
           (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
           `\nFull entry text:\n"""\n${bodyText || '(empty)'}\n"""\n` +
           (reflectionText ? `\nMirror reflection saved on this entry:\n"""\n${reflectionText}\n"""\n` : '') +
-          `\nWhen the user asks about this entry, reference specific things they wrote — but stay short. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
+          `\nTHIS ENTRY IS THE PRIMARY CONTEXT for the entire conversation. Stay grounded in what the user actually wrote here — the specific events, feelings, and language of THIS entry. Do NOT open with astrology, tarot, archetypes, character-portrait framing, moon phase, or other portrait/sky context unless the user explicitly raises it. Treat that material as far-background only. When the user asks about this entry, reference specific things they wrote. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
         );
       }
     }
@@ -962,7 +1082,7 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null
           (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
           `\nFull note text:\n"""\n${noteText || '(empty)'}\n"""\n` +
           (reflectionText ? `\nMirror reflection saved on this note:\n"""\n${reflectionText}\n"""\n` : '') +
-          `\nWhen the user asks about this note, reference specific things they wrote — but stay short. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
+          `\nTHIS NOTE IS THE PRIMARY CONTEXT for the entire conversation. Stay grounded in what the user actually wrote here. Do NOT open with astrology, tarot, archetypes, character-portrait framing, moon phase, or other portrait/sky context unless the user explicitly raises it. Treat that material as far-background only. When the user asks about this note, reference specific things they wrote. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
         );
       }
     }
@@ -970,18 +1090,15 @@ async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null
     console.error('[memoryService] Failed to inject linked entry/note context:', err.message);
   }
 
-  if (skyWeight > 0) {
+  // Sky context only at high slider (>70). The model used to latch onto
+  // moon-phase / planetary detail on a vague "hi" because the data was in
+  // the prompt and the "background only" instruction couldn't override it.
+  // Treating mid + low as "no sky" makes the slider's extremes actually
+  // produce different replies instead of a hint the model ignores.
+  if (skyWeight > 70) {
     try {
       const { getSkyContext } = require('./skyService');
-      // Default + low slider: BACKGROUND only. The model used to latch onto
-      // moon-phase / planetary detail on a vague "hi" because the line read
-      // as topical content with no instruction to keep it ambient. Only the
-      // explicit high slider (>70) actively asks for astrological weaving.
-      if (skyWeight > 70) {
-        sections.push(`Sky context (important): ${getSkyContext()}\n(The user values astrological context. Actively weave moon phase / planetary positions / their symbolic meaning into your replies.)`);
-      } else {
-        sections.push(`Sky context (background only — do not raise unless the user explicitly asks about astrology, moon, planets, or sky): ${getSkyContext()}`);
-      }
+      sections.push(`Sky context (important): ${getSkyContext()}\n## SKY EMPHASIS: HIGH\nThe reply must directly reference the current sky context (moon phase / sign / planetary position / aspect) and tie its symbolic meaning to what the user said. Concrete examples: "the waning gibbous in Sagittarius matches what you're releasing right now", "Mercury station retrograde tomorrow — your 4am clarity is the preview", "with the moon in Cancer, water is asking to be felt". A reply at this setting with zero sky references is a failure.`);
     } catch {}
   }
 
@@ -1146,6 +1263,9 @@ module.exports = {
   buildAskSystemPrompt,
   buildOracleSystemPrompt,
   buildToneRefresher,
+  buildCandorInstruction,
+  buildTonePermissions,
+  buildPortraitSection,
   translateSlidersToVoice,
   getArchetypeVoice,
   getSafeCustomArchetypePrompt,

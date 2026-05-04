@@ -552,7 +552,8 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
           >
             {astroCalcing ? t('portrait.calculating') : t('portrait.calculateAstrology')}
           </button>
-          {saved && <span style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>{t('common.saved')}</span>}
+          {/* Save indicator moved out of the inline row — now shown as the
+              same floating "Saved" pill that MemoryPage / Settings use. */}
         </div>
       </div>
       </>
@@ -578,6 +579,26 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
         onEditCancel={() => setEditingPortrait(false)}
       />
     </div>
+    {/* Floating "Saved" pill anchored to the bottom-right of the PORTRAIT
+        form column (left side), not the page — so it doesn't sit on top of
+        the Character Portrait panel. The right offset accounts for the
+        resizable right-panel width on desktop; on mobile the panel stacks
+        below, so 24px from the screen edge is correct. */}
+    {saved && (
+      <div style={{
+        position: 'fixed',
+        bottom: '24px',
+        right: `${(isMobile ? 0 : portraitPanelWidth) + 24}px`,
+        padding: '10px 18px',
+        background: 'var(--strong)',
+        color: 'var(--white)',
+        borderRadius: '10px',
+        fontSize: '13px',
+        zIndex: 9999,
+        pointerEvents: 'none',
+        transition: 'opacity 0.3s',
+      }}>{t('common.saved')}</div>
+    )}
     </div>
   );
 }

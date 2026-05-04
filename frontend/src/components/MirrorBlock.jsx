@@ -12,14 +12,14 @@ const s = {
     borderBottom: 'var(--border-style)',
   },
   title: {
-    fontSize: '13px',
+    fontSize: '15px',
     fontWeight: '600',
     color: 'var(--strong)',
     marginBottom: '10px',
     lineHeight: '1.3',
   },
   body: {
-    fontSize: '12px',
+    fontSize: '14px',
     fontStyle: 'italic',
     color: 'var(--body)',
     lineHeight: '1.85',

@@ -94,7 +94,7 @@ const s = {
   },
   opening: {
     padding: '22px 24px 18px',
-    fontSize: '13px',
+    fontSize: '14px',
     fontStyle: 'italic',
     color: 'var(--strong)',
     lineHeight: '1.75',

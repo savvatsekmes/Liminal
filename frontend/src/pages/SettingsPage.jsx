@@ -366,7 +366,7 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
         {activeTab === 'account' && <AccountSection cfg={cfg} set={set} save={save} showToast={showToast} username={username} onLogout={onLogout} avatarUrl={avatarUrl} onAvatarChange={onAvatarChange} />}
         {activeTab === 'data'    && <DataSection showToast={showToast} />}
         {activeTab === 'general'    && <GeneralSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
-        {activeTab === 'appearance' && <AppearanceSection />}
+        {activeTab === 'appearance' && <AppearanceSection showToast={showToast} />}
       </div>
 
       {toast && <div style={s.toast}>{toast}</div>}
@@ -1878,14 +1878,26 @@ function DataSection({ showToast }) {
   const [restoringBackup, setRestoringBackup] = useState(false);
   const restoreInputRef = useRef(null);
 
+  // Skip auto-save until the initial /api/settings GET has populated state —
+  // otherwise the very first render writes the default values back.
+  const backupLoadedRef = useRef(false);
   useEffect(() => {
     apiFetch('/api/settings').then(r => r.json()).then(data => {
       setBackupLocation(data.backup_location || '');
       setAutoBackupEnabled(data.auto_backup_enabled === 'true');
       setMaxBackups(data.max_backups || '10');
       setLastBackupTime(data.last_backup_time || '');
+      backupLoadedRef.current = true;
     }).catch(() => {});
   }, []);
+
+  // Auto-save backup settings when the auto-backup toggle or max-backups
+  // dropdown changes — replaces the explicit "Save" button. Folder picks
+  // already self-save inside chooseBackupLocation.
+  useEffect(() => {
+    if (!backupLoadedRef.current) return;
+    saveBackupSettings();
+  }, [autoBackupEnabled, maxBackups]);
 
   async function handleBrowseBackupFolder() {
     if (!window.liminal?.pickBackupFolder) {
@@ -2027,7 +2039,6 @@ function DataSection({ showToast }) {
         </Field>
 
         <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-          <Btn primary onClick={saveBackupSettings}>{t('common.save')}</Btn>
           <Btn onClick={handleManualBackup} disabled={backingUp || !backupLocation}>
             {backingUp ? t('settings.working') : t('settings.backupNow')}
           </Btn>
@@ -2160,10 +2171,20 @@ function DataSection({ showToast }) {
 
 // ── Appearance ───────────────────────────────────────────────────────────────
 
-function AppearanceSection() {
+function AppearanceSection({ showToast }) {
   const { theme } = useTheme();
   const { t } = useLanguage();
   const { fontId, setFont, headingFontId, setHeadingFont } = useFont();
+  // Appearance settings (theme, fonts, font scale) already persist on change
+  // — but never surfaced a confirmation. Watch the persisted values here and
+  // flash the shared "Saved" toast once they change. mountedRef skips the
+  // initial render so we don't toast on tab open.
+  const apMountedRef = useRef(false);
+  useEffect(() => {
+    if (!apMountedRef.current) { apMountedRef.current = true; return; }
+    if (showToast) showToast(t('common.saved'));
+  }, [theme, fontId, headingFontId]);
+  const flashSaved = () => { if (showToast) showToast(t('common.saved')); };
   // Pending Google-font pick that's waiting on consent. { id, kind: 'body' | 'heading' } | null
   const [pendingFont, setPendingFont] = useState(null);
   // Font scale (UI zoom). Read once from localStorage; updates land via the
@@ -2182,7 +2203,7 @@ function AppearanceSection() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ui_font_scale: value }),
-    }).catch(() => {});
+    }).then(flashSaved).catch(() => {});
   }
 
   function handlePick(kind, id) {

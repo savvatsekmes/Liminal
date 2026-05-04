@@ -280,47 +280,100 @@ router.post('/:id/reflect', async (req, res) => {
   }
   const shortMemory = memorySummary && memorySummary.length > 600 ? memorySummary.slice(0, 600) + '…' : (memorySummary || '');
 
+  // Slider-driven voice + candor + tone permissions. Note reflection used to
+  // bypass all of these — response-style sliders, candor mode, swearing, and
+  // sexual_content_enabled silently did nothing on this surface. Wire them in
+  // the same way Reflect / Oracle do so the user's settings carry through
+  // consistently across journal, notes, and conversations.
+  const sliderVoiceNote = memoryService.translateSlidersToVoice(portrait);
+  const candorBlockNote = memoryService.buildCandorInstruction(portrait);
+  const toneBlockNote   = memoryService.buildTonePermissions(portrait);
+  // Build the portrait section the same way Reflect / Oracle / Ask do, then
+  // apply the same three-tier portrait_weight directive (LOW / BALANCED /
+  // HIGH). Previously notes dumped `character_description` raw, which already
+  // contained astrology + tarot text from the AI portrait synthesis — so the
+  // sky / rational-spiritual gates we added in buildPortraitSection never
+  // applied to notes, and "Taurus root and Aries fire" / "the Hierophant"
+  // kept leaking into note reflections.
+  const portraitWeight = portrait?.slider_portrait_weight ?? 50;
+  let portraitBlockNote = '';
+  if (portrait && portraitWeight > 0) {
+    const portraitSection = memoryService.buildPortraitSection
+      ? memoryService.buildPortraitSection(portrait)
+      : '';
+    if (portraitSection) {
+      if (portraitWeight < 30) {
+        portraitBlockNote = `${portraitSection}\n\n## PORTRAIT EMPHASIS: LOW\nDo NOT lean on MBTI / Enneagram / astrology / Human Design / tarot / archetype lenses to frame the reflection. Meet them as the specific person who wrote this note. Treat the portrait above as far-background only.`;
+      } else if (portraitWeight > 70) {
+        portraitBlockNote = `${portraitSection}\n\n## PORTRAIT EMPHASIS: HIGH\nActively weave their portrait identity (MBTI, Enneagram, signs, archetypes, soul / life-path cards as relevant) into the reflection. Speak through this lens — not generically.`;
+      } else {
+        portraitBlockNote = `${portraitSection}\n\n## PORTRAIT EMPHASIS: BALANCED\nUse the portrait above to understand who the user is, but do NOT invoke sign / type-chart / archetype references anywhere in the reflection ("as a Taurus…", "your Aries fire…", "the Hierophant in you…", "your ENFP nature…") unless the note directly maps to that detail. Reflect on what they wrote, not on their chart.`;
+      }
+    }
+  } else if (portrait) {
+    portraitBlockNote = `## PORTRAIT EMPHASIS: OFF\nThe user has turned profile weighting off. Reflect on what they actually wrote. Do NOT invoke MBTI / Enneagram / astrology / Human Design / tarot / archetype framing.`;
+  }
+  // Soften the synthesized memory the same way Oracle does — it's background
+  // about who they are, not specific imagery to quote back.
+  const NOTE_MEM_CAP = 600;
+  const memBackgroundLabel = shortMemory
+    ? `## WHAT'S BEEN LEARNED ABOUT THIS PERSON (BACKGROUND ONLY)\n${shortMemory.length > NOTE_MEM_CAP ? shortMemory.slice(0, NOTE_MEM_CAP) + '…' : shortMemory}\n\n(Use this to understand them. Do NOT quote specific scenes, rituals, or imagery from it as openers; reflect on the note itself.)`
+    : '';
+
   const systemPrompt = singleArchetype
     ? `You are the ${singleArchetype} voice. Speak ONLY as ${singleArchetype} — no other voice, tradition, or register.
 
 ${archetypeVoice || ''}
 
+${portraitBlockNote ? portraitBlockNote + '\n' : ''}
+${memBackgroundLabel ? memBackgroundLabel + '\n' : ''}
+${sliderVoiceNote ? `The user has also set these response style preferences. Honour them while staying in the ${singleArchetype} voice:\n${sliderVoiceNote}\n` : ''}
+${candorBlockNote ? `${candorBlockNote}\n` : ''}
 ${typePrompt}
-
-${shortMemory ? `Brief context about this person (do not let it pull you out of voice):\n${shortMemory}\n` : ''}
 
 Respond with a JSON object:
 {
   "blocks": [
-    { "title": "A named theme", "body": "Prose reflection in the ${singleArchetype} voice", "quote": null, "archetype": "${singleArchetype}" }
+    { "title": "A Theme Title (replace with one drawn from THIS note)", "body": "There's a specific honesty in how a vending machine glows on an empty street at night. It isn't asking for anything; it's just available. **The light wasn't trying to be seen — it just couldn't help being visible.** That's what attention is, sometimes. (NOTE: format example only — setup, ONE bolded landing sentence, release. Replace the vending-machine imagery entirely with content drawn from THIS note. Do NOT mention vending machines or glow.)", "quote": null, "archetype": "${singleArchetype}" }
   ]
 }
 
 Rules:
 - 1-2 blocks only (notes are shorter than journal entries)
+- Each block body must be 100-150 words. Not shorter, not longer.
+- Bold the strongest line in each block using **double asterisks**. REQUIRED — every block must contain exactly one bolded key sentence or phrase (never more than one bold span per block). Pick the line that lands hardest.
 - Write in prose, no bullet points
 - Speak directly to the person ("you")
 - Return ONLY the JSON
+
+${toneBlockNote}
 
 VOICE REMINDER: stay unmistakably in the ${singleArchetype} voice. Vocabulary, rhythm, and imagery must make it obvious which voice is speaking.`
     : `You are Liminal's Mirror — a reflection system for a personal journaling app.
 ${typePrompt}
 
-${portrait?.character_description ? `CHARACTER PORTRAIT:\n${portrait.character_description}\n` : ''}
-${memorySummary ? `WHAT YOU KNOW ABOUT THIS PERSON:\n${memorySummary}\n` : ''}
+${portraitBlockNote ? portraitBlockNote + '\n' : ''}
+${memBackgroundLabel ? memBackgroundLabel + '\n' : ''}
+
+${sliderVoiceNote ? `## RESPONSE STYLE\n${sliderVoiceNote}\n` : ''}
+${candorBlockNote ? `${candorBlockNote}\n` : ''}
 
 Respond with a JSON object:
 {
   "blocks": [
-    { "title": "A named theme", "body": "Prose reflection...", "quote": null, "archetype": "Lens name" }
+    { "title": "A Theme Title (replace with one drawn from THIS note)", "body": "There's a specific honesty in how a vending machine glows on an empty street at night. It isn't asking for anything; it's just available. **The light wasn't trying to be seen — it just couldn't help being visible.** That's what attention is, sometimes. (NOTE: format example only — setup, ONE bolded landing sentence, release. Replace the vending-machine imagery entirely with content drawn from THIS note. Do NOT mention vending machines or glow.)", "quote": null, "archetype": "Lens name" }
   ]
 }
 
 Rules:
 - 1-2 blocks only (notes are shorter than journal entries)
+- Each block body must be 100-150 words. Not shorter, not longer.
+- Bold the strongest line in each block using **double asterisks**. REQUIRED — every block must contain exactly one bolded key sentence or phrase (never more than one bold span per block). Pick the line that lands hardest.
 - Write in prose, no bullet points
 - Speak directly to the person ("you")
-- Return ONLY the JSON`;
+- Return ONLY the JSON
+
+${toneBlockNote}`;
 
   const ytContext = buildYoutubeContext(req.userId, note.body || '');
   const imgContext = buildImageContext(req.userId, note.body || '');

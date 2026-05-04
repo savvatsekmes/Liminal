@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { clearArchetypeVoiceCache } from '../utils/ttsStream';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -39,11 +39,12 @@ const SLIDER_AXES = [
   { key: 'slider_rational_spiritual',      lowKey: 'context.sliderRational',       highKey: 'context.sliderSpiritual' },
   { key: 'slider_gentle_direct',           lowKey: 'context.sliderGentle',         highKey: 'context.sliderDirect' },
   { key: 'slider_reflective_action',       lowKey: 'context.sliderReflective',     highKey: 'context.sliderAction' },
-  { key: 'slider_light_deep',              lowKey: 'context.sliderLight',          highKey: 'context.sliderDeep' },
+  { key: 'slider_light_deep',              lowKey: 'context.sliderLight',          highKey: 'context.sliderDeep',
+    tieredHint: (v) => v < 30 ? 'Light touch — gentle observations, no reach for shadow or unconscious patterns'
+                    : v > 70 ? 'Deep dive — shadow work, unconscious patterns, psychological depth'
+                    : null },
   { key: 'slider_conversational_poetic',   lowKey: 'context.sliderConversational', highKey: 'context.sliderPoetic' },
-  { key: 'slider_encouraging_challenging', lowKey: 'context.sliderEncouraging',    highKey: 'context.sliderChallenging' },
   { key: 'slider_candor',                  lowKey: 'context.sliderAgreeable',      highKey: 'context.sliderCandid', hintKey: 'context.sliderCandidHint' },
-  { key: 'slider_character_influence',     lowKey: 'context.sliderSubtle',         highKey: 'context.sliderFullCharacter' },
 ];
 
 const TABS = ['style', 'archetypes', 'memory'];
@@ -316,6 +317,14 @@ export default function MemoryPage({ onNavigateToPortrait }) {
   const [slidersSaved, setSlidersSaved] = useState(false);
   const [portrait, setPortrait] = useState(null);
   const [savingSliders, setSavingSliders] = useState(false);
+  // Auto-save state. styleToast is the floating "Saved" pill (mirrors the
+  // Settings page pattern). sliderSaveTimer debounces rapid drags so we don't
+  // hammer /api/portrait once per pixel. slidersLoadedRef guards against the
+  // initial fetch's setSliders call triggering a save.
+  const [styleToast, setStyleToast] = useState('');
+  const sliderSaveTimer = useRef(null);
+  const slidersLoadedRef = useRef(false);
+  const styleToastTimer = useRef(null);
 
   // Archetypes
   const [customArchetypes, setCustomArchetypes] = useState([]);
@@ -351,6 +360,9 @@ export default function MemoryPage({ onNavigateToPortrait }) {
         vals.slider_swearing = p.slider_swearing ?? 0;
         vals.sexual_content_enabled = p.sexual_content_enabled ?? 0;
         setSliders(vals);
+        // Mark as loaded AFTER state set, so the next user-driven setSlider
+        // is the first one that triggers an auto-save.
+        slidersLoadedRef.current = true;
         setPortrait(p);
         setCustomArchetypes(Array.isArray(p.custom_archetypes) ? p.custom_archetypes : []);
         setArchetypeVoices(p.archetype_voices || {});
@@ -380,20 +392,34 @@ export default function MemoryPage({ onNavigateToPortrait }) {
   }
 
   // ── Slider helpers ──
+  // Auto-save: every slider change schedules a debounced PUT. The "Save style"
+  // button is gone — confirmation is the floating "Saved" pill at the bottom
+  // right (same UX pattern as the Settings page).
   function setSlider(key, val) {
-    setSliders((prev) => ({ ...prev, [key]: val }));
+    setSliders((prev) => {
+      const next = { ...prev, [key]: val };
+      // Skip auto-save during initial portrait load.
+      if (slidersLoadedRef.current) {
+        if (sliderSaveTimer.current) clearTimeout(sliderSaveTimer.current);
+        sliderSaveTimer.current = setTimeout(() => { autoSaveSliders(next); }, 600);
+      }
+      return next;
+    });
     setSlidersSaved(false);
   }
 
-  async function saveSliders() {
+  async function autoSaveSliders(snapshot) {
     setSavingSliders(true);
     try {
       await apiFetch('/api/portrait', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sliders),
+        body: JSON.stringify(snapshot),
       });
       setSlidersSaved(true);
+      setStyleToast(t('common.saved') || 'Saved');
+      if (styleToastTimer.current) clearTimeout(styleToastTimer.current);
+      styleToastTimer.current = setTimeout(() => setStyleToast(''), 1800);
     } catch {}
     finally { setSavingSliders(false); }
   }
@@ -669,27 +695,36 @@ export default function MemoryPage({ onNavigateToPortrait }) {
       {/* Response Style tab */}
       {tab === 'style' && (
         <div data-tour-id="context-sliders">
-          {SLIDER_AXES.map(({ key, lowKey, highKey, hintKey }) => (
-            <div key={key}>
-              <div style={s.sliderRow}>
-                <span style={s.sliderLabel}>{t(lowKey)}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  style={s.slider}
-                  value={sliders[key] ?? 50}
-                  onChange={(e) => setSlider(key, Number(e.target.value))}
-                />
-                <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t(highKey)}</span>
-              </div>
-              {hintKey && (sliders[key] ?? 50) > 65 && (
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '-6px', marginBottom: '8px', paddingLeft: '2px', lineHeight: 1.4 }}>
-                  {t(hintKey)}
+          {SLIDER_AXES.map(({ key, lowKey, highKey, hintKey, tieredHint }) => {
+            const val = sliders[key] ?? 50;
+            const tieredText = tieredHint ? tieredHint(val) : null;
+            return (
+              <div key={key}>
+                <div style={s.sliderRow}>
+                  <span style={s.sliderLabel}>{t(lowKey)}</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    style={s.slider}
+                    value={val}
+                    onChange={(e) => setSlider(key, Number(e.target.value))}
+                  />
+                  <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t(highKey)}</span>
                 </div>
-              )}
-            </div>
-          ))}
+                {hintKey && val > 65 && (
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '-6px', marginBottom: '8px', paddingLeft: '122px', lineHeight: 1.4 }}>
+                    {t(hintKey)}
+                  </div>
+                )}
+                {tieredText && (
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '-6px', marginBottom: '8px', paddingLeft: '122px', lineHeight: 1.4 }}>
+                    {tieredText}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {/* Friend / Stranger slider */}
           <div style={{ marginBottom: '20px' }}>
             <div style={s.sliderRow}>
@@ -704,7 +739,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               />
               <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t('context.sliderStranger')}</span>
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '122px' }}>
               {(sliders.slider_friend_stranger ?? 30) < 25
                 ? 'Close friend — casual, blunt, calls you out, knows you'
                 : (sliders.slider_friend_stranger ?? 30) > 75
@@ -731,7 +766,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               />
               <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t('context.sliderWooFull')}</span>
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '122px' }}>
               Portrait weight — how much your MBTI, enneagram, birth chart, and profile shape responses
             </div>
           </div>
@@ -749,7 +784,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               />
               <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>{t('context.sliderSkyFull')}</span>
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '122px' }}>
               Sky weight — how much moon phase, planetary positions, and retrogrades colour reflections
             </div>
           </div>
@@ -789,28 +824,24 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                 <div style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: '28px', marginBottom: '16px' }}>
                   Over 18
                 </div>
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={s.sliderRow}>
-                    <span style={s.sliderLabel}>None</span>
+                {/* Swearing — collapsed from a 4-tier slider to a checkbox.
+                    The model's RLHF training caps profanity in reflection
+                    contexts; the four tiers produced almost identical output
+                    in practice. Checkbox writes 60 ("heavy" tier) when on,
+                    0 when off — the backend prompt logic is unchanged. */}
+                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: 'var(--body)' }}>
                     <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      style={s.slider}
-                      value={sliders.slider_swearing ?? 0}
-                      onChange={(e) => setSlider('slider_swearing', Number(e.target.value))}
+                      type="checkbox"
+                      checked={(sliders.slider_swearing ?? 0) > 0}
+                      onChange={(e) => setSlider('slider_swearing', e.target.checked ? 60 : 0)}
+                      style={{ width: 16, height: 16, accentColor: 'var(--body)' }}
                     />
-                    <span style={{ ...s.sliderLabel, ...s.sliderLabelRight }}>Heavy</span>
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', paddingLeft: '2px' }}>
-                    {(sliders.slider_swearing ?? 0) === 0
-                      ? 'Swearing — off'
-                      : (sliders.slider_swearing ?? 0) < 30
-                        ? 'Swearing — mild ("damn", "hell", "crap")'
-                        : (sliders.slider_swearing ?? 0) < 60
-                          ? 'Swearing — moderate ("shit", "fuck" where natural)'
-                          : 'Swearing — heavy (unrestricted, matches your energy)'}
-                  </div>
+                    Swearing
+                  </label>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                    Allows profanity where natural ("shit", "fuck", "damn")
+                  </span>
                 </div>
 
                 <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -831,16 +862,8 @@ export default function MemoryPage({ onNavigateToPortrait }) {
             );
           })()}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
-            <button
-              style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', opacity: savingSliders ? 0.5 : 1 }}
-              onClick={saveSliders}
-              disabled={savingSliders}
-            >
-              {savingSliders ? t('common.saving') : t('context.saveStyle')}
-            </button>
-            {slidersSaved && <span style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>{t('common.saved')}</span>}
-          </div>
+          {/* Save button removed — sliders auto-save with a debounced PUT and
+              confirm via the floating toast at the bottom-right of the page. */}
         </div>
       )}
 
@@ -1306,6 +1329,23 @@ export default function MemoryPage({ onNavigateToPortrait }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* Floating "Saved" toast — same visual as the Settings page. */}
+      {styleToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          padding: '10px 18px',
+          background: 'var(--strong)',
+          color: 'var(--white)',
+          borderRadius: '10px',
+          fontSize: '13px',
+          zIndex: 9999,
+          pointerEvents: 'none',
+          transition: 'opacity 0.3s',
+        }}>{styleToast}</div>
       )}
     </div>
   );

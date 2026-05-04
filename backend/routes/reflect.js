@@ -410,10 +410,15 @@ Return ONLY the JSON object.`;
     // mass, then ECHO the voice anchor immediately before generation. Smaller
     // models (qwen 9B etc) need the voice to be both first AND last in context.
     const shortSummary = summary && summary.length > 600 ? summary.slice(0, 600) + '…' : (summary || '');
+    // Inject response-style sliders so single-archetype block regen respects
+    // the user's settings (matches the full single-archetype reflect path).
+    const sliderVoiceBlock = memory.translateSlidersToVoice(portrait);
 
     systemPrompt = `You are the ${archetype} voice. Speak ONLY as ${archetype} — no other voice, tradition, or register.
 
 ${voice || ''}
+
+${sliderVoiceBlock ? `The user has also set these response style preferences. Honour them while staying in the ${archetype} voice:\n${sliderVoiceBlock}\n` : ''}
 
 ${shortSummary ? `Brief context about this person (do not let it pull you out of voice):\n${shortSummary}\n` : ''}
 

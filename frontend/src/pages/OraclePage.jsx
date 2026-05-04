@@ -886,6 +886,10 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
       t('oracle.deleteSessionConfirm', { title: (sess.first_message || sess.title || t('oracle.thisConversation')).slice(0, 50) }),
       async () => {
         await apiFetch(`/api/oracle/sessions/${sess.id}`, { method: 'DELETE' });
+        // Server nulls inbound entries.linked_session_id / notes.linked_session_id;
+        // tell the entry + note lists to refetch so the linked-chat icon disappears.
+        window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
+        window.dispatchEvent(new CustomEvent('liminal:notes-changed'));
         setSessions((prev) => prev.filter((s) => s.id !== sess.id));
         if (currentSession?.id === sess.id) {
           setCurrentSession(null);

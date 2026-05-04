@@ -2030,6 +2030,11 @@ const panelStyle = {
         <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>
           {t('notes.mirror')}
         </div>
+        {blocks.length > 0 && (
+          <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+            {t('mirror.reflections', { count: blocks.length, s: blocks.length !== 1 ? 's' : '' })}
+          </span>
+        )}
       </div>
       <div style={{ padding: '0 14px' }}><AILabel compact /></div>
 
