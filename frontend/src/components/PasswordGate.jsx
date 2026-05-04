@@ -868,6 +868,65 @@ function WipeForm({ onDone, onBack }) {
 
 // ── Register ──────────────────────────────────────────────────────────────────
 
+// Hard requirements for new account passwords. Existing accounts created
+// before this gate are grandfathered — login still accepts whatever they
+// originally chose. Threshold is 8 chars + at least one upper / number /
+// symbol; the strength meter on top of that is just visual feedback so users
+// aim higher than the floor.
+function passwordChecks(pw) {
+  return {
+    hasMinLength: pw.length >= 8,
+    hasUpper: /[A-Z]/.test(pw),
+    hasNumber: /\d/.test(pw),
+    hasSymbol: /[^A-Za-z0-9]/.test(pw),
+  };
+}
+
+function passwordStrength(pw) {
+  if (!pw) return { level: 0, label: '', color: 'transparent' };
+  let score = 0;
+  // Length carries most of the signal — composition rules are easy to
+  // game (Password1!) so we weight length more heavily than each class.
+  if (pw.length >= 8)  score++;
+  if (pw.length >= 12) score++;
+  if (pw.length >= 16) score++;
+  if (/[A-Z]/.test(pw))           score++;
+  if (/[a-z]/.test(pw))           score++;
+  if (/\d/.test(pw))              score++;
+  if (/[^A-Za-z0-9]/.test(pw))    score++;
+  if (score <= 2) return { level: 1, label: 'Very weak', color: '#c42d2d' };
+  if (score === 3) return { level: 2, label: 'Weak',     color: '#d97a2c' };
+  if (score === 4) return { level: 3, label: 'Fair',     color: '#d4b020' };
+  if (score === 5) return { level: 4, label: 'Good',     color: '#5fa860' };
+  return                  { level: 5, label: 'Strong',    color: '#2d8a36' };
+}
+
+function PasswordStrengthBar({ password }) {
+  if (!password) return null;
+  const { level, label, color } = passwordStrength(password);
+  return (
+    <div style={{ marginTop: '-10px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', gap: '5px', flex: 1 }}>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              height: '4px',
+              borderRadius: '2px',
+              background: i <= level ? color : 'var(--border)',
+              transition: 'background 0.2s ease',
+            }}
+          />
+        ))}
+      </div>
+      <span style={{ fontSize: '11px', color: 'var(--muted)', minWidth: '60px', textAlign: 'right' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function RegisterForm({ onSuccess, onBack }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
@@ -883,7 +942,11 @@ function RegisterForm({ onSuccess, onBack }) {
     e.preventDefault();
     setError('');
     if (!username.trim()) { setError(t('auth.errorChooseUsername')); return; }
-    if (password.length < 4) { setError(t('auth.errorPasswordLength')); return; }
+    const checks = passwordChecks(password);
+    if (!checks.hasMinLength) { setError('Password must be at least 8 characters.'); return; }
+    if (!checks.hasUpper)     { setError('Password must include at least one uppercase letter.'); return; }
+    if (!checks.hasNumber)    { setError('Password must include at least one number.'); return; }
+    if (!checks.hasSymbol)    { setError('Password must include at least one symbol (e.g. !@#$%).'); return; }
     if (password !== confirm) { setError(t('auth.errorPasswordMatch')); return; }
     if (!agreedToTerms) { setError(t('auth.errorMustAgree')); return; }
 
@@ -947,6 +1010,8 @@ function RegisterForm({ onSuccess, onBack }) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder={t('auth.placeholderNewPassword')}
           />
+
+          <PasswordStrengthBar password={password} />
 
           <label style={s.label} htmlFor="reg-confirm">{t('auth.confirmPassword')}</label>
           <input
