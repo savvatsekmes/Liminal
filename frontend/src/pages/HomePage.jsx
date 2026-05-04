@@ -1325,7 +1325,7 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
     if (quickMode === 'note') {
       try { sessionStorage.setItem('liminal_pending_note_body', q); } catch {}
       setQuestion('');
-      onNewNote?.();
+      onNewNote?.(q);
       return;
     }
     handleAsk();

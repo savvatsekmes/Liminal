@@ -11,7 +11,7 @@
 // users.tutorials_seen, fetched/written via /api/auth/me +
 // /api/auth/tutorial-seen + /api/auth/tutorial-reset.
 
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { TOURS } from '../data/tutorials';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -130,6 +130,12 @@ function TutorialOverlay({ tourId, step, onNext, onPrev, onClose }) {
   const tour = TOURS[tourId] || [];
   const stepData = tour[step];
   const [rect, setRect] = useState(null);
+  // Measured tooltip height — long bodies (especially after i18n into more
+  // verbose languages) overflow the hardcoded 180 default, so steps with
+  // long copy got cut off near the bottom of the viewport. Default 180 for
+  // the very first paint, then useLayoutEffect below replaces it with the
+  // real height before the browser commits the frame.
+  const [tooltipH, setTooltipH] = useState(180);
   const tooltipRef = useRef(null);
 
   useEffect(() => {
@@ -164,6 +170,12 @@ function TutorialOverlay({ tourId, step, onNext, onPrev, onClose }) {
     };
   }, [stepData, onNext]);
 
+  useLayoutEffect(() => {
+    if (!tooltipRef.current) return;
+    const h = tooltipRef.current.offsetHeight;
+    if (h && Math.abs(h - tooltipH) > 2) setTooltipH(h);
+  });
+
   if (!stepData || !rect) return null;
 
   const padding = stepData.padding ?? SPOTLIGHT_PADDING_DEFAULT;
@@ -173,7 +185,7 @@ function TutorialOverlay({ tourId, step, onNext, onPrev, onClose }) {
     width: rect.width + padding * 2,
     height: rect.height + padding * 2,
   };
-  const tooltip = computeTooltipPosition(spot, stepData.placement || 'auto');
+  const tooltip = computeTooltipPosition(spot, stepData.placement || 'auto', tooltipH);
   const isLast = step >= tour.length - 1;
 
   return (
@@ -273,9 +285,9 @@ function TutorialOverlay({ tourId, step, onNext, onPrev, onClose }) {
   );
 }
 
-function computeTooltipPosition(spot, placement) {
+function computeTooltipPosition(spot, placement, tooltipH = 180) {
   const TOOLTIP_W = 340;
-  const TOOLTIP_H = 180;
+  const TOOLTIP_H = tooltipH;
   const GAP = 14;
   const VW = window.innerWidth;
   const VH = window.innerHeight;
