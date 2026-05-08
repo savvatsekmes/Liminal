@@ -14,7 +14,7 @@ router.post('/', async (req, res, next) => {
     const { question, archetype = 'Direct Friend' } = req.body || {};
     if (!question?.trim()) return res.status(400).json({ error: 'question is required' });
 
-    const systemPrompt = await memory.buildAskSystemPrompt(req.userId, archetype);
+    const systemPrompt = await memory.buildAskSystemPrompt(req.userId, archetype, question.trim());
     const answer = await llm.call(systemPrompt, question.trim(), { maxTokens: 111 });
     res.json({ answer: answer.trim(), archetype });
   } catch (err) {

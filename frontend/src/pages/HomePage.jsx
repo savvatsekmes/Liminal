@@ -1273,7 +1273,7 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
   useEffect(() => {
     const has = layout.currentLayout.some(w => w.id === 'lookback');
     if (!has) return;
-    apiFetch('/api/home/lookback?limit=3')
+    apiFetch('/api/home/lookback?limit=5')
       .then(r => r.json())
       .then(data => setLookbackEntries(data.items || []))
       .catch(() => {});

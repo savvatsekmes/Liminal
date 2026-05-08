@@ -250,7 +250,10 @@ router.post('/sessions/:id/messages', async (req, res) => {
   ).all(session.id).map((m) => ({ ...m, content: safeDecrypt(req.userId, m.content) }));
 
   try {
-    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session);
+    // Pass the user's most recent message as the retrieval context so memory
+    // injection pulls topically relevant memories instead of a static blob.
+    const lastUserMessage = [...history].reverse().find((m) => m.role === 'user')?.content || '';
+    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session, lastUserMessage);
     const answer = await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 400 });
     const trimmed = answer.trim();
 

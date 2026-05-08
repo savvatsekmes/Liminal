@@ -243,6 +243,16 @@ addColumnSafe('users', 'lockout_until',         'INTEGER');
 db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete = 0 AND last_login IS NOT NULL').run();
 
 addColumnSafe('memories',        'is_core', 'INTEGER NOT NULL DEFAULT 0');
+// status: 'active' (default) or 'resolved'. Resolved memories don't disappear
+// — they get a 0.5x multiplier on relevance score during retrieval, so they
+// only surface when raw relevance is high enough or there are no active
+// alternatives. Manually toggled in the Memory tab.
+addColumnSafe('memories',        'status',  "TEXT NOT NULL DEFAULT 'active'");
+// manual_thread_id: when set, overrides the auto-derived thread membership
+// (which goes through source_entry_id → thread_nodes). NULL = auto. Lets the
+// user re-file a memory the LLM mis-categorised. ON DELETE SET NULL so
+// deleting the thread doesn't break the memory.
+addColumnSafe('memories',        'manual_thread_id', 'INTEGER REFERENCES threads(id) ON DELETE SET NULL');
 addColumnSafe('entries',         'user_id', 'INTEGER DEFAULT 1');
 addColumnSafe('entries',         'locked',  'INTEGER DEFAULT 0');
 addColumnSafe('notes',           'user_id', 'INTEGER DEFAULT 1');

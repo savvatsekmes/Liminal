@@ -6,6 +6,7 @@ const db = require('../database');
 const tarotDeck = require('../data/tarotDeck');
 const oracleDeck = require('../data/oracleDeck');
 const spreads = require('../data/spreads');
+const { safeDecrypt } = require('../services/rowCrypto');
 
 router.use(requireAuth);
 
@@ -200,14 +201,34 @@ router.post('/reading', async (req, res) => {
     if (lines.length) portraitContext = `\n\n## ABOUT THIS PERSON\n${lines.join('\n')}`;
   }
 
-  // Threads + memory summary — give the reader a real sense of what this
-  // person is currently navigating, not just their static portrait.
+  // Threads + memory — relevance-first retrieval against the user's question
+  // (or the journal-entry context when no explicit question; or last 3
+  // entries' body_text as a final fallback for blank pulls). Falls back to
+  // the synthesis blob only when retrieval returns nothing.
   const threadContext = getThreadContext(req.userId);
   let memorySummary = '';
   try {
     const memoryService = require('../services/memoryService');
-    memorySummary = await memoryService.synthesizeMemory(req.userId) || '';
-  } catch {}
+    let retrievalContext = userQuestion;
+    if (!retrievalContext && entryText) retrievalContext = entryText.slice(0, 1500);
+    if (!retrievalContext) {
+      const lastFew = db.prepare(
+        "SELECT body_text FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 3"
+      ).all(req.userId).map((r) => safeDecrypt(req.userId, r.body_text) || '').filter(Boolean);
+      retrievalContext = lastFew.join('\n\n').slice(0, 1500);
+    }
+    if (retrievalContext && retrievalContext.trim()) {
+      const retrieved = await memoryService.retrieveRelevantMemories(req.userId, retrievalContext, { k: 12 });
+      memorySummary = memoryService.formatRetrievedMemoriesForPrompt(retrieved)
+        .replace(/^## RELEVANT MEMORIES[^\n]*\n[^\n]*\n\n/, '');
+    }
+    if (!memorySummary) {
+      // Fallback to synthesis blob if retrieval returned empty
+      memorySummary = await memoryService.synthesizeMemory(req.userId) || '';
+    }
+  } catch (err) {
+    console.warn('[cards/reading] memory retrieval failed:', err.message);
+  }
 
   // Format the pulled cards
   const cardLines = cards.map((c, i) => {
@@ -300,9 +321,28 @@ router.post('/pull', async (req, res) => {
     .map(n => `[${n.type}] ${(n.body || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 150)}`)
     .join('\n');
 
-  // Memory summary
+  // Memory: relevance-first retrieval against the user's question (or recent
+  // entries when none). Falls back to synthesis blob on empty.
   let memorySummary = '';
-  try { memorySummary = await memoryService.synthesizeMemory(req.userId) || ''; } catch {}
+  try {
+    let retrievalContext = userQuestion;
+    if (!retrievalContext) {
+      retrievalContext = recentEntries
+        .map((e) => `${e.title || ''} ${(e.body_text || '')}`)
+        .join('\n')
+        .slice(0, 1500);
+    }
+    if (retrievalContext && retrievalContext.trim()) {
+      const retrieved = await memoryService.retrieveRelevantMemories(req.userId, retrievalContext, { k: 12 });
+      memorySummary = memoryService.formatRetrievedMemoriesForPrompt(retrieved)
+        .replace(/^## RELEVANT MEMORIES[^\n]*\n[^\n]*\n\n/, '');
+    }
+    if (!memorySummary) {
+      memorySummary = await memoryService.synthesizeMemory(req.userId) || '';
+    }
+  } catch (err) {
+    console.warn('[cards/pull] memory retrieval failed:', err.message);
+  }
 
   // Sky context
   let skyCtx = '';

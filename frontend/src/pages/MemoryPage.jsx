@@ -24,6 +24,149 @@ function StarIcon({ filled = false, size = 14 }) {
     </svg>
   );
 }
+function PinIcon({ filled = false, size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill={filled ? 'currentColor' : 'none'}>
+      <path d="M8 1.6c-1.4 0-2.6 1.1-2.6 2.5 0 .9.3 1.5.7 2.1L4 9.4l1.3 1L7.4 8.6V14l.6.6.6-.6V8.6l2.1 1.8 1.3-1L9.9 6.2c.4-.6.7-1.2.7-2.1 0-1.4-1.2-2.5-2.6-2.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+// Horizontal pill row of CORE thread categories for filtering the memory
+// list. Only canonical (core) threads — novel / custom threads are excluded
+// to keep the filter row compact and to match the user's intent of
+// categorical filtering by stable life-areas (Family, Creativity, Spiritual,
+// Career, etc.) rather than transient novel arcs. The "All" pill clears the
+// filter; the active pill gets a strong-bg / white-text treatment, the rest
+// are outlined in the muted style.
+function ThreadFilterPills({ threads, selectedThreadId, onSelect }) {
+  const sorted = (threads || [])
+    .filter((th) => th.kind === 'canonical')
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const pillBase = {
+    fontSize: '11px',
+    padding: '5px 12px',
+    borderRadius: '20px',
+    border: 'var(--border-style)',
+    background: 'transparent',
+    color: 'var(--muted)',
+    cursor: 'pointer',
+    fontFamily: 'var(--font)',
+    whiteSpace: 'nowrap',
+  };
+  const pillActive = { background: 'var(--strong)', color: 'var(--white)', borderColor: 'var(--strong)' };
+  return (
+    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+      <button
+        type="button"
+        style={{ ...pillBase, ...(selectedThreadId == null ? pillActive : {}) }}
+        onClick={() => onSelect(null)}
+      >
+        All
+      </button>
+      {sorted.map((th) => (
+        <button
+          key={th.id}
+          type="button"
+          style={{ ...pillBase, ...(selectedThreadId === th.id ? pillActive : {}) }}
+          onClick={() => onSelect(th.id)}
+        >
+          {th.name}
+        </button>
+      ))}
+      {sorted.length === 0 && (
+        <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', padding: '5px 0' }}>
+          No core threads yet — run thread detection to enable category filtering.
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Small "i" info icon used by InfoButton — outlined circle with an inner dot
+// + bar so it reads as "info" at 12-14px without antialiasing into a smudge.
+function InfoIcon({ size = 13 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="8" cy="5" r="0.9" fill="currentColor" />
+      <path d="M8 7.5v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Click-to-toggle info button. Renders a small (i) icon next to a control;
+// clicking opens a popover with a description, clicking again closes. Outside
+// clicks also close (handled via a document-level listener attached only
+// while the popover is open). Used in the Memory tab Maintenance section.
+function InfoButton({ label, children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        title={label || 'What does this do?'}
+        aria-label={label || 'What does this do?'}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '20px',
+          height: '20px',
+          padding: 0,
+          marginLeft: '4px',
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--muted)',
+          cursor: 'pointer',
+          opacity: open ? 1 : 0.6,
+        }}
+      >
+        <InfoIcon />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: 0,
+            zIndex: 50,
+            width: '320px',
+            padding: '12px 14px',
+            background: 'var(--white)',
+            border: 'var(--border-style)',
+            borderRadius: '10px',
+            boxShadow: '0 -6px 24px rgba(0,0,0,0.08)',
+            fontSize: '12px',
+            lineHeight: 1.55,
+            color: 'var(--body)',
+            whiteSpace: 'normal',
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </span>
+  );
+}
+
+function CheckIcon({ filled = false, size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill={filled ? 'currentColor' : 'none'}>
+      <rect x="2" y="2" width="12" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5 8.5l2 2 4-4.5" stroke={filled ? 'var(--white)' : 'currentColor'} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
 function TrashIcon({ size = 14 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
@@ -333,9 +476,20 @@ export default function MemoryPage({ onNavigateToPortrait }) {
   const [archetypeVoices, setArchetypeVoices] = useState({}); // { archetypeName: voiceFilename }
   const [availableVoices, setAvailableVoices] = useState([]); // [{ filename, name }]
 
+  // Thread categories for the Memory tab filter pills. Only canonical threads
+  // are shown — novel/custom ones would clutter the row and don't represent
+  // stable life-areas the way Family / Career / Spiritual etc. do.
+  const [threads, setThreads] = useState([]);
+  const [selectedThreadId, setSelectedThreadId] = useState(null);
+
+  // Fetch memories. Re-runs when the selected thread changes — backend takes
+  // ?thread_id= and JOINs through thread_nodes.
   useEffect(() => {
     function loadMemories() {
-      apiFetch('/api/memories')
+      const url = selectedThreadId
+        ? `/api/memories?thread_id=${selectedThreadId}`
+        : '/api/memories';
+      apiFetch(url)
         .then((r) => r.json())
         .then((data) => { setMemories(data); setLoading(false); })
         .catch(() => setLoading(false));
@@ -344,6 +498,14 @@ export default function MemoryPage({ onNavigateToPortrait }) {
     // Refetch when SelectionMenu's "Save to memory" creates a new row.
     window.addEventListener('liminal:memories-changed', loadMemories);
     return () => window.removeEventListener('liminal:memories-changed', loadMemories);
+  }, [selectedThreadId]);
+
+  // Fetch threads once for the filter pills.
+  useEffect(() => {
+    apiFetch('/api/threads')
+      .then((r) => r.json())
+      .then((data) => setThreads(Array.isArray(data) ? data : (data?.threads || [])))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -497,6 +659,69 @@ export default function MemoryPage({ onNavigateToPortrait }) {
     }
   }
 
+  // Toggle `pinned` on a memory. The backend already accepted `pinned` on PUT
+  // before this — the UI affordance is new (previously you could only pin a
+  // memory by manually creating it; LLM-extracted ones had no pin button).
+  async function togglePinned(id, currentValue) {
+    if (id === 'tutorial-mock') return;
+    const next = currentValue ? 0 : 1;
+    setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, pinned: next } : m))));
+    try {
+      await apiFetch(`/api/memories/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned: next }),
+      });
+    } catch {
+      setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, pinned: currentValue } : m))));
+    }
+  }
+
+  // Manual thread override. Updates the memory's manual_thread_id on the
+  // server; null = auto-derive from the source entry. Optimistic update with
+  // rollback on failure (mirrors toggleCore / togglePinned pattern).
+  async function setMemoryThread(id, threadId) {
+    if (id === 'tutorial-mock') return;
+    const prevValue = memories.find((m) => m.id === id)?.manual_thread_id;
+    setMemories((prev) => sortMemories(prev.map((m) => (m.id === id
+      ? { ...m, manual_thread_id: threadId, thread_ids: threadId ? [threadId] : (m.thread_ids || []) }
+      : m
+    ))));
+    try {
+      await apiFetch(`/api/memories/${id}/thread`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ thread_id: threadId }),
+      });
+      // Refetch — auto-derived thread_ids may differ from optimistic guess.
+      apiFetch(selectedThreadId ? `/api/memories?thread_id=${selectedThreadId}` : '/api/memories')
+        .then((r) => r.json())
+        .then((data) => setMemories(data))
+        .catch(() => {});
+    } catch {
+      setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, manual_thread_id: prevValue } : m))));
+    }
+  }
+
+  // Toggle resolved/active. Resolved memories don't disappear; the backend
+  // applies a 0.5x multiplier on relevance score during retrieval so they
+  // surface only when raw relevance is high enough or no active alternatives
+  // exist. Visual: dimmed row + green check + "✓ resolved" badge.
+  async function toggleResolved(id, currentStatus) {
+    if (id === 'tutorial-mock') return;
+    const next = currentStatus === 'resolved' ? 'active' : 'resolved';
+    setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, status: next } : m))));
+    try {
+      await apiFetch(`/api/memories/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+    } catch {
+      setMemories((prev) => sortMemories(prev.map((m) => (m.id === id ? { ...m, status: currentStatus } : m))));
+    }
+  }
+
   async function deleteMemory(id) {
     if (id === 'tutorial-mock') return;
     setMemories((prev) => prev.filter((m) => m.id !== id));
@@ -531,9 +756,29 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
   function resetClear() { setClearStep(null); setClearPassword(''); setClearError(''); }
 
+  // Unified "rebuild search indexes" — fires both the entry reindex (Vectra
+  // entries collection, used for past-entry similarity in Reflect) AND the
+  // memory embedding backfill (Vectra memories collection, used for relevance
+  // retrieval). They're separate indexes serving different features but
+  // conceptually the same operation, so we expose them as one button.
   async function reindex() {
     setReindexing(true);
-    await apiFetch('/api/settings/reindex', { method: 'POST' }).catch(() => {});
+    // Fire entries reindex (background, no progress) and memory embed
+    // (background, progress polled via embed-status) in parallel.
+    apiFetch('/api/settings/reindex', { method: 'POST' }).catch(() => {});
+    try {
+      const res = await apiFetch('/api/memories/embed-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.started) {
+        setEmbedJob({ running: true, done: 0, total: data.total, embedded: 0, skipped: data.alreadyIndexed || 0, failed: 0 });
+      }
+    } catch {}
+    // Visible spinner timeout; embed-status polling will continue tracking
+    // the memory side until it finishes.
     setTimeout(() => setReindexing(false), 2000);
   }
 
@@ -549,6 +794,38 @@ export default function MemoryPage({ onNavigateToPortrait }) {
       setExtractJob({ running: true, done: 0, total: data.total });
     } catch { /* polling will reflect any server-side error */ }
   }
+
+  // Memory embedding-index backfill. Builds the search index over all memories
+  // so the relevance-retrieval system can find them. Idempotent — already
+  // indexed memories skip. New memories are indexed live by extraction, so
+  // this is normally a one-shot after upgrading to the retrieval architecture.
+  const [embedJob, setEmbedJob] = useState({ running: false, done: 0, total: 0, embedded: 0, skipped: 0, failed: 0 });
+  async function embedAllMemories() {
+    try {
+      const res = await apiFetch('/api/memories/embed-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      const data = await res.json();
+      if (!data.started) {
+        setEmbedJob((prev) => ({ ...prev, running: false, note: data.message || '' }));
+        return;
+      }
+      setEmbedJob({ running: true, done: 0, total: data.total, embedded: 0, skipped: data.alreadyIndexed || 0, failed: 0 });
+    } catch { /* polling will reflect server-side error */ }
+  }
+  useEffect(() => {
+    if (!embedJob.running) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await apiFetch('/api/memories/embed-status');
+        const s = await res.json();
+        if (cancelled) return;
+        setEmbedJob((prev) => ({ ...prev, ...s }));
+      } catch {}
+    };
+    const handle = setInterval(tick, 1500);
+    tick();
+    return () => { cancelled = true; clearInterval(handle); };
+  }, [embedJob.running]);
 
   // Poll for extraction progress while a job is running. Reload memories when
   // it finishes so the new items appear in the list.
@@ -1037,11 +1314,11 @@ export default function MemoryPage({ onNavigateToPortrait }) {
       {/* Memory tab */}
       {tab === 'memory' && (
         <div data-tour-id="context-memory">
-          {/* Manual add + search */}
+          {/* Add memory row — input bevelled to match the Add button's pill. */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <input
               data-tour-id="memory-add-input"
-              style={{ ...s.input, flex: 1 }}
+              style={{ ...s.input, flex: 1, borderRadius: '20px', padding: '8px 14px' }}
               placeholder={t('context.addPlaceholder')}
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
@@ -1055,9 +1332,21 @@ export default function MemoryPage({ onNavigateToPortrait }) {
             >
               {adding ? t('context.adding') : t('context.add')}
             </button>
+          </div>
+          {/* Filters + search on a single row. ThreadFilterPills takes the
+              full available width on the left; search input sits on the right
+              edge of the same row at a fixed width. */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <ThreadFilterPills
+                threads={threads}
+                selectedThreadId={selectedThreadId}
+                onSelect={setSelectedThreadId}
+              />
+            </div>
             <input
               data-tour-id="memory-search"
-              style={{ ...s.input, width: '180px' }}
+              style={{ ...s.input, width: '300px', maxWidth: '60%', borderRadius: '20px', padding: '8px 14px', marginBottom: 0, flexShrink: 0 }}
               placeholder={t('common.search')}
               value={memorySearch}
               onChange={(e) => setMemorySearch(e.target.value)}
@@ -1143,6 +1432,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                     <div style={s.memoryMeta}>
                       {m.is_core ? <span style={s.coreMarker}>CORE</span> : null}
                       {m.pinned ? <span style={s.memoryPin}>{t('context.pinned')}</span> : null}
+                      {m.status === 'resolved' ? <span style={{ ...s.memoryPin, color: '#5a8f5a', borderColor: '#5a8f5a' }}>✓ resolved</span> : null}
                       <span>{formatDate(memoryDate(m))}</span>
                       {isEditing && (
                         <>
@@ -1164,6 +1454,50 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                   </div>
                   {!isEditing && (
                     <>
+                      {/* Thread filter dropdown — placed to the LEFT of the
+                          edit pencil. Closed state shows the EFFECTIVE thread
+                          name at a glance: e.g. "Family (auto)" when entry-
+                          derived, "Family" alone when the user manually
+                          overrode. Open menu lists "Auto" first to revert
+                          plus all canonical threads. */}
+                      <select
+                        value={m.manual_thread_id || ''}
+                        onChange={(e) => setMemoryThread(m.id, e.target.value ? parseInt(e.target.value, 10) : null)}
+                        title={m.manual_thread_id ? 'Manual thread override (set by you)' : 'Auto — thread derived from source entry'}
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          border: 'var(--border-style)',
+                          borderRadius: '12px',
+                          background: m.manual_thread_id ? 'var(--near-white)' : 'transparent',
+                          color: m.manual_thread_id ? 'var(--strong)' : 'var(--muted)',
+                          fontFamily: 'var(--font)',
+                          cursor: 'pointer',
+                          maxWidth: '140px',
+                          fontStyle: m.manual_thread_id ? 'normal' : 'italic',
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {/* When no override, the value="" option carries the
+                            effective thread name so the closed dropdown shows
+                            it at a glance (with "(auto)" suffix). */}
+                        <option value="">
+                          {(() => {
+                            const ids = m.thread_ids || [];
+                            if (ids.length === 0) return '— (auto)';
+                            const first = threads.find((th) => th.id === ids[0]);
+                            const name = first?.name || '?';
+                            const extra = ids.length > 1 ? ` +${ids.length - 1}` : '';
+                            return `${name}${extra} (auto)`;
+                          })()}
+                        </option>
+                        {threads
+                          .filter((th) => th.kind === 'canonical')
+                          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                          .map((th) => (
+                            <option key={th.id} value={th.id}>{th.name}</option>
+                          ))}
+                      </select>
                       <button
                         data-tour-id={m.id === 'tutorial-mock' ? 'memory-edit' : undefined}
                         style={{ ...s.memoryDelete, fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
@@ -1178,11 +1512,29 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                         data-tour-id={m.id === 'tutorial-mock' ? 'memory-core' : undefined}
                         style={{ ...s.coreBtn, color: m.is_core ? '#d4a843' : 'var(--muted)', opacity: m.is_core ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
                         onClick={() => toggleCore(m.id, m.is_core)}
-                        title={m.is_core ? 'Unmark as core memory' : 'Mark as core memory (keeps full weight regardless of age)'}
+                        title={m.is_core ? 'Unmark as core memory' : 'Mark as core memory (load-bearing in retrieval hierarchy)'}
                         onMouseEnter={(e) => { if (!m.is_core) e.currentTarget.style.opacity = 1; }}
                         onMouseLeave={(e) => { if (!m.is_core) e.currentTarget.style.opacity = 0.55; }}
                       >
                         <StarIcon filled={!!m.is_core} />
+                      </button>
+                      <button
+                        style={{ ...s.coreBtn, color: m.pinned ? 'var(--strong)' : 'var(--muted)', opacity: m.pinned ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                        onClick={() => togglePinned(m.id, m.pinned)}
+                        title={m.pinned ? 'Unpin this memory' : 'Pin this memory (boosts weight in the relevance hierarchy)'}
+                        onMouseEnter={(e) => { if (!m.pinned) e.currentTarget.style.opacity = 1; }}
+                        onMouseLeave={(e) => { if (!m.pinned) e.currentTarget.style.opacity = 0.55; }}
+                      >
+                        <PinIcon filled={!!m.pinned} />
+                      </button>
+                      <button
+                        style={{ ...s.coreBtn, color: m.status === 'resolved' ? '#5a8f5a' : 'var(--muted)', opacity: m.status === 'resolved' ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                        onClick={() => toggleResolved(m.id, m.status)}
+                        title={m.status === 'resolved' ? 'Mark as active again' : 'Mark resolved (situation closed; downweighted in retrieval)'}
+                        onMouseEnter={(e) => { if (m.status !== 'resolved') e.currentTarget.style.opacity = 1; }}
+                        onMouseLeave={(e) => { if (m.status !== 'resolved') e.currentTarget.style.opacity = 0.55; }}
+                      >
+                        <CheckIcon filled={m.status === 'resolved'} />
                       </button>
                       <button
                         style={{ ...s.memoryDelete, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
@@ -1277,25 +1629,53 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               {t('context.reindexDesc')}
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                data-tour-id="memory-reindex"
-                style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: reindexing ? 0.5 : 1 }}
-                onClick={reindex}
-                disabled={reindexing}
-              >
-                {reindexing ? t('context.reindexing') : t('context.reindex')}
-              </button>
-              <button
-                data-tour-id="memory-extract"
-                style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: extractJob.running ? 0.5 : 1 }}
-                onClick={extractAllMemories}
-                disabled={extractJob.running}
-                title="Run LLM memory extraction across every journal entry. Slow — expect several minutes."
-              >
-                {extractJob.running
-                  ? `Extracting… ${extractJob.done}/${extractJob.total}`
-                  : 'Extract memories from entries'}
-              </button>
+              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <button
+                  data-tour-id="memory-reindex"
+                  style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: (reindexing || embedJob.running) ? 0.5 : 1 }}
+                  onClick={reindex}
+                  disabled={reindexing || embedJob.running}
+                >
+                  {embedJob.running
+                    ? `Indexing memories… ${embedJob.done}/${embedJob.total}`
+                    : reindexing
+                      ? t('context.reindexing')
+                      : 'Rebuild search indexes'}
+                </button>
+                <InfoButton label="What does Rebuild search indexes do?">
+                  <strong>Rebuilds the two search indexes Liminal uses to find relevant content.</strong>
+                  <div style={{ marginTop: '8px' }}>
+                    <strong>Entries index</strong> — lets the Mirror find past journal entries thematically similar to today's entry, as background context for reflections. Auto-updated on every reflect; rebuild is rarely needed.
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <strong>Memories index</strong> — lets the Mirror retrieve memories topically relevant to whatever you're discussing (in reflections, oracle conversations, card readings). New memories are indexed automatically as they're created; this rebuild is the one-time backfill for memories that pre-date the retrieval system.
+                  </div>
+                  <div style={{ marginTop: '8px', color: 'var(--muted)' }}>
+                    Idempotent — already-indexed items are skipped. Safe to click any time.
+                  </div>
+                </InfoButton>
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <button
+                  data-tour-id="memory-extract"
+                  style={{ ...s.btn, padding: '6px 14px', fontSize: '11px', background: 'var(--body)', opacity: extractJob.running ? 0.5 : 1 }}
+                  onClick={extractAllMemories}
+                  disabled={extractJob.running}
+                >
+                  {extractJob.running
+                    ? `Extracting… ${extractJob.done}/${extractJob.total}`
+                    : 'Extract memories from entries'}
+                </button>
+                <InfoButton label="What does Extract memories from entries do?">
+                  <strong>Pulls discrete facts out of every journal entry that hasn't been processed yet, and saves them as memories.</strong>
+                  <div style={{ marginTop: '8px' }}>
+                    For each unprocessed entry, an LLM reads the text and extracts 0-6 short fact-statements ("the user lives in Sydney", "the user's mother is recovering from surgery", etc.). These memories then feed into the Mirror's understanding of who you are.
+                  </div>
+                  <div style={{ marginTop: '8px', color: 'var(--muted)' }}>
+                    Slow — one LLM call per entry, expect several minutes for hundreds of entries. Normally only needed after importing entries (e.g. from Notion) or to backfill old entries that pre-date memory extraction. New entries get processed automatically when you reflect on them.
+                  </div>
+                </InfoButton>
+              </span>
               {!clearStep && (
                 <button
                   data-tour-id="memory-delete-all"

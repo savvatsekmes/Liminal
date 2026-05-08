@@ -118,6 +118,9 @@ Extract any genuinely new facts about this person. Return only the JSON.`;
       );
       let inserted = 0;
       let dropped = 0;
+      // Track new memory ids for live embedding-indexing — keeps the Vectra
+      // memory collection in sync without a separate backfill on every reflect.
+      const newIdsToIndex = [];
       for (const item of newItems) {
         if (typeof item === 'string' && item.trim()) {
           const content = item.trim();
@@ -127,13 +130,23 @@ Extract any genuinely new facts about this person. Return only the JSON.`;
           }
           const key = normalize(content);
           if (!existingNormalized.has(key)) {
-            ins.run(userId, encryptField(userId, content), entryId || null);
+            const result = ins.run(userId, encryptField(userId, content), entryId || null);
             existingNormalized.add(key);
+            newIdsToIndex.push({ id: result.lastInsertRowid, content });
             inserted++;
           }
         }
       }
       console.log(`[memory] Extracted ${newItems.length} from entry ${entryId}, inserted ${inserted} (deduped ${newItems.length - inserted - dropped}, crisis-filtered ${dropped})`);
+
+      // Fire-and-forget: index the new memories. Failure to index doesn't
+      // break the insert; backfill script can fix gaps later if needed.
+      if (newIdsToIndex.length > 0) {
+        const embedding = require('./embeddingService');
+        Promise.all(newIdsToIndex.map((m) => embedding.indexMemory(m.id, m.content))).catch((err) => {
+          console.warn('[memory] Live indexing failed for some memories:', err.message);
+        });
+      }
 
       // Invalidate synthesis cache
       invalidateSynthesisCache(userId);
@@ -169,7 +182,7 @@ async function synthesizeMemory(userId = 1) {
   // Core memories keep full influence regardless of age; everything else
   // decays so the user's current life isn't drowned out by years-old context.
   const items = db.prepare(`
-    SELECT m.id, m.content, m.pinned, m.is_core, m.created_at, m.source_entry_id,
+    SELECT m.id, m.content, m.pinned, m.is_core, m.status, m.created_at, m.source_entry_id,
            e.tags AS entry_tags,
            COALESCE(e.date, e.created_at, m.created_at) AS effective_date
       FROM memories m
@@ -185,14 +198,15 @@ async function synthesizeMemory(userId = 1) {
   const enriched = items.map((m) => {
     let tags = [];
     try { tags = JSON.parse(m.entry_tags || '[]'); } catch {}
-    const fromBreakthrough = tags.includes('breakthrough');
-    const isCore = !!m.is_core || !!m.pinned || fromBreakthrough;
-    // Use the source entry's date when available so memories inherit the age
-    // of the moment they describe, not the moment extraction ran.
+    // Breakthrough tag on the source entry no longer auto-promotes the memory
+    // to core. Core only when the user explicitly flagged it via the Memory
+    // tab, or when the memory is pinned. Breakthrough memories age like
+    // anything else; if they're genuinely important, the user pins them.
+    const isCore = !!m.is_core || !!m.pinned;
     const ref = m.effective_date || m.created_at;
     const ageMs = ref ? now - new Date(String(ref).replace(' ', 'T') + 'Z').getTime() : 0;
     const ageDays = Math.max(0, Math.round(ageMs / 86400000));
-    return { ...m, isCore, fromBreakthrough, ageDays };
+    return { ...m, isCore, ageDays };
   });
 
   function ageLabel(days) {
@@ -205,8 +219,8 @@ async function synthesizeMemory(userId = 1) {
   const itemList = enriched.map((m) => {
     const markers = [];
     if (m.pinned) markers.push('pinned');
-    if (m.fromBreakthrough) markers.push('breakthrough');
     if (m.isCore) markers.push('core'); else markers.push(ageLabel(m.ageDays));
+    if (m.status === 'resolved') markers.push('resolved');
     return `- ${m.content}  [${markers.join(', ')}]`;
   }).join('\n');
 
@@ -268,6 +282,138 @@ async function buildMemorySection(userId = 1) {
   return `## WHAT I KNOW ABOUT YOU\n${narrative}`;
 }
 
+// ── Relevance-first retrieval ────────────────────────────────────────────────
+//
+// retrieveRelevantMemories replaces the broad synthesis-blob memory injection
+// with topical retrieval per surface (Reflect, Oracle, Ask, cards). Each call
+// supplies the relevant context (the entry being reflected on, the latest
+// oracle message, the cards drawn) and gets back only the memories that map
+// to it — so the Mirror stops dragging "your 4am tea ritual" into a reflection
+// about, say, an animation deadline.
+//
+// Hierarchy is a TIEBREAKER, not a selector — within a band of similar
+// relevance scores, prefer pinned > is_core > recent > older. Resolved
+// memories get a 0.5x score multiplier so they only surface when raw
+// relevance is high enough or when there are no active alternatives.
+
+/** Recency multiplier: score *= 1 + 0.3 × ageBoost. ageBoost peaks at 1 for
+ *  brand-new and decays linearly to 0 over 2 years. Stops a wall of
+ *  high-cosine-but-old memories from drowning out one fresh memory that
+ *  matches the current moment. */
+function recencyBoost(ageDays) {
+  const cap = 730;
+  const t = Math.max(0, 1 - Math.min(ageDays, cap) / cap);
+  return 1 + 0.3 * t;
+}
+
+/** Hierarchy weight for tiebreaking within a relevance band. Higher first. */
+function hierarchyWeight(m) {
+  if (m.pinned) return 4;
+  if (m.is_core) return 3;
+  if (m.ageDays != null && m.ageDays < 90) return 2;
+  return 1;
+}
+
+/**
+ * Retrieve the most topically relevant memories for the given context.
+ *
+ * @param {number} userId
+ * @param {string} contextText  What memories should be relevant to.
+ * @param {object} [options]
+ * @param {number} [options.k=12]
+ * @param {number} [options.poolSize=30]
+ * @param {number} [options.bandWidth=0.05]
+ * @returns {Promise<Array<object>>}
+ */
+async function retrieveRelevantMemories(userId, contextText, options = {}) {
+  const k = options.k ?? 12;
+  const poolSize = options.poolSize ?? 30;
+  const bandWidth = options.bandWidth ?? 0.05;
+
+  if (!contextText || !contextText.trim()) return [];
+
+  const embedding = require('./embeddingService');
+  const hits = await embedding.queryMemoriesSimilar(contextText.trim(), poolSize);
+  if (!hits.length) return [];
+
+  const ids = hits.map((h) => h.memoryId).filter((id) => id != null);
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT m.id, m.content, m.pinned, m.is_core, m.status, m.created_at, m.source_entry_id,
+           COALESCE(e.date, e.created_at, m.created_at) AS effective_date
+      FROM memories m
+      LEFT JOIN entries e ON e.id = m.source_entry_id
+     WHERE m.user_id = ? AND m.id IN (${placeholders})
+  `).all(userId, ...ids);
+
+  const now = Date.now();
+  const scoreById = new Map(hits.map((h) => [h.memoryId, h.score]));
+  const enriched = rows.map((r) => {
+    const ref = r.effective_date || r.created_at;
+    const ageMs = ref ? now - new Date(String(ref).replace(' ', 'T') + 'Z').getTime() : 0;
+    const ageDays = Math.max(0, Math.round(ageMs / 86400000));
+    const rawScore = scoreById.get(r.id) ?? 0;
+    let adjusted = rawScore * recencyBoost(ageDays);
+    if (r.status === 'resolved') adjusted *= 0.5;
+    return {
+      ...r,
+      content: safeDecrypt(userId, r.content),
+      ageDays,
+      rawScore,
+      score: adjusted,
+    };
+  });
+
+  enriched.sort((a, b) => b.score - a.score);
+  if (enriched.length === 0) return [];
+
+  // Bin by score band; within a band, hierarchy decides order.
+  const bands = [];
+  let currentBand = [enriched[0]];
+  for (let i = 1; i < enriched.length; i++) {
+    const m = enriched[i];
+    const bandTop = currentBand[0].score;
+    if (bandTop - m.score <= bandWidth) currentBand.push(m);
+    else { bands.push(currentBand); currentBand = [m]; }
+  }
+  bands.push(currentBand);
+
+  const ranked = [];
+  for (const band of bands) {
+    band.sort((a, b) => {
+      const hw = hierarchyWeight(b) - hierarchyWeight(a);
+      if (hw !== 0) return hw;
+      return a.ageDays - b.ageDays;
+    });
+    for (const m of band) ranked.push(m);
+  }
+
+  return ranked.slice(0, k);
+}
+
+function ageLabelShort(days) {
+  if (days == null) return 'unknown age';
+  if (days < 14) return 'recent';
+  if (days < 60) return `${Math.round(days / 7)}w ago`;
+  if (days < 365) return `${Math.round(days / 30)}mo ago`;
+  return `${(days / 365).toFixed(1)}y ago`;
+}
+
+/** Format retrieved memories as a labeled bulleted list for prompt injection. */
+function formatRetrievedMemoriesForPrompt(memories) {
+  if (!memories || !memories.length) return '';
+  const lines = memories.map((m) => {
+    const markers = [];
+    if (m.pinned) markers.push('pinned');
+    if (m.is_core) markers.push('core');
+    if (m.status === 'resolved') markers.push('resolved');
+    markers.push(ageLabelShort(m.ageDays));
+    return `- ${m.content}  [${markers.join(', ')}]`;
+  });
+  return `## RELEVANT MEMORIES\nMemories that map to what the user is currently navigating. Use them to inform your reply but don't list them back at the user.\n\n${lines.join('\n')}`;
+}
+
 // ── Semantic Retrieval ────────────────────────────────────────────────────────
 
 /**
@@ -305,10 +451,23 @@ async function retrieveSimilarEntries(currentEntryText, currentEntryId, k = 3) {
  * @param {number} userId
  */
 async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntryId = null, userId = 1, username = null) {
-  const [memorySection, similarEntries] = await Promise.all([
-    buildMemorySection(userId),
+  // Memory injection switched from synthesis-blob to relevance retrieval.
+  // The entry text itself is the strongest signal of what's currently being
+  // navigated, so we retrieve memories topically relevant to it. Falls back
+  // to the synthesis blob only when retrieval returns empty (e.g. embeddings
+  // not yet backfilled — ensures graceful degradation for first-run users).
+  const [retrievedMemories, similarEntries] = await Promise.all([
+    retrieveRelevantMemories(userId, currentEntryText, { k: 12 }),
     retrieveSimilarEntries(currentEntryText, currentEntryId),
   ]);
+  let memorySection = formatRetrievedMemoriesForPrompt(retrievedMemories);
+  if (!memorySection) {
+    // Fallback: if retrieval returned nothing (no embeddings yet), use the
+    // older synthesis blob so the Mirror isn't completely memory-blind on
+    // first run. Once the embed backfill lands, retrieval takes over and the
+    // fallback never fires.
+    memorySection = await buildMemorySection(userId);
+  }
 
   const sections = [];
   sections.push(buildTimeContext());
@@ -838,7 +997,7 @@ Rules:
 
 // ── Ask / Oracle prompts ──────────────────────────────────────────────────────
 
-async function buildAskSystemPrompt(userId, archetype = 'Direct Friend') {
+async function buildAskSystemPrompt(userId, archetype = 'Direct Friend', askContextText = '') {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
@@ -864,14 +1023,29 @@ Speak to them as someone you know through this lens — not generically. Generic
   } else if (portrait) {
     sections.push(`## PORTRAIT EMPHASIS: OFF\nThe user has turned profile weighting off. Respond to what they actually asked. Do NOT invoke MBTI / Enneagram / astrology / Human Design / tarot / archetype framing — meet them as a person, not a chart.`);
   }
-  // Memory narrative — softened (see buildOracleSystemPrompt comment).
-  const memSection = await buildMemorySection(userId);
-  if (memSection) {
-    const ASK_MEM_CAP = 600;
-    const trimmed = memSection.length > ASK_MEM_CAP
-      ? memSection.slice(0, ASK_MEM_CAP) + '…'
-      : memSection;
-    sections.push(`${trimmed}\n\n(BACKGROUND ONLY — this is what's been learned from past journaling. Use it to understand the person. Do NOT quote specific scenes, rituals, or images from it; answer the question they actually asked.)`);
+  // Memory injection: relevance-first retrieval against the user's question.
+  // Falls back to the synthesis blob (truncated + tagged background-only) when
+  // retrieval returns nothing (no embeddings yet).
+  if (askContextText && askContextText.trim()) {
+    const retrieved = await retrieveRelevantMemories(userId, askContextText, { k: 10 });
+    const memSection = formatRetrievedMemoriesForPrompt(retrieved);
+    if (memSection) sections.push(memSection);
+    else {
+      const fallback = await buildMemorySection(userId);
+      if (fallback) {
+        const ASK_MEM_CAP = 600;
+        const trimmed = fallback.length > ASK_MEM_CAP ? fallback.slice(0, ASK_MEM_CAP) + '…' : fallback;
+        sections.push(`${trimmed}\n\n(BACKGROUND ONLY — do NOT quote specific scenes from it; answer the question they actually asked.)`);
+      }
+    }
+  } else {
+    // No question signal at all — use the truncated synthesis blob.
+    const fallback = await buildMemorySection(userId);
+    if (fallback) {
+      const ASK_MEM_CAP = 600;
+      const trimmed = fallback.length > ASK_MEM_CAP ? fallback.slice(0, ASK_MEM_CAP) + '…' : fallback;
+      sections.push(`${trimmed}\n\n(BACKGROUND ONLY — do NOT quote specific scenes from it; answer the question they actually asked.)`);
+    }
   }
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
@@ -950,7 +1124,7 @@ function buildTimeContext() {
   return `## CURRENT TIME\nIt is ${dayName} ${timeOfDay}, ${clock} the user's local time. Reference this only if it's directly relevant — do NOT assume the user is awake at an unusual hour, struggling to sleep, journaling at 4am, etc. unless they explicitly say so right now.`;
 }
 
-async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null) {
+async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null, oracleContextText = '') {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
@@ -992,15 +1166,29 @@ Speak to them as someone you know through this lens — not generically. Generic
   // Memory narrative — softened for conversations. The full ~800-token
   // synthesis is rich enough that the model used to grab specific imagery
   // from it as opening hooks ("your 4 AM tea ritual...") on every reply.
-  // Truncate + tag as background-only so the model has the context but
-  // doesn't quote scenes back at the user.
-  const memSection = await buildMemorySection(userId);
-  if (memSection) {
-    const ORACLE_MEM_CAP = 600;
-    const trimmed = memSection.length > ORACLE_MEM_CAP
-      ? memSection.slice(0, ORACLE_MEM_CAP) + '…'
-      : memSection;
-    sections.push(`${trimmed}\n\n(BACKGROUND ONLY — this is what's been learned about the user from past journaling. Use it to understand them. Do NOT quote specific scenes, rituals, or images from it as conversational openers; respond to what the user actually says now.)`);
+  // Memory injection: relevance retrieval against the user's most recent
+  // message. Falls back to the truncated synthesis blob if retrieval returns
+  // empty (e.g. embeddings not backfilled yet, or fresh session with no
+  // last message).
+  if (oracleContextText && oracleContextText.trim()) {
+    const retrieved = await retrieveRelevantMemories(userId, oracleContextText, { k: 10 });
+    const memSection = formatRetrievedMemoriesForPrompt(retrieved);
+    if (memSection) sections.push(memSection);
+    else {
+      const fallback = await buildMemorySection(userId);
+      if (fallback) {
+        const ORACLE_MEM_CAP = 600;
+        const trimmed = fallback.length > ORACLE_MEM_CAP ? fallback.slice(0, ORACLE_MEM_CAP) + '…' : fallback;
+        sections.push(`${trimmed}\n\n(BACKGROUND ONLY — do NOT quote specific scenes from it as openers; respond to what the user actually says now.)`);
+      }
+    }
+  } else {
+    const fallback = await buildMemorySection(userId);
+    if (fallback) {
+      const ORACLE_MEM_CAP = 600;
+      const trimmed = fallback.length > ORACLE_MEM_CAP ? fallback.slice(0, ORACLE_MEM_CAP) + '…' : fallback;
+      sections.push(`${trimmed}\n\n(BACKGROUND ONLY — do NOT quote specific scenes from it as openers; respond to what the user actually says now.)`);
+    }
   }
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
@@ -1266,6 +1454,8 @@ module.exports = {
   buildCandorInstruction,
   buildTonePermissions,
   buildPortraitSection,
+  retrieveRelevantMemories,
+  formatRetrievedMemoriesForPrompt,
   translateSlidersToVoice,
   getArchetypeVoice,
   getSafeCustomArchetypePrompt,

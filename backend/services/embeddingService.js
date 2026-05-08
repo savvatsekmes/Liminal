@@ -13,8 +13,12 @@ let pipelineLoading = false;
 let pipelineError = null;
 
 const VECTRA_DIR = path.join(DATA_DIR, 'vectra');
+// Separate index for memories — keeps memory queries from colliding with
+// entry queries and lets us tune retrieval differently for the two kinds.
+const VECTRA_MEMORIES_DIR = path.join(DATA_DIR, 'vectra-memories');
 
 if (!fs.existsSync(VECTRA_DIR)) fs.mkdirSync(VECTRA_DIR, { recursive: true });
+if (!fs.existsSync(VECTRA_MEMORIES_DIR)) fs.mkdirSync(VECTRA_MEMORIES_DIR, { recursive: true });
 
 async function getPipeline() {
   if (pipeline) return pipeline;
@@ -131,6 +135,58 @@ async function querySimilar(text, k = 5, excludeIds = []) {
 }
 
 /**
+ * Get the memory-specific Vectra LocalIndex. Same MiniLM embeddings, separate
+ * directory so memories and entries don't share an ID space or query pool.
+ */
+async function getMemoryIndex() {
+  const { LocalIndex } = await import('vectra');
+  const index = new LocalIndex(VECTRA_MEMORIES_DIR);
+  if (!(await index.isIndexCreated())) {
+    await index.createIndex();
+    console.log('[embedding] Vectra memory index created.');
+  }
+  return index;
+}
+
+/** Add or update a memory in the memory vector index. Mirror of indexEntry. */
+async function indexMemory(memoryId, text) {
+  try {
+    const [vector, index] = await Promise.all([embed(text), getMemoryIndex()]);
+    try { await index.deleteItem(`memory_${memoryId}`); } catch {}
+    await index.insertItem({ id: `memory_${memoryId}`, vector, metadata: { memoryId } });
+    return true;
+  } catch (err) {
+    console.error(`[embedding] Failed to index memory ${memoryId}:`, err.message);
+    return false;
+  }
+}
+
+/** Remove a memory from the index after deletion / archive. Best-effort. */
+async function unindexMemory(memoryId) {
+  try {
+    const index = await getMemoryIndex();
+    await index.deleteItem(`memory_${memoryId}`);
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Retrieve the k most semantically similar memories to the given context.
+ * Returns scored memory IDs; caller hydrates from SQL and applies recency /
+ * hierarchy / resolved multipliers.
+ */
+async function queryMemoriesSimilar(contextText, k = 30) {
+  try {
+    const [vector, index] = await Promise.all([embed(contextText), getMemoryIndex()]);
+    const results = await index.queryItems(vector, k);
+    return results.map((r) => ({ memoryId: r.item.metadata.memoryId, score: r.score }));
+  } catch (err) {
+    console.error('[embedding] Memory query failed:', err.message);
+    return [];
+  }
+}
+
+/**
  * Warm-start: load the pipeline in the background so the first reflect
  * call doesn't stall. Called from server.js on startup.
  */
@@ -138,4 +194,4 @@ function warmup() {
   getPipeline().catch(() => {});
 }
 
-module.exports = { embed, indexEntry, querySimilar, warmup };
+module.exports = { embed, indexEntry, querySimilar, indexMemory, unindexMemory, queryMemoriesSimilar, warmup };
