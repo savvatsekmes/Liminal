@@ -144,6 +144,22 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at DESC);
 
+  -- Audit log for live-dedup actions on memories. Used as a safety net while
+  -- the supersedes / contradicts paths bake in: every UPDATE / status flip is
+  -- logged with the previous content so we can recover if the LLM mis-classifies
+  -- a real new fact. Drop the table later once we trust the path.
+  CREATE TABLE IF NOT EXISTS memories_audit (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    memory_id    INTEGER,
+    prev_content TEXT,
+    new_content  TEXT,
+    action       TEXT NOT NULL,
+    source_entry_id INTEGER,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_memories_audit_user ON memories_audit(user_id, created_at DESC);
+
   CREATE TABLE IF NOT EXISTS locked_tags (
     user_id    INTEGER NOT NULL DEFAULT 1,
     tag        TEXT    NOT NULL,

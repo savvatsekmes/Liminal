@@ -62,28 +62,74 @@ function isCrisisMemory(text) {
 }
 
 async function extractAndStoreMemories(currentEntry, portrait, userId = 1, entryId = null) {
-  const existing = getMemories(userId, 50);
-  const existingList = existing.map((m) => `- ${m.content}`).join('\n') || '(none yet)';
+  // Pull the *most relevant* existing memories instead of an arbitrary slice
+  // of the most-recent 50. Top-25 by cosine similarity to this entry; pad with
+  // recents if the index is sparse so the LLM always has ~30 reference points.
+  // The neighbour list is what the LLM uses to decide new / duplicate /
+  // supersedes / contradicts, so it has to be on-topic.
+  let neighbourMap = new Map(); // id -> { id, content }
+  try {
+    const hits = await embedding.queryMemoriesSimilar(currentEntry, 25);
+    if (hits.length) {
+      const ids = hits.map((h) => h.memoryId).filter((id) => id != null);
+      if (ids.length) {
+        const placeholders = ids.map(() => '?').join(',');
+        const rows = db
+          .prepare(`SELECT id, content FROM memories WHERE id IN (${placeholders}) AND user_id = ?`)
+          .all(...ids, userId);
+        for (const r of rows) {
+          neighbourMap.set(r.id, { id: r.id, content: safeDecrypt(userId, r.content) || '' });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[memory] neighbour query failed, falling back to recents:', err.message);
+  }
+  if (neighbourMap.size < 30) {
+    const recents = db
+      .prepare('SELECT id, content FROM memories WHERE user_id = ? ORDER BY id DESC LIMIT 50')
+      .all(userId);
+    for (const r of recents) {
+      if (neighbourMap.size >= 30) break;
+      if (!neighbourMap.has(r.id)) {
+        neighbourMap.set(r.id, { id: r.id, content: safeDecrypt(userId, r.content) || '' });
+      }
+    }
+  }
+  const neighbours = [...neighbourMap.values()].filter((n) => n.content && n.content.trim());
+  const validIds = new Set(neighbours.map((n) => n.id));
+  const existingList = neighbours.length
+    ? neighbours.map((m) => `- ${m.id}: ${m.content}`).join('\n')
+    : '(none yet)';
 
   const systemPrompt = `You are a memory curator for a personal journaling app called Liminal.
-Extract 0-6 discrete, factual memories from this journal entry. Each memory should be a single clear statement about this person.
+Extract 0-6 discrete, factual memories from this journal entry. Each memory is ONE clear sentence about this person.
 
-Focus on:
-- Who they are (work, creative practice, relationships, values)
-- Key people in their life and the dynamics
-- Recurring patterns, themes, emotional tendencies
-- Ongoing life situations, transitions, decisions
-- Growth edges, fears, aspirations
-- Specific facts worth remembering (places, projects, practices)
+For EACH memory you extract, decide its relationship to the existing memories list (which is shown with id: text). Pick exactly one action:
+
+- "new": fact is genuinely new, no overlap with existing
+- "duplicate_of": same fact as an existing memory, just rephrased — supply ref_id
+- "supersedes": same topic as an existing memory but new info refines or extends it (e.g. existing "Liminal is in early development" + entry "Liminal v1.4 just shipped" → supersedes) — supply ref_id
+- "contradicts": directly inconsistent with an existing memory (e.g. existing "Dennis is a friend" + entry "my brother Dennis came over" → contradicts) — supply ref_id
 
 Rules:
-- Each memory is ONE fact, ONE sentence
-- Be specific, not vague — names, details, context
-- If a fact is already captured in the existing memories below, do NOT repeat it
-- If nothing genuinely new emerges from this entry, return an empty array
-- Return ONLY valid JSON: { "memories": ["...", "..."] }`;
+- Each memory is ONE fact, ONE sentence, specific (names, details, context)
+- Default to "new" if uncertain
+- Only use ref_id from the EXISTING list — never invent ids
+- If nothing genuinely new emerges, return an empty array
+- Return ONLY valid JSON: { "memories": [{ "text": "...", "action": "new" }, { "text": "...", "action": "supersedes", "ref_id": 137 }] }
 
-  const userMessage = `EXISTING MEMORIES:
+Examples:
+EXISTING contains "142: Savva is building a journaling app called Liminal".
+Entry mentions "I'm working on Liminal today" → { "text": "Savva is working on Liminal", "action": "duplicate_of", "ref_id": 142 }
+
+EXISTING contains "98: Aysha is Savva's girlfriend".
+Entry mentions "Aysha and I got engaged" → { "text": "Savva and Aysha are engaged", "action": "supersedes", "ref_id": 98 }
+
+EXISTING contains "137: Dennis is a friend of Savva's".
+Entry mentions "my brother Dennis came over" → { "text": "Dennis is Savva's brother", "action": "contradicts", "ref_id": 137 }`;
+
+  const userMessage = `EXISTING MEMORIES (id: text):
 ${existingList}
 
 NEW JOURNAL ENTRY:
@@ -91,70 +137,145 @@ ${currentEntry}
 
 ${portrait ? `USER PORTRAIT:\n${portrait}` : ''}
 
-Extract any genuinely new facts about this person. Return only the JSON.`;
+Extract any genuinely new facts. Return only the JSON.`;
 
   try {
-    const raw = await llm.call(systemPrompt, userMessage, { maxTokens: 500 });
-    let newItems = [];
+    const raw = await llm.call(systemPrompt, userMessage, { maxTokens: 700 });
+    let rawItems = [];
     try {
       const parsed = JSON.parse(raw.trim());
-      newItems = parsed.memories || [];
+      rawItems = parsed.memories || [];
     } catch {
       const match = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
       if (match) {
-        try { newItems = JSON.parse(match[1]).memories || []; } catch {}
+        try { rawItems = JSON.parse(match[1]).memories || []; } catch {}
       }
     }
 
-    if (newItems.length) {
-      const ins = db.prepare('INSERT INTO memories (user_id, content, pinned, source_entry_id) VALUES (?, ?, 0, ?)');
-      // Dedupe in-memory: content is stored encrypted so the SQL LOWER(...) = ?
-      // trick can't compare ciphertexts. Load this user's decrypted memories
-      // once and check against that set.
-      const normalize = (s) => s.toLowerCase().trim().replace(/\n/g, ' ').replace(/  /g, ' ');
-      const existingNormalized = new Set(
-        db.prepare('SELECT content FROM memories WHERE user_id = ?').all(userId)
-          .map((r) => normalize(safeDecrypt(userId, r.content) || ''))
-      );
-      let inserted = 0;
-      let dropped = 0;
-      // Track new memory ids for live embedding-indexing — keeps the Vectra
-      // memory collection in sync without a separate backfill on every reflect.
-      const newIdsToIndex = [];
-      for (const item of newItems) {
-        if (typeof item === 'string' && item.trim()) {
-          const content = item.trim();
-          if (isCrisisMemory(content)) {
-            dropped++;
-            continue;
-          }
-          const key = normalize(content);
-          if (!existingNormalized.has(key)) {
-            const result = ins.run(userId, encryptField(userId, content), entryId || null);
-            existingNormalized.add(key);
-            newIdsToIndex.push({ id: result.lastInsertRowid, content });
-            inserted++;
-          }
+    // Normalize each item to { text, action, ref_id }. Tolerate the legacy
+    // bare-string format in case the LLM regresses to it.
+    const items = rawItems.map((item) => {
+      if (typeof item === 'string') return { text: item.trim(), action: 'new', ref_id: null };
+      if (!item || typeof item !== 'object') return null;
+      const text = (item.text || item.memory || '').toString().trim();
+      if (!text) return null;
+      const action = ['new', 'duplicate_of', 'supersedes', 'contradicts'].includes(item.action) ? item.action : 'new';
+      const ref_id = Number.isInteger(item.ref_id) ? item.ref_id : null;
+      // Defensive downgrade: if action references an id we didn't show the LLM,
+      // treat as new. Stops hallucinated ids from corrupting real memories.
+      if (action !== 'new' && (!ref_id || !validIds.has(ref_id))) {
+        return { text, action: 'new', ref_id: null };
+      }
+      return { text, action, ref_id };
+    }).filter(Boolean);
+
+    if (!items.length) {
+      console.log(`[memory] No new memories from entry ${entryId}`);
+      return [];
+    }
+
+    // Existing-content set as a final safety net for action='new' items the
+    // LLM didn't flag as duplicate. Encrypted-content equality fails in SQL,
+    // so we decrypt once and compare normalized strings.
+    const normalize = (s) => s.toLowerCase().trim().replace(/\n/g, ' ').replace(/  /g, ' ');
+    const existingNormalized = new Set(
+      db.prepare('SELECT content FROM memories WHERE user_id = ?').all(userId)
+        .map((r) => normalize(safeDecrypt(userId, r.content) || ''))
+    );
+
+    const ins = db.prepare('INSERT INTO memories (user_id, content, pinned, source_entry_id) VALUES (?, ?, 0, ?)');
+    const updateContent = db.prepare('UPDATE memories SET content = ? WHERE id = ? AND user_id = ?');
+    const markResolved = db.prepare("UPDATE memories SET status = 'resolved' WHERE id = ? AND user_id = ?");
+    const insertAudit = db.prepare(
+      `INSERT INTO memories_audit (user_id, memory_id, prev_content, new_content, action, source_entry_id)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
+
+    const counts = { new: 0, duplicate: 0, supersedes: 0, contradicts: 0, dropped: 0 };
+    const newIdsToIndex = [];
+    const reindexIds = []; // { id, content } for supersedes — re-embed after UPDATE
+
+    for (const item of items) {
+      const content = item.text;
+      if (isCrisisMemory(content)) {
+        counts.dropped++;
+        continue;
+      }
+
+      if (item.action === 'duplicate_of') {
+        // Skip insert entirely. Audit the decision so we can review false
+        // positives later (the LLM said "duplicate" — was it really?).
+        const target = neighbourMap.get(item.ref_id);
+        insertAudit.run(userId, item.ref_id, target?.content || null, content, 'duplicate_of', entryId || null);
+        counts.duplicate++;
+        continue;
+      }
+
+      if (item.action === 'supersedes') {
+        const target = neighbourMap.get(item.ref_id);
+        if (!target) {
+          // ref_id slipped through validation somehow — fall back to new.
+          counts.new++;
+          // fall through to new-branch
+        } else {
+          updateContent.run(encryptField(userId, content), item.ref_id, userId);
+          insertAudit.run(userId, item.ref_id, target.content, content, 'supersedes', entryId || null);
+          reindexIds.push({ id: item.ref_id, content });
+          counts.supersedes++;
+          continue;
         }
       }
-      console.log(`[memory] Extracted ${newItems.length} from entry ${entryId}, inserted ${inserted} (deduped ${newItems.length - inserted - dropped}, crisis-filtered ${dropped})`);
 
-      // Fire-and-forget: index the new memories. Failure to index doesn't
-      // break the insert; backfill script can fix gaps later if needed.
-      if (newIdsToIndex.length > 0) {
-        const embedding = require('./embeddingService');
-        Promise.all(newIdsToIndex.map((m) => embedding.indexMemory(m.id, m.content))).catch((err) => {
-          console.warn('[memory] Live indexing failed for some memories:', err.message);
-        });
+      if (item.action === 'contradicts') {
+        const target = neighbourMap.get(item.ref_id);
+        if (target) {
+          markResolved.run(item.ref_id, userId);
+          insertAudit.run(userId, item.ref_id, target.content, content, 'contradicts', entryId || null);
+        }
+        // Also insert the new contradicting memory so the corrected fact lives
+        // in the corpus going forward. Old one stays as resolved context.
+        const key = normalize(content);
+        if (!existingNormalized.has(key)) {
+          const result = ins.run(userId, encryptField(userId, content), entryId || null);
+          existingNormalized.add(key);
+          newIdsToIndex.push({ id: result.lastInsertRowid, content });
+        }
+        counts.contradicts++;
+        continue;
       }
 
-      // Invalidate synthesis cache
-      invalidateSynthesisCache(userId);
-    } else {
-      console.log(`[memory] No new memories from entry ${entryId}`);
+      // action === 'new'
+      const key = normalize(content);
+      if (!existingNormalized.has(key)) {
+        const result = ins.run(userId, encryptField(userId, content), entryId || null);
+        existingNormalized.add(key);
+        newIdsToIndex.push({ id: result.lastInsertRowid, content });
+        counts.new++;
+      }
     }
 
-    return newItems;
+    console.log(
+      `[memory] Entry ${entryId}: ${counts.new} new, ${counts.duplicate} duplicate, ${counts.supersedes} supersedes, ${counts.contradicts} contradicts, ${counts.dropped} crisis-filtered`
+    );
+
+    // Fire-and-forget: index new + re-index updated. indexMemory upserts
+    // (delete-then-insert) so re-indexing replaces the old vector cleanly.
+    const indexJobs = [
+      ...newIdsToIndex.map((m) => embedding.indexMemory(m.id, m.content)),
+      ...reindexIds.map((m) => embedding.indexMemory(m.id, m.content)),
+    ];
+    if (indexJobs.length) {
+      Promise.all(indexJobs).catch((err) => {
+        console.warn('[memory] Live indexing failed for some memories:', err.message);
+      });
+    }
+
+    // Invalidate synthesis cache whenever anything changed.
+    if (counts.new || counts.supersedes || counts.contradicts) {
+      invalidateSynthesisCache(userId);
+    }
+
+    return items;
   } catch (err) {
     console.error('[memory] Failed to extract memories:', err.message);
     return [];
@@ -533,7 +654,10 @@ Speak to them as someone you know through this lens — not generically. Generic
   // prompt always beats a soft "don't lead with this" instruction. Treat
   // mid + low as effectively "no sky data given" so the slider's extremes
   // produce a real difference instead of a tone hint the model can ignore.
-  if (skyWeight > 70) {
+  // Sky-emphasis threshold bumped May 2026 from >70 to >80. Below 80, the sky
+  // context is not injected at all so astrology stays out of reflections by
+  // default. 80+ is for users who actively want a sky-driven reflection.
+  if (skyWeight > 80) {
     try {
       const { getSkyContext } = require('./skyService');
       sections.push(`Sky context (important): ${getSkyContext()}\n## SKY EMPHASIS: HIGH\nAt least ONE block in the reflection must directly reference the current sky context (moon phase / sign / planetary position / aspect) and tie its symbolic meaning to what the user wrote. Concrete examples:
@@ -635,10 +759,16 @@ function buildPortraitSection(portrait) {
   // open a chat with "your Taurus soil and Aries fire" when the user has the sky
   // slider off and the rational/spiritual slider low. Astrology + Chinese zodiac
   // follow the Sky slider; Tarot follows the rational/spiritual ("woo") slider.
+  // Recurved May 2026: woo/sky thresholds bumped from >30 to >60 because at
+  // 30-50 the model would weave in birth-chart and tarot framing even though
+  // the user clearly didn't want it dominant. Now anything below 60 keeps
+  // astrology + tarot out of the portrait entirely; 60-80 lets them seep in
+  // as background; >80 leans into them. Same gating applies to the live sky
+  // context injection (handled below at line ~657 with its own threshold).
   const skyWeight = portrait.slider_sky_weight ?? 50;
   const rationalSpiritual = portrait.slider_rational_spiritual ?? 50;
-  const includeAstrology = skyWeight > 30;
-  const includeTarot = rationalSpiritual > 30;
+  const includeAstrology = skyWeight > 60;
+  const includeTarot = rationalSpiritual > 60;
 
   if (portrait.mbti) lines.push(`MBTI: ${portrait.mbti}`);
   if (portrait.enneagram) lines.push(`Enneagram: ${portrait.enneagram}`);
@@ -727,24 +857,33 @@ function translateSlidersToVoice(portrait) {
   const instructions = [];
   const v = (key) => portrait?.[key] ?? 50;
 
-  // rational_spiritual
+  // rational_spiritual — recurved May 2026: high band moved from >70 to >80.
+  // 30-80 stays as the "balance" mid band; the spiritual lean only kicks in
+  // when the user has clearly dialled past it. Below 30 stays purely rational.
   const rs = v('slider_rational_spiritual');
   if (rs < 30) {
     instructions.push('Stay grounded and rational — focus on what\'s practical and concrete.');
-  } else if (rs > 70) {
-    instructions.push('Lean into the spiritual and symbolic — explore the deeper meaning, metaphors, and soul-level significance of events.');
+  } else if (rs > 80) {
+    instructions.push('Lean into the spiritual and symbolic — explore the deeper meaning, metaphors, and soul-level significance of events. Do not open with woo framing unprompted; let it emerge from what the user wrote, not as a default frame.');
+  } else if (rs > 60) {
+    instructions.push('Some openness to symbolic and meaning-level framing where it fits, but stay grounded in the practical reality of what the user wrote. Do not open responses with astrology, tarot, or moon-phase framing unless the user explicitly raises them.');
   } else {
     instructions.push('Balance the rational and spiritual — acknowledge both the practical reality and the deeper meaning.');
   }
 
-  // gentle_direct
+  // gentle_direct — recurved May 2026: high band now fires at >80 (was >70)
+  // because the old curve treated the user-facing "75%" as max-intensity. Now
+  // 50-80 sits in the mid range; 80+ is "very direct" reserved for users who
+  // explicitly want a sharp tone. Even at 100, never insult.
   const gd = v('slider_gentle_direct');
   if (gd < 30) {
     instructions.push('Be gentle and tender — hold the person carefully, especially around difficult themes.');
-  } else if (gd > 70) {
-    instructions.push('Be direct and plain-spoken — name things clearly, don\'t soften the truth.');
+  } else if (gd > 80) {
+    instructions.push('Be direct and plain-spoken — name things clearly, don\'t soften the truth. Direct does not mean harsh: name what you see, but never insult or label the user (no "coward", "weak", "stupid"). Tone stays close-friend candor, not contempt.');
+  } else if (gd > 55) {
+    instructions.push('Be warm but willing to say things plainly when it matters. Don\'t soften observations into mush, but don\'t ramp into harshness either — close-friend register.');
   } else {
-    instructions.push('Be warm but willing to say things plainly when it matters.');
+    instructions.push('Be warm and even-handed; say things plainly only when the moment clearly calls for it.');
   }
 
   // reflective_action
@@ -757,12 +896,16 @@ function translateSlidersToVoice(portrait) {
     instructions.push('Balance reflection with occasional practical direction.');
   }
 
-  // light_deep
+  // light_deep — recurved May 2026: high band moved from >70 to >80. Mid band
+  // now spans 30-80 with a graduated middle so 50-75 means "thoughtful depth"
+  // rather than full shadow-work intensity.
   const ld = v('slider_light_deep');
   if (ld < 30) {
     instructions.push('Keep it light — don\'t overwhelm, touch gently.');
-  } else if (ld > 70) {
-    instructions.push('Go deep — explore the psychological layers, the shadow, the unconscious patterns.');
+  } else if (ld > 80) {
+    instructions.push('Go deep — explore the psychological layers, the shadow, the unconscious patterns. Do not pre-emptively psychoanalyze neutral or factual questions; depth applies when the user is actually working something through, not as a default lens for every message.');
+  } else if (ld > 55) {
+    instructions.push('Go to thoughtful depth — name patterns and underlying feelings when they\'re visible, but don\'t reach into shadow material the user hasn\'t opened. Stay close to what they actually wrote.');
   } else {
     instructions.push('Go to a moderate depth — meaningful but not overwhelming.');
   }
@@ -783,8 +926,10 @@ function translateSlidersToVoice(portrait) {
   // move). High = both name uncomfortable truths AND push for movement.
   // Low = both soften observations AND hold space without probing.
   const candor = v('slider_candor');
-  if (candor > 65) {
-    instructions.push('State what you actually see, even when it\'s uncomfortable, AND push them. Name avoidance, projection, contradiction. End on a question that demands a concrete move ("what would the smallest version look like?", "by when?"). Interrogate vague phrases. Truth and friction together.');
+  if (candor > 80) {
+    instructions.push('Name what you see plainly, including avoidance, projection, and contradiction. State it as observation, not judgment. Hard guardrails even at this level: NEVER insult or label the user (no "coward", "weak", "lazy", "stupid"); NEVER advocate for a particular side of an open decision the user is weighing — surface what they\'re avoiding, then return the choice to them. End on a question that opens space, not one that demands a specific concrete move within an hour. Truth without contempt.');
+  } else if (candor > 60) {
+    instructions.push('Name avoidance, projection, and contradiction when they\'re visible — clearly, but without barking. State observations as what you notice, not as accusations. Do NOT insult or label the user; do NOT advocate for one side of an open decision. Ask questions that open space rather than demand immediate moves. Truth without friction-for-its-own-sake.');
   } else if (candor < 35) {
     instructions.push('Comfort first. Soften observations and validate their framing. Do NOT name avoidance, denial, or contradictions. Hold space — no probing questions, no demands for movement. Receive what they wrote and let them sit with it.');
   }
@@ -1060,7 +1205,7 @@ Speak to them as someone you know through this lens — not generically. Generic
   // Sky context only at high slider (>70). See buildReflectSystemPrompt for
   // the rationale — soft "background only" hints don't hold against concrete
   // data in the prompt, so mid + low effectively mean "no sky".
-  if (skyWeight > 70) {
+  if (skyWeight > 80) {
     try {
       const { getSkyContext } = require('./skyService');
       sections.push(`Sky context (important): ${getSkyContext()}\n## SKY EMPHASIS: HIGH\nThe reply must directly reference the current sky context (moon phase / sign / planetary position / aspect). Concrete examples: "the waning gibbous in Sagittarius...", "Mercury station retrograde tomorrow...", "with the moon in Cancer...". A reply at this setting with zero sky references is a failure.`);
@@ -1230,14 +1375,31 @@ Speak to them as someone you know through this lens — not generically. Generic
             return parts.join('\n\n');
           } catch { return ''; }
         })();
+        // Truncate to ~700 chars when injecting. The full entry was acting as a
+        // heavy gravity well — model couldn't help framing every reply through
+        // it. A short snippet keeps the topical anchor without overwhelming
+        // the prompt. Saved Mirror reflection is no longer included by default
+        // (it added a second layer of psychoanalysis that biased the model);
+        // user can paste or ask about it explicitly if they want it discussed.
+        const entrySnippet = bodyText.length > 700
+          ? bodyText.slice(0, 700).trim() + '… (full entry available — ask if you need a specific passage)'
+          : bodyText;
         sections.push(
-          `THIS CONVERSATION IS ABOUT A SPECIFIC JOURNAL ENTRY. The user wants to explore and discuss this entry with you.\n\n` +
-          `Entry title: "${title || 'Untitled'}"\n` +
-          `Date: ${entry.date || 'unknown'}\n` +
-          (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
-          `\nFull entry text:\n"""\n${bodyText || '(empty)'}\n"""\n` +
-          (reflectionText ? `\nMirror reflection saved on this entry:\n"""\n${reflectionText}\n"""\n` : '') +
-          `\nTHIS ENTRY IS THE PRIMARY CONTEXT for the entire conversation. Stay grounded in what the user actually wrote here — the specific events, feelings, and language of THIS entry. Do NOT open with astrology, tarot, archetypes, character-portrait framing, moon phase, or other portrait/sky context unless the user explicitly raises it. Treat that material as far-background only. When the user asks about this entry, reference specific things they wrote. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
+          `## LINKED ENTRY (REFERENCE, NOT FRAME)\n` +
+          `The user opened this chat from a specific journal entry. The entry is provided as a topical reference so you know what they MIGHT bring up. It is NOT a frame for every reply.\n\n` +
+          `STRICT BEHAVIOR RULES — read these before the entry below:\n` +
+          `1. FIRST principle: answer the message in front of you, at face value. A factual question gets a factual answer. A logistical question gets a logistical answer. Tangential questions get tangential answers.\n` +
+          `2. ONLY reach for the entry when the user clearly invokes it — they reference its content, ask "what did I write", connect their feelings explicitly to it, or use language directly from it. If they don't invoke it, leave it alone.\n` +
+          `3. Do NOT psychoanalyze neutral or factual questions as avoidance, deflection, "shielding", or "circling back" to the entry. Sometimes a question is just a question.\n` +
+          `4. Do NOT advocate for any side of a decision the user wrote about in the entry. Do NOT push the user toward "go" or "stay", "do" or "don't". You may surface a tension; you may not pick a winner.\n` +
+          `5. Do NOT inject the entry's emotional themes into unrelated turns. If the user asks about pregnancy week math after writing an entry about a trip, answer the math, do not say "you're really circling back to the trip decision".\n` +
+          `6. Trust the user to bring the entry up. They will, when they want to.\n\n` +
+          `Entry reference:\n` +
+          `- Title: "${title || 'Untitled'}"\n` +
+          `- Date: ${entry.date || 'unknown'}\n` +
+          (tags.length ? `- Tags: ${tags.join(', ')}\n` : '') +
+          `- Snippet:\n"""\n${entrySnippet || '(empty)'}\n"""\n\n` +
+          `Do NOT open with astrology, tarot, archetypes, character-portrait framing, moon phase, or other portrait/sky context unless the user explicitly raises it. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
         );
       }
     }
@@ -1264,13 +1426,23 @@ Speak to them as someone you know through this lens — not generically. Generic
             }).filter(Boolean).join('\n\n');
           } catch { return ''; }
         })();
+        const noteSnippet = noteText.length > 700
+          ? noteText.slice(0, 700).trim() + '… (full note available — ask if you need a specific passage)'
+          : noteText;
         sections.push(
-          `THIS CONVERSATION IS ABOUT A SPECIFIC NOTE. The user wants to explore and discuss this note with you.\n\n` +
-          `Note title: "${title || 'Untitled'}"\n` +
-          (tags.length ? `Tags: ${tags.join(', ')}\n` : '') +
-          `\nFull note text:\n"""\n${noteText || '(empty)'}\n"""\n` +
-          (reflectionText ? `\nMirror reflection saved on this note:\n"""\n${reflectionText}\n"""\n` : '') +
-          `\nTHIS NOTE IS THE PRIMARY CONTEXT for the entire conversation. Stay grounded in what the user actually wrote here. Do NOT open with astrology, tarot, archetypes, character-portrait framing, moon phase, or other portrait/sky context unless the user explicitly raises it. Treat that material as far-background only. When the user asks about this note, reference specific things they wrote. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
+          `## LINKED NOTE (REFERENCE, NOT FRAME)\n` +
+          `The user opened this chat from a specific note. The note is a topical reference, not a frame.\n\n` +
+          `STRICT BEHAVIOR RULES:\n` +
+          `1. FIRST principle: answer the message in front of you, at face value.\n` +
+          `2. ONLY reach for the note when the user clearly invokes it.\n` +
+          `3. Do NOT psychoanalyze neutral questions as avoidance or deflection.\n` +
+          `4. Do NOT advocate for any side of a decision the user may have written about.\n` +
+          `5. Trust the user to bring the note up. They will, when they want to.\n\n` +
+          `Note reference:\n` +
+          `- Title: "${title || 'Untitled'}"\n` +
+          (tags.length ? `- Tags: ${tags.join(', ')}\n` : '') +
+          `- Snippet:\n"""\n${noteSnippet || '(empty)'}\n"""\n\n` +
+          `Do NOT open with astrology, tarot, archetypes, character-portrait framing, moon phase, or other portrait/sky context unless the user explicitly raises it. Follow the response-length and format rules below: prose only, no headers or lists, 1–2 sentences unless they explicitly ask for more.`
         );
       }
     }

@@ -827,6 +827,10 @@ export default function MemoryPage({ onNavigateToPortrait }) {
     return () => { cancelled = true; clearInterval(handle); };
   }, [embedJob.running]);
 
+  // (Dedup buttons removed — live dedup at extraction time handles this now.
+  // Backend /api/memories/dedup + /dedup-restore endpoints stay available
+  // for emergency one-shot cleanup if ever needed.)
+
   // Poll for extraction progress while a job is running. Reload memories when
   // it finishes so the new items appear in the list.
   useEffect(() => {

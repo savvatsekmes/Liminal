@@ -45,8 +45,25 @@ export function useEntries() {
   // Refetch when something outside this hook (e.g. SelectionMenu's
   // "Save to journal" action) creates an entry, so the new row shows up
   // in the list immediately.
+  //
+  // Also re-syncs activeEntry from the fresh data — without this, deleting
+  // a linked oracle conversation correctly clears entries.linked_session_id
+  // server-side and updates the list, but the already-loaded activeEntry
+  // keeps its stale linked_session_id and the speech-bubble icon hangs
+  // around until the user navigates away and back.
   useEffect(() => {
-    function onChanged() { fetchEntries(); }
+    async function onChanged() {
+      const fresh = await fetchEntries();
+      setActiveEntry((cur) => {
+        if (!cur) return cur;
+        const updated = fresh.find((e) => e.id === cur.id);
+        if (!updated) return cur;
+        // Only patch the fields the list query returns; preserve the rest of
+        // the activeEntry object (the list endpoint may not include body
+        // HTML, etc.). linked_session_id is the field that drives the icon.
+        return { ...cur, ...updated };
+      });
+    }
     window.addEventListener('liminal:entries-changed', onChanged);
     return () => window.removeEventListener('liminal:entries-changed', onChanged);
   }, [fetchEntries]);
