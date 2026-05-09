@@ -1341,7 +1341,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               full available width on the left; search input sits on the right
               edge of the same row at a fixed width. */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div data-tour-id="memory-thread-pills" style={{ flex: 1, minWidth: 0 }}>
               <ThreadFilterPills
                 threads={threads}
                 selectedThreadId={selectedThreadId}
@@ -1465,6 +1465,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                           overrode. Open menu lists "Auto" first to revert
                           plus all canonical threads. */}
                       <select
+                        data-tour-id={m.id === 'tutorial-mock' ? 'memory-thread-override' : undefined}
                         value={m.manual_thread_id || ''}
                         onChange={(e) => setMemoryThread(m.id, e.target.value ? parseInt(e.target.value, 10) : null)}
                         title={m.manual_thread_id ? 'Manual thread override (set by you)' : 'Auto — thread derived from source entry'}
@@ -1523,6 +1524,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                         <StarIcon filled={!!m.is_core} />
                       </button>
                       <button
+                        data-tour-id={m.id === 'tutorial-mock' ? 'memory-pin' : undefined}
                         style={{ ...s.coreBtn, color: m.pinned ? 'var(--strong)' : 'var(--muted)', opacity: m.pinned ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
                         onClick={() => togglePinned(m.id, m.pinned)}
                         title={m.pinned ? 'Unpin this memory' : 'Pin this memory (boosts weight in the relevance hierarchy)'}
@@ -1532,6 +1534,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
                         <PinIcon filled={!!m.pinned} />
                       </button>
                       <button
+                        data-tour-id={m.id === 'tutorial-mock' ? 'memory-resolved' : undefined}
                         style={{ ...s.coreBtn, color: m.status === 'resolved' ? '#5a8f5a' : 'var(--muted)', opacity: m.status === 'resolved' ? 1 : 0.55, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
                         onClick={() => toggleResolved(m.id, m.status)}
                         title={m.status === 'resolved' ? 'Mark as active again' : 'Mark resolved (situation closed; downweighted in retrieval)'}

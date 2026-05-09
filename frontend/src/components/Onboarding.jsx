@@ -212,22 +212,22 @@ const QUIZ_RESULT_DESCRIPTION_KEYS = {
 // experience matches what users were already getting.
 const QUIZ_SLIDER_PRESETS = {
   witness: {
-    slider_rational_spiritual: 20, slider_gentle_direct: 55, slider_reflective_action: 35,
+    slider_rational_spiritual: 0, slider_gentle_direct: 55, slider_reflective_action: 35,
     slider_light_deep: 65, slider_conversational_poetic: 28,
     slider_candor: 60, slider_friend_stranger: 28,
     slider_portrait_weight: 10, slider_sky_weight: 0,
   },
   seeker: {
-    slider_rational_spiritual: 55, slider_gentle_direct: 42, slider_reflective_action: 28,
+    slider_rational_spiritual: 10, slider_gentle_direct: 42, slider_reflective_action: 28,
     slider_light_deep: 70, slider_conversational_poetic: 55,
     slider_candor: 52, slider_friend_stranger: 42,
-    slider_portrait_weight: 42, slider_sky_weight: 20,
+    slider_portrait_weight: 42, slider_sky_weight: 5,
   },
   attuned: {
-    slider_rational_spiritual: 78, slider_gentle_direct: 38, slider_reflective_action: 25,
+    slider_rational_spiritual: 50, slider_gentle_direct: 38, slider_reflective_action: 25,
     slider_light_deep: 78, slider_conversational_poetic: 68,
     slider_candor: 50, slider_friend_stranger: 55,
-    slider_portrait_weight: 82, slider_sky_weight: 80,
+    slider_portrait_weight: 82, slider_sky_weight: 40,
   },
 };
 

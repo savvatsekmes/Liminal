@@ -13,6 +13,20 @@
 //
 // Copy lives in frontend/src/i18n/<lang>.js under tutorials.* keys.
 
+// Each tour belongs to a single page in the app's view-router. When the user
+// navigates away from that page mid-tour, the overlay auto-dismisses so the
+// bubble doesn't sit on top of an unrelated page. Source of truth — App.jsx
+// imports this for both replay-tour navigation and mid-tour cancellation.
+export const TOUR_HOST = {
+  home: 'home',
+  journal: 'journal',
+  notes: 'notes',
+  conversations: 'oracle',
+  threads: 'threads',
+  oracle: 'portrait',
+  context: 'memory',
+};
+
 export const TOURS = {
   home: [
     {
@@ -369,6 +383,12 @@ export const TOURS = {
       before: { event: 'liminal:set-context-tab', detail: "memory" },
     },
     {
+      targetId: 'memory-thread-pills',
+      titleKey: 'tutorials.context.memoryThreadPills.title',
+      bodyKey: 'tutorials.context.memoryThreadPills.body',
+      before: { event: 'liminal:set-context-tab', detail: "memory" },
+    },
+    {
       targetId: 'memory-search',
       titleKey: 'tutorials.context.memorySearch.title',
       bodyKey: 'tutorials.context.memorySearch.body',
@@ -381,9 +401,33 @@ export const TOURS = {
       before: { event: 'liminal:tutorial-memory-mock', detail: true },
     },
     {
+      targetId: 'memory-thread-override',
+      titleKey: 'tutorials.context.memoryThreadOverride.title',
+      bodyKey: 'tutorials.context.memoryThreadOverride.body',
+      before: { event: 'liminal:tutorial-memory-mock', detail: true },
+    },
+    {
+      targetId: 'memory-edit',
+      titleKey: 'tutorials.context.memoryEdit.title',
+      bodyKey: 'tutorials.context.memoryEdit.body',
+      before: { event: 'liminal:tutorial-memory-mock', detail: true },
+    },
+    {
       targetId: 'memory-core',
       titleKey: 'tutorials.context.memoryCore.title',
       bodyKey: 'tutorials.context.memoryCore.body',
+      before: { event: 'liminal:tutorial-memory-mock', detail: true },
+    },
+    {
+      targetId: 'memory-pin',
+      titleKey: 'tutorials.context.memoryPin.title',
+      bodyKey: 'tutorials.context.memoryPin.body',
+      before: { event: 'liminal:tutorial-memory-mock', detail: true },
+    },
+    {
+      targetId: 'memory-resolved',
+      titleKey: 'tutorials.context.memoryResolved.title',
+      bodyKey: 'tutorials.context.memoryResolved.body',
       before: { event: 'liminal:tutorial-memory-mock', detail: true },
     },
     {

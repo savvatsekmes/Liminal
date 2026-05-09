@@ -25,6 +25,7 @@ import { useTtsLoading, useLoadingMessage } from './utils/ttsStatus';
 import { useFont } from './hooks/useFont';
 import { applyFontScale, getFontScale, setFontScale, installZoomShortcuts } from './utils/fontScale';
 import { TutorialProvider, useTutorial } from './components/TutorialContext';
+import { TOUR_HOST } from './data/tutorials';
 
 // Apply font scale at module load so the very first paint already honours the
 // user's saved size — avoids a flash of default-size text.
@@ -42,6 +43,9 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   const handleViewChange = useCallback((view) => {
     setActiveView(view);
     sessionStorage.setItem('liminal_view', view);
+    // Tour overlay listens to this so it can dismiss itself when the user
+    // navigates away from the page the active tour is hosted on.
+    window.dispatchEvent(new CustomEvent('liminal:view-changed', { detail: view }));
   }, []);
   // "Show again" from Settings → Replay tutorials dispatches this event.
   // We switch to home (the page the home tour lives on) and start the
@@ -52,8 +56,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     function onReplay(e) {
       const id = e.detail?.id;
       if (!id) return;
-      // Map tour id → its host page. Extend as more tours land.
-      const TOUR_HOST = { home: 'home', journal: 'journal', notes: 'notes', conversations: 'oracle', threads: 'threads', oracle: 'portrait', context: 'memory' };
+      // Map tour id → its host page (sourced from tutorials.js so the tour
+      // overlay's auto-dismiss-on-navigate logic stays in lockstep with this).
       const host = TOUR_HOST[id] || 'home';
       handleViewChange(host);
       setTimeout(() => tutorialApi.startTour(id), 450);

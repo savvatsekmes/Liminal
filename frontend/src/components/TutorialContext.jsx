@@ -13,7 +13,7 @@
 
 import { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
-import { TOURS } from '../data/tutorials';
+import { TOURS, TOUR_HOST } from '../data/tutorials';
 import { useLanguage } from '../i18n/LanguageContext';
 
 const TutorialContext = createContext(null);
@@ -46,7 +46,30 @@ export function TutorialProvider({ initialSeen = [], hydrated = false, children 
   const [seen, setSeen] = useState(initialSeen);
   const [tourId, setTourId] = useState(null);
   const [step, setStep] = useState(0);
+  // Track current page via the global view-change event dispatched from
+  // App.jsx whenever the user navigates. Used below to auto-close a tour
+  // when the user leaves its host page.
+  const currentPageRef = useRef(null);
   useEffect(() => { setSeen(initialSeen); }, [initialSeen]);
+
+  useEffect(() => {
+    function onViewChanged(e) {
+      const next = e.detail;
+      currentPageRef.current = next;
+      // If a tour is running and the user navigated away from its host
+      // page, dismiss the overlay (do NOT mark seen — they can come back).
+      if (!tourId) return;
+      const expectedHost = TOUR_HOST[tourId];
+      if (!expectedHost) return;
+      if (next !== expectedHost) {
+        window.dispatchEvent(new CustomEvent('liminal:tutorial-closed', { detail: tourId }));
+        setTourId(null);
+        setStep(0);
+      }
+    }
+    window.addEventListener('liminal:view-changed', onViewChanged);
+    return () => window.removeEventListener('liminal:view-changed', onViewChanged);
+  }, [tourId]);
 
   const persistSeen = useCallback((id) => {
     setSeen((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -189,7 +212,7 @@ function TutorialOverlay({ tourId, step, onNext, onPrev, onClose }) {
   const isLast = step >= tour.length - 1;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 100000, pointerEvents: 'none' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 5000, pointerEvents: 'none' }}>
       <div
         style={{
           position: 'fixed',
@@ -218,7 +241,7 @@ function TutorialOverlay({ tourId, step, onNext, onPrev, onClose }) {
           boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
           fontFamily: 'var(--font)',
           pointerEvents: 'auto',
-          zIndex: 100001,
+          zIndex: 5001,
         }}
       >
         <div style={{ fontSize: '11px', color: 'var(--muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '6px' }}>
