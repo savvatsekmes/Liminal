@@ -270,6 +270,11 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     <UpdateBanner />
     {locked && <LockScreen username={username} onUnlock={() => {
       setLocked(false);
+      // Land on home after every unlock — same rationale as the fresh-login
+      // path: don't dump the user back into a deep page they were on before
+      // walking away. handleViewChange dispatches the view-changed event so
+      // any active tour overlay also clears.
+      handleViewChange('home');
       resetLockTimer();
       // Re-warm TTS after unlock so the first Read-aloud is instant,
       // mirroring the post-login warmup.
@@ -507,6 +512,11 @@ export default function App() {
         if (!isNaN(lt)) setLockTimeoutMinutes(lt);
       })
       .catch(() => {});
+    // Always land on Home after a fresh login. Without this, AuthenticatedApp
+    // restores the previously saved view from sessionStorage — which means
+    // logging back in could drop you into Settings or some deep page you
+    // were on before locking. Mirrors what handleOnboardingComplete does.
+    try { sessionStorage.setItem('liminal_view', 'home'); } catch {}
     if (onboardingComplete) {
       setAuthStatus('ok');
     } else {
