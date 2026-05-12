@@ -2099,6 +2099,7 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
                               onClick={() => {
                                 if (b.type === 'entry') onNavigateToEntry?.(b.id);
                                 else if (b.type === 'note') onNavigateToNote?.(b.id);
+                                else if (b.type === 'conversation') onNavigateToOracle?.(b.id);
                               }}
                               title={b.title}
                               style={{

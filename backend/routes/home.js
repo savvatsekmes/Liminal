@@ -443,22 +443,38 @@ router.get('/threads', (req, res) => {
     description: safeDecrypt(req.userId, r.description),
   }));
 
-  // Attach up to 4 most recent beads (entry/note title + id + type) per thread.
-  // Titles are plaintext; no decrypt needed.
+  // Attach up to 4 most recent beads (entry/note/conversation title + id +
+  // type) per thread. Titles are plaintext; no decrypt needed.
+  //
+  // Previously this query only handled entry + note and fell through to NULL
+  // for conversations, which all rendered as "Untitled". It also returned
+  // orphan beads when a bead's source object had been deleted, leaving rows
+  // in thread_nodes that pointed nowhere — those rendered as "Untitled" with
+  // a click handler that navigated to a missing id and did nothing visible.
+  //
+  // Now: handle all three content types, AND filter rows where the source
+  // object no longer exists (title IS NOT NULL after the subquery resolves).
+  // We pull a few extras (LIMIT 8) before filtering so a deleted row near the
+  // top doesn't drop our final beads count below 4.
   const beadStmt = db.prepare(`
-    SELECT n.content_type AS type, n.content_id AS id, n.created_at,
-           CASE n.content_type
-             WHEN 'entry' THEN (SELECT title FROM entries WHERE id = n.content_id)
-             WHEN 'note'  THEN (SELECT title FROM notes   WHERE id = n.content_id)
-             ELSE NULL
-           END AS title
-      FROM thread_nodes n
-     WHERE n.thread_id = ?
-     ORDER BY n.created_at DESC
-     LIMIT 4
+    SELECT * FROM (
+      SELECT n.content_type AS type, n.content_id AS id, n.created_at,
+             CASE n.content_type
+               WHEN 'entry'        THEN (SELECT title FROM entries         WHERE id = n.content_id AND user_id = ?)
+               WHEN 'note'         THEN (SELECT title FROM notes           WHERE id = n.content_id AND user_id = ?)
+               WHEN 'conversation' THEN (SELECT title FROM oracle_sessions WHERE id = n.content_id AND user_id = ?)
+               ELSE NULL
+             END AS title
+        FROM thread_nodes n
+       WHERE n.thread_id = ?
+       ORDER BY n.created_at DESC
+       LIMIT 8
+    )
+    WHERE title IS NOT NULL
+    LIMIT 4
   `);
   for (const r of rows) {
-    r.beads = beadStmt.all(r.id).map((b) => ({
+    r.beads = beadStmt.all(req.userId, req.userId, req.userId, r.id).map((b) => ({
       id: b.id,
       type: b.type,
       title: (b.title && String(b.title).trim()) || 'Untitled',
