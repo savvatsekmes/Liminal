@@ -121,6 +121,15 @@ export default function TermsOfService({ onBack }) {
             <p style={s.paragraph}>{t('terms.aiContentBody7')}</p>
           </div>
 
+          {/* Hardware and Local AI Runtime Risk */}
+          <div style={s.section}>
+            <div style={s.sectionTitle}>{t('terms.hardwareTitle')}</div>
+            <p style={s.paragraph}>{t('terms.hardwareBody1')}</p>
+            <p style={s.paragraph}>{t('terms.hardwareBody2')}</p>
+            <p style={s.paragraph}>{t('terms.hardwareBody3')}</p>
+            <p style={s.paragraph}>{t('terms.hardwareBody4')}</p>
+          </div>
+
           {/* EU AI Act Compliance */}
           <div style={s.section}>
             <div style={s.sectionTitle}>{t('terms.aiActTitle')}</div>
