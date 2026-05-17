@@ -21,14 +21,21 @@ function getLanguageName(code) { return LANGUAGE_NAMES[code] || code; }
 // This mirrors the ThreadsPage visibility rule and gives the card prompt a
 // high-signal summary of what the user's life is currently about — much
 // cheaper and cleaner than re-deriving it from recent-entry excerpts.
-function getThreadContext(userId) {
+// `recencyDays` filter — only return threads with a node added in the last N
+// days. Daily card uses ~14 so it leans on what's actually current in the
+// user's life rather than every multi-year canonical arc. The longer-form
+// /reading endpoint passes Infinity to keep the old behavior.
+function getThreadContext(userId, recencyDays = Infinity) {
   const { safeDecrypt } = require('../services/rowCrypto');
+  const cutoffClause = Number.isFinite(recencyDays)
+    ? `AND EXISTS (SELECT 1 FROM thread_nodes nn WHERE nn.thread_id = t.id AND nn.created_at >= datetime('now', '-${Math.max(1, Math.round(recencyDays))} days'))`
+    : '';
   const rows = db.prepare(`
     SELECT t.name, t.description, t.kind, t.status,
            COUNT(n.id) AS node_count
       FROM threads t
       LEFT JOIN thread_nodes n ON n.thread_id = t.id
-     WHERE t.user_id = ?
+     WHERE t.user_id = ? ${cutoffClause}
      GROUP BY t.id
      HAVING t.kind = 'canonical' OR node_count >= 3
      ORDER BY (t.status = 'active') DESC, t.updated_at DESC
@@ -135,17 +142,34 @@ router.get('/daily', async (req, res) => {
       if (portrait.season_of_life) context += `Season of life: ${portrait.season_of_life}. `;
     }
 
-    // Recent journal entries for personal context
+    // Just the single most recent journal entry — keep the daily card grounded
+    // in today's energy rather than stitching together 3 entries' worth of
+    // disparate detail. 200 chars is enough to convey current mood without
+    // dumping a paragraph the model will try to name back.
     const recentEntries = db.prepare(
-      "SELECT title, body_text FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 3"
+      "SELECT title, body_text FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 1"
     ).all(req.userId);
     const journalContext = recentEntries
-      .map(e => `${e.title || 'Untitled'}: ${(e.body_text || '').slice(0, 150)}`)
+      .map(e => `${e.title || 'Untitled'}: ${(e.body_text || '').slice(0, 200)}`)
       .join('\n');
 
-    const threadContext = getThreadContext(req.userId);
+    // Only include threads that have had a node added in the last ~14 days.
+    // Without this filter the daily card sees every multi-year canonical arc
+    // and tries to weave them all together, producing stew-like readings.
+    const threadContext = getThreadContext(req.userId, 14);
 
-    const systemPrompt = 'You are a warm, intuitive oracle reader. You give personalised daily card readings that connect the card\'s energy to the person\'s life. Do NOT repeat or paraphrase the card\'s textbook meaning — instead, weave it into specific, actionable guidance for their day. Be poetic but grounded. No greeting or sign-off. Plain text only, 2-3 short sentences (~50-70 words).';
+    const systemPrompt = `You are a warm, intuitive oracle reader. You give personalised daily card readings that connect the card's energy to the person's life.
+
+Tone:
+- Be poetic but grounded. No greeting or sign-off.
+- Plain text only, 2-3 short sentences (~50-70 words).
+- Do NOT repeat or paraphrase the card's textbook meaning.
+
+How to use the context below:
+- The thread names and journal snippet are AMBIENT signal — they hint at what's currently alive in the person's life. Use them to sense the day's energy, NOT as a list of topics to name back.
+- Do NOT name specific people, places, projects, or recent events from the journal entry. Do NOT list multiple life threads in one reading.
+- Speak in broad strokes about energy, posture, and what to attend to. A daily card is a nudge, not a deep reflection.
+- If the context is sparse or unclear, lean fully into the card itself.`;
     const languageLine = (lang && lang !== 'en')
       ? `\n\nLANGUAGE: You MUST write the entire reading in ${getLanguageName(lang)}. Honour the gender specified above when choosing adjective/verb endings.`
       : '';
