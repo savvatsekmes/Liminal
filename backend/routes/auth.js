@@ -6,9 +6,12 @@ const fs = require('fs');
 const multer = require('multer');
 const db = require('../database');
 const { DATA_DIR } = require('../paths');
-const { signToken, requireAuth } = require('../middleware/auth');
+const jwt = require('jsonwebtoken');
+const authMiddleware = require('../middleware/auth');
+const { signToken, requireAuth } = authMiddleware;
 const userCrypto = require('../services/userCrypto');
 const rowCrypto = require('../services/rowCrypto');
+const yubikeyCrypto = require('../services/yubikeyCrypto');
 const { migrateLegacyUserRows } = require('../services/legacyRowMigration');
 const lockout = require('../services/lockout');
 
@@ -44,7 +47,7 @@ const SALT_ROUNDS = 12;
 
 // Columns we load for crypto-sensitive paths. Kept narrow to avoid accidentally
 // logging blobs elsewhere.
-const KEY_FIELDS = `password_salt, recovery_salt, user_key_by_password, user_key_by_recovery, recovery_key_by_password, encryption_version`;
+const KEY_FIELDS = `password_salt, recovery_salt, user_key_by_password, user_key_by_recovery, recovery_key_by_password, encryption_version, yubikey_enabled, yubikey_credential_id, yubikey_prf_salt, user_key_by_yubikey`;
 
 // ── GET /api/auth/status ─────────────────────────────────────────────────────
 // Returns whether any users exist (for first-launch detection)
@@ -115,6 +118,28 @@ router.post('/login', async (req, res) => {
 
   let recoveryKeyToShow = null;
 
+  // Optional YubiKey 2FA gate. When enabled the password-only wrapper of
+  // user_key was dropped at enrollment, so we have nothing to unwrap with at
+  // this stage. Issue a short-lived step-up token and let the renderer
+  // complete a WebAuthn PRF assertion via /login-yubikey.
+  if (user.encryption_version === 1 && user.yubikey_enabled && user.user_key_by_yubikey) {
+    const stepUp = jwt.sign(
+      { userId: user.id, username: user.username, step_up: 'yubikey' },
+      authMiddleware.getSecret(),
+      { expiresIn: '2m' }
+    );
+    // Successful password — but don't reset the lockout streak yet. The
+    // second factor still has to pass. recordSuccess fires in /login-yubikey.
+    return res.json({
+      yubikey_required: true,
+      step_up_token: stepUp,
+      credential_id: Buffer.from(user.yubikey_credential_id).toString('base64'),
+      prf_salt: Buffer.from(user.yubikey_prf_salt).toString('base64'),
+      onboarding_complete: !!user.onboarding_complete,
+      username: user.username,
+    });
+  }
+
   if (user.encryption_version === 1 && user.user_key_by_password) {
     // Standard case: unwrap user key.
     const userKey = userCrypto.unlockWithPassword(password, user);
@@ -160,6 +185,62 @@ router.post('/login', async (req, res) => {
     username: user.username,
     onboarding_complete: !!user.onboarding_complete,
     recovery_key: recoveryKeyToShow,
+  });
+});
+
+// ── POST /api/auth/login-yubikey ────────────────────────────────────────────
+// Second step of the YubiKey-gated login. The renderer has already verified
+// the password via /login (which returned a 2-minute step_up_token) and
+// completed a WebAuthn PRF assertion against the user's enrolled credential.
+// We use the prf_output to unwrap user_key_by_yubikey and complete the login.
+router.post('/login-yubikey', async (req, res) => {
+  const { step_up_token, prf_output } = req.body || {};
+  if (!step_up_token || !prf_output) {
+    return res.status(400).json({ error: 'step_up_token and prf_output required' });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(step_up_token, authMiddleware.getSecret());
+  } catch {
+    return res.status(401).json({ error: 'Step-up token expired or invalid. Please re-enter your password.' });
+  }
+  if (payload.step_up !== 'yubikey' || !payload.userId) {
+    return res.status(401).json({ error: 'Invalid step-up token' });
+  }
+
+  const user = db.prepare(`SELECT id, username, onboarding_complete, ${KEY_FIELDS} FROM users WHERE id = ?`).get(payload.userId);
+  if (!user || !user.yubikey_enabled || !user.user_key_by_yubikey) {
+    return res.status(400).json({ error: 'YubiKey is not enabled on this account' });
+  }
+
+  const preState = lockout.getStateByUserId(user.id);
+  if (preState?.locked) return res.status(429).json(lockoutErrorPayload(preState));
+
+  let prfBuf;
+  try { prfBuf = Buffer.from(prf_output, 'base64'); } catch { prfBuf = null; }
+  if (!prfBuf || prfBuf.length !== 32) {
+    return res.status(400).json({ error: 'Invalid prf_output' });
+  }
+
+  const userKey = yubikeyCrypto.unwrapUserKeyWithPrf(user.user_key_by_yubikey, prfBuf);
+  if (!userKey) {
+    const post = lockout.recordFailure(user.id);
+    if (post?.locked) return res.status(429).json(lockoutErrorPayload(post));
+    return res.status(401).json({
+      error: 'Hardware key did not match. Try tapping the correct key.',
+      attempts_before_lockout: post?.attempts_before_lockout,
+    });
+  }
+
+  rowCrypto.setUserKey(user.id, userKey);
+  db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+  lockout.recordSuccess(user.id);
+  const token = signToken(user.id, user.username);
+  res.json({
+    token,
+    username: user.username,
+    onboarding_complete: !!user.onboarding_complete,
   });
 });
 
@@ -232,6 +313,11 @@ router.post('/recover', async (req, res) => {
   // Rewrap with the new password. The recovery key itself is unchanged — the
   // user may still have it written down. rewrapPassword needs the current
   // recovery key string; we have it from input (after normalizing).
+  //
+  // Also clear any YubiKey enrollment. The most common reason a user runs
+  // the recovery flow is because they lost their hardware key; without this
+  // reset they'd recover the password but still be gated by a key they no
+  // longer have. After recovery they can re-enroll a new key from Settings.
   const normalizedRk = userCrypto.normalizeRecoveryKey(recovery_key);
   const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
   const rewrap = userCrypto.rewrapPassword(userKey, newPassword, normalizedRk);
@@ -241,6 +327,10 @@ router.post('/recover', async (req, res) => {
       password_salt = ?,
       user_key_by_password = ?,
       recovery_key_by_password = ?,
+      yubikey_enabled = 0,
+      yubikey_credential_id = NULL,
+      yubikey_prf_salt = NULL,
+      user_key_by_yubikey = NULL,
       last_login = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(

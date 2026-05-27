@@ -72,17 +72,61 @@ async function embed(text) {
   return Array.from(output.data);
 }
 
-/**
- * Get the Vectra LocalIndex, creating it if needed.
- */
+// Singleton LocalIndex instances + per-index write queues.
+//
+// Every call to `getIndex()` used to construct a fresh LocalIndex pointing
+// at the same on-disk path. The Vectra LocalIndex isn't designed to be
+// instantiated multiple times against the same file: each instance holds an
+// in-memory copy of the index, and every insertItem / deleteItem rewrites
+// the whole file. If two callers concurrently insert (e.g. a reflect
+// fire-and-forget index call racing with a bulk reindex loop), they each
+// read the same starting state, modify in memory, and write back —
+// last-write-wins corruption that often produces invalid JSON near the
+// file's seam.
+//
+// Fix: cache one LocalIndex per directory, and serialise every write
+// through a per-directory promise chain so insertItem/deleteItem can never
+// overlap. Read operations (queryItems) don't need to be in the queue —
+// they only read the in-memory state.
+const _indexCache = new Map();   // dir → Promise<LocalIndex>
+const _writeChains = new Map();  // dir → Promise (tail of the queue)
+
+function _enqueueWrite(dir, fn) {
+  const prev = _writeChains.get(dir) || Promise.resolve();
+  // Swallow rejections in the chain so one failed write doesn't poison
+  // every subsequent write. Callers see their own errors via the returned
+  // promise.
+  const next = prev.then(fn, fn);
+  _writeChains.set(dir, next.catch(() => {}));
+  return next;
+}
+
+async function _getIndexAt(dir, label) {
+  if (_indexCache.has(dir)) return _indexCache.get(dir);
+  const p = (async () => {
+    const { LocalIndex } = await import('vectra');
+    const idx = new LocalIndex(dir);
+    if (!(await idx.isIndexCreated())) {
+      await idx.createIndex();
+      console.log(`[embedding] Vectra ${label} index created.`);
+    }
+    return idx;
+  })();
+  _indexCache.set(dir, p);
+  return p;
+}
+
+/** Drop the cached LocalIndex instance for a directory. Call this after
+ *  externally deleting the on-disk index files (e.g. the reindex flow that
+ *  wipes vectra/ before rebuilding) so the next getIndex creates a fresh
+ *  instance bound to the new files. */
+function invalidateIndexCache(dir) {
+  _indexCache.delete(dir);
+  _writeChains.delete(dir);
+}
+
 async function getIndex() {
-  const { LocalIndex } = await import('vectra');
-  const index = new LocalIndex(VECTRA_DIR);
-  if (!(await index.isIndexCreated())) {
-    await index.createIndex();
-    console.log('[embedding] Vectra index created.');
-  }
-  return index;
+  return _getIndexAt(VECTRA_DIR, 'entries');
 }
 
 /**
@@ -93,19 +137,15 @@ async function getIndex() {
 async function indexEntry(entryId, text) {
   try {
     const [vector, index] = await Promise.all([embed(text), getIndex()]);
-
-    // Delete existing item if present (upsert behaviour)
-    try {
-      await index.deleteItem(`entry_${entryId}`);
-    } catch {}
-
-    await index.insertItem({
-      id: `entry_${entryId}`,
-      vector,
-      metadata: { entryId },
+    return await _enqueueWrite(VECTRA_DIR, async () => {
+      try { await index.deleteItem(`entry_${entryId}`); } catch {}
+      await index.insertItem({
+        id: `entry_${entryId}`,
+        vector,
+        metadata: { entryId },
+      });
+      return true;
     });
-
-    return true;
   } catch (err) {
     console.error(`[embedding] Failed to index entry ${entryId}:`, err.message);
     return false;
@@ -139,22 +179,18 @@ async function querySimilar(text, k = 5, excludeIds = []) {
  * directory so memories and entries don't share an ID space or query pool.
  */
 async function getMemoryIndex() {
-  const { LocalIndex } = await import('vectra');
-  const index = new LocalIndex(VECTRA_MEMORIES_DIR);
-  if (!(await index.isIndexCreated())) {
-    await index.createIndex();
-    console.log('[embedding] Vectra memory index created.');
-  }
-  return index;
+  return _getIndexAt(VECTRA_MEMORIES_DIR, 'memory');
 }
 
 /** Add or update a memory in the memory vector index. Mirror of indexEntry. */
 async function indexMemory(memoryId, text) {
   try {
     const [vector, index] = await Promise.all([embed(text), getMemoryIndex()]);
-    try { await index.deleteItem(`memory_${memoryId}`); } catch {}
-    await index.insertItem({ id: `memory_${memoryId}`, vector, metadata: { memoryId } });
-    return true;
+    return await _enqueueWrite(VECTRA_MEMORIES_DIR, async () => {
+      try { await index.deleteItem(`memory_${memoryId}`); } catch {}
+      await index.insertItem({ id: `memory_${memoryId}`, vector, metadata: { memoryId } });
+      return true;
+    });
   } catch (err) {
     console.error(`[embedding] Failed to index memory ${memoryId}:`, err.message);
     return false;
@@ -165,8 +201,10 @@ async function indexMemory(memoryId, text) {
 async function unindexMemory(memoryId) {
   try {
     const index = await getMemoryIndex();
-    await index.deleteItem(`memory_${memoryId}`);
-    return true;
+    return await _enqueueWrite(VECTRA_MEMORIES_DIR, async () => {
+      try { await index.deleteItem(`memory_${memoryId}`); return true; }
+      catch { return false; }
+    });
   } catch { return false; }
 }
 
@@ -194,4 +232,7 @@ function warmup() {
   getPipeline().catch(() => {});
 }
 
-module.exports = { embed, indexEntry, querySimilar, indexMemory, unindexMemory, queryMemoriesSimilar, warmup };
+module.exports = {
+  embed, indexEntry, querySimilar, indexMemory, unindexMemory, queryMemoriesSimilar, warmup,
+  invalidateIndexCache, VECTRA_DIR, VECTRA_MEMORIES_DIR,
+};

@@ -629,17 +629,75 @@ Speak to them as someone you know through this lens — not generically. Generic
   // background. Full-body dumps of past entries used to drown out today's
   // entry: the model would pull topics, phrasing, even specific nouns from
   // them instead of responding to what was actually written today.
+  //
+  // We split the similar entries into two flavours:
+  //
+  //   ARC ANCHOR — the top semantically-similar past entry that is at least
+  //   a week old. Surfaced with explicit permission for a "then vs now"
+  //   observation in the opening, because seeing where the user was on the
+  //   same thread a few weeks ago is one of the highest-signal moves a
+  //   journaling Mirror can make. Without this explicit invitation the
+  //   model treats all past-entry context as "background only" and never
+  //   reaches for the time-travel callback.
+  //
+  //   BACKGROUND — the rest. Same protective instruction as before: don't
+  //   set the topic from these, only reference if the user explicitly
+  //   picks up the same thread.
   if (similarEntries.length > 0) {
     const EXCERPT_LEN = 350;
-    const pastContext = similarEntries
-      .map((e) => {
-        const dateStr = e.date || e.created_at?.split('T')[0] || 'unknown date';
-        const body = String(e.body_text || '').trim();
-        const excerpt = body.length > EXCERPT_LEN ? body.slice(0, EXCERPT_LEN) + '…' : body;
-        return `[${dateStr}] ${e.title}\n${excerpt}`;
-      })
-      .join('\n\n---\n\n');
-    sections.push(`## PAST ENTRY EXCERPTS (BACKGROUND ONLY)\nShort excerpts from past entries that share some language with today's entry. These are background context for continuity — do NOT use them to set the topic of your reflection. Only reference a past entry if today's entry explicitly picks up the same thread.\n\n${pastContext}`);
+    const ARC_MIN_DAYS = 7;
+    const ARC_MAX_DAYS = 365;
+    const now = Date.now();
+    const ageDays = (e) => {
+      const ref = e.date || e.created_at;
+      if (!ref) return null;
+      const ms = now - new Date(String(ref).replace(' ', 'T') + (ref.length > 10 ? '' : 'T00:00:00') + (ref.length > 10 ? 'Z' : '')).getTime();
+      return Math.round(ms / 86400000);
+    };
+    const eligible = similarEntries
+      .map((e) => ({ e, days: ageDays(e) }))
+      .filter((x) => x.days != null && x.days >= ARC_MIN_DAYS && x.days <= ARC_MAX_DAYS);
+    const arc = eligible.length ? eligible[0] : null; // top of the sort, already by similarity
+    const background = similarEntries.filter((e) => !arc || e.id !== arc.e.id);
+
+    // Diagnostic — log what made it into the similar-entries pool and which
+    // (if any) was selected as the arc anchor. Lets us tell at a glance
+    // whether arc misses are "entry not indexed", "below the age floor", or
+    // "model declined the callback despite arc being in the prompt".
+    try {
+      const summary = similarEntries.map((e) => {
+        const d = ageDays(e);
+        const within = d != null && d >= ARC_MIN_DAYS && d <= ARC_MAX_DAYS;
+        return `#${e.id}(${d}d${within ? '✓' : '✗'})`;
+      }).join(' ');
+      console.log(`[reflect] arc-pool: ${summary} → arc=${arc ? '#' + arc.e.id + ' (' + arc.days + 'd)' : 'none'}`);
+    } catch {}
+
+    function timeLabel(days) {
+      if (days < 14) return `${days} days ago`;
+      if (days < 60) return `${Math.round(days / 7)} weeks ago`;
+      if (days < 365) return `${Math.round(days / 30)} months ago`;
+      return `${(days / 365).toFixed(1)} years ago`;
+    }
+
+    if (arc) {
+      const dateStr = arc.e.date || arc.e.created_at?.split('T')[0] || 'unknown date';
+      const body = String(arc.e.body_text || '').trim();
+      const excerpt = body.length > EXCERPT_LEN ? body.slice(0, EXCERPT_LEN) + '…' : body;
+      sections.push(`## ARC ANCHOR — WHERE THEY WERE ${timeLabel(arc.days).toUpperCase()}\nThis is the most semantically similar past entry from at least a week back. Use it for ONE optional then-vs-now observation if (and only if) there's a real shift between then and now — different posture, different framing, different mood on the same topic. If the past entry is just topically similar without a clear evolution, leave it alone and treat it as background.\n\nA good then-vs-now move sounds like:\n- "A few weeks ago you were [grasping for / wrestling with / chasing] X; now you're [doing / noticing / letting go of] Y instead. That's the shift."\n- "Compared to [date], the tone here is [softer / harder / less tangled]."\nWeave this into the OPENING paragraph or one block, not multiple — over-using it makes the reflection feel like a status report.\n\nEntry from [${dateStr}] (${timeLabel(arc.days)}): "${arc.e.title || 'Untitled'}"\n${excerpt}`);
+    }
+
+    if (background.length > 0) {
+      const pastContext = background
+        .map((e) => {
+          const dateStr = e.date || e.created_at?.split('T')[0] || 'unknown date';
+          const body = String(e.body_text || '').trim();
+          const excerpt = body.length > EXCERPT_LEN ? body.slice(0, EXCERPT_LEN) + '…' : body;
+          return `[${dateStr}] ${e.title}\n${excerpt}`;
+        })
+        .join('\n\n---\n\n');
+      sections.push(`## PAST ENTRY EXCERPTS (BACKGROUND ONLY)\nShort excerpts from past entries that share some language with today's entry. These are background context for continuity — do NOT use them to set the topic of your reflection. Only reference a past entry if today's entry explicitly picks up the same thread.\n\n${pastContext}`);
+    }
   }
 
   // 5. Sky context (respects sky weight)

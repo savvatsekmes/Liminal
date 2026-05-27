@@ -190,8 +190,24 @@ router.post('/reindex', (req, res) => {
   setImmediate(async () => {
     const { embedAllEntries } = require('../services/notionImport');
     try {
-      // First clear existing embeddings so everything gets re-indexed
+      // First clear existing embeddings so everything gets re-indexed.
+      // - entry_embeddings table: tracks which entries we've indexed
+      // - vectra/index.json: the actual vector store
+      // Both need wiping or the rebuild merges into whatever's there
+      // (including ciphertext-embedded garbage from older runs of the
+      // buggy notionImport.embedAllEntries that pre-dates row-encryption
+      // awareness).
       db.prepare('DELETE FROM entry_embeddings').run();
+      const vectraDir = path.join(DATA_DIR, 'vectra');
+      if (fs.existsSync(vectraDir)) {
+        try { fs.rmSync(vectraDir, { recursive: true, force: true }); } catch {}
+      }
+      // Drop the cached LocalIndex instance — it's bound to the (now
+      // deleted) on-disk files. Without this, the next indexEntry call
+      // would write through the stale handle and either resurrect ghost
+      // entries or fail outright.
+      const embeddingSvc = require('../services/embeddingService');
+      embeddingSvc.invalidateIndexCache(embeddingSvc.VECTRA_DIR);
       await embedAllEntries((done, total) => {
         if (done % 20 === 0 || done === total) {
           console.log(`[reindex] ${done}/${total}`);
@@ -279,10 +295,21 @@ router.delete('/data', async (req, res) => {
   db.prepare('DELETE FROM oracle_messages WHERE session_id IN (SELECT id FROM oracle_sessions WHERE user_id = ?)').run(uid);
   db.prepare('DELETE FROM oracle_sessions WHERE user_id = ?').run(uid);
 
+  // Threads — rosary-bead arcs derived from entries / notes / sessions.
+  // thread_nodes has ON DELETE CASCADE on thread_id, so deleting threads
+  // sweeps the nodes too. Was missing from the original wipe.
+  db.prepare('DELETE FROM threads WHERE user_id = ?').run(uid);
+
   // Wipe vectra index
   const vectraDir = path.join(DATA_DIR, 'vectra');
   if (fs.existsSync(vectraDir)) {
     fs.rmSync(vectraDir, { recursive: true, force: true });
+  }
+  // Wipe vectra-memories index too — keeps the memory retrieval layer in
+  // sync if the user later re-imports or restarts a clean corpus.
+  const vectraMemoriesDir = path.join(DATA_DIR, 'vectra-memories');
+  if (fs.existsSync(vectraMemoriesDir)) {
+    fs.rmSync(vectraMemoriesDir, { recursive: true, force: true });
   }
 
   res.json({ success: true, message: 'All data deleted.' });
@@ -444,18 +471,108 @@ router.post('/backup', express.json(), async (req, res) => {
   const bcrypt = require('bcryptjs');
   const userId = resolveUserId(req);
   const user = userId
-    ? db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId)
-    : db.prepare('SELECT password_hash FROM users ORDER BY id LIMIT 1').get();
+    ? db.prepare('SELECT id, password_hash, password_salt, yubikey_enabled, yubikey_credential_id, yubikey_prf_salt, user_key_by_password FROM users WHERE id = ?').get(userId)
+    : db.prepare('SELECT id, password_hash, password_salt, yubikey_enabled, yubikey_credential_id, yubikey_prf_salt, user_key_by_password FROM users ORDER BY id LIMIT 1').get();
   if (!user) return res.status(401).json({ error: 'No user account found' });
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ error: 'Incorrect password' });
 
-  try {
-    // Build v3 export data (reuse the export logic)
-    const exportData = buildExportData(resolveUserId(req));
+  // v5 backup creation never needs a YubiKey tap. The outer layer is
+  // password-only; the inner protection comes from sensitive content
+  // remaining encrypted with the backup-time user_key inside the envelope.
+  // The user_key gets wrapped by whichever of (yubikey-derived KEK |
+  // password-derived KEK) is in use on the live account at backup time.
+  //
+  // YubiKey-enabled account: wrap with the existing user_key_by_yubikey path.
+  //   We don't have prf_output here (no tap), so we wrap the FRESH live
+  //   user_key with a salt-stable, prf-derived key by *reusing the existing
+  //   user_key_by_yubikey blob from the DB directly*. The renderer at
+  //   restore time taps the same physical key + same prf_salt → produces
+  //   the same prf_output → unwraps user_key. No tap at backup time.
+  //
+  // Non-YubiKey account: wrap with a password-derived KEK. The renderer at
+  //   restore time uses the same password to unwrap user_key.
 
-    const { encrypt } = require('../services/backupCrypto');
-    const encrypted = encrypt(JSON.stringify(exportData), password);
+  const yubikeyEnabled = !!user.yubikey_enabled && !!user.yubikey_credential_id && !!user.yubikey_prf_salt;
+
+  try {
+    const exportData = buildExportData(userId, { keepFieldCipher: true });
+
+    // We need the live account's user_key (32 bytes). The backend caches it
+    // in rowCrypto after login.
+    const rowCryptoSvc = require('../services/rowCrypto');
+    let userKey;
+    try { userKey = rowCryptoSvc.getUserKey(userId); }
+    catch { return res.status(401).json({ error: 'Session key unavailable — log out and back in.' }); }
+
+    const backupCrypto = require('../services/backupCrypto');
+    let yubikeyInfo = null;
+    let passwordWrap = null;
+
+    if (yubikeyEnabled) {
+      // Reuse the live user_key_by_yubikey blob verbatim. It's already
+      // AES-GCM(prf-derived-key, user_key); we just need to include it in
+      // the envelope along with the credential_id + prf_salt the user's
+      // YubiKey will need to reproduce the prf-derived key on restore.
+      //
+      // Note: backupCrypto.buildV5 expects { credentialId, prfSalt,
+      // prfOutput } and wraps the user_key itself. Instead of duplicating
+      // that path, we pass the already-wrapped blob through by faking the
+      // envelope assembly here. Cleaner approach: extend buildV5 with a
+      // "passthrough wrapped blob" option. For now, derive the wrap
+      // ourselves via a deterministic-on-yubikey path is not possible
+      // without the tap — so we ALWAYS reuse the existing wrapped blob.
+      yubikeyInfo = {
+        // signal to a custom builder path below
+        credentialId: Buffer.from(user.yubikey_credential_id),
+        prfSalt: Buffer.from(user.yubikey_prf_salt),
+        existingWrappedUserKey: db.prepare('SELECT user_key_by_yubikey FROM users WHERE id = ?').get(userId).user_key_by_yubikey,
+      };
+    } else {
+      if (!user.user_key_by_password || !user.password_salt) {
+        return res.status(500).json({ error: 'Account is missing its password key slot — cannot back up.' });
+      }
+      passwordWrap = {
+        existingSalt: Buffer.from(user.password_salt),
+        existingWrappedUserKey: Buffer.from(user.user_key_by_password),
+      };
+    }
+
+    // Build the v5 envelope ourselves (skip buildV5's wrap step since we
+    // already have the wrapped user_key blob stored on the live row — no
+    // need to re-derive the wrapping key and re-encrypt).
+    const envelope = {
+      inner_version: 1,
+      yubikey: yubikeyInfo ? {
+        credential_id: yubikeyInfo.credentialId.toString('base64'),
+        prf_salt: yubikeyInfo.prfSalt.toString('base64'),
+        user_key_wrapped: Buffer.from(yubikeyInfo.existingWrappedUserKey).toString('base64'),
+      } : null,
+      password_wrap: passwordWrap ? {
+        salt: passwordWrap.existingSalt.toString('base64'),
+        user_key_wrapped: passwordWrap.existingWrappedUserKey.toString('base64'),
+      } : null,
+      data: exportData,
+    };
+
+    // Outer encryption — password-only scrypt + AES-GCM. Manually mirror
+    // the format buildV5 emits so parseHeader recognises this as v5.
+    const crypto = require('crypto');
+    const outerSalt = crypto.randomBytes(16);
+    const outerIv = crypto.randomBytes(12);
+    const outerKey = crypto.scryptSync(password, outerSalt, 32, { N: 16384, r: 8, p: 1 });
+    const cipher = crypto.createCipheriv('aes-256-gcm', outerKey, outerIv);
+    const envBuf = Buffer.from(JSON.stringify(envelope), 'utf8');
+    const outerCt = Buffer.concat([cipher.update(envBuf), cipher.final()]);
+    const outerTag = cipher.getAuthTag();
+    const encrypted = Buffer.concat([
+      Buffer.from('LMNL', 'ascii'),
+      Buffer.from([0x05]),
+      outerSalt,
+      outerIv,
+      outerTag,
+      outerCt,
+    ]);
 
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="liminal-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.liminal"`);
@@ -469,24 +586,95 @@ router.post('/backup', express.json(), async (req, res) => {
 // ── POST /api/settings/restore-backup ────────────────────────────────────────
 // Restore from an encrypted .liminal or legacy JSON backup.
 const multer = require('multer');
-const backupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+// 500 MB cap. Real-world backups can pass the original 100 MB ceiling once
+// users have a few years of entries + reflections + threads. v5 backups are
+// slightly larger than v3 because sensitive fields stay encrypted (ciphertext
+// is ~33% bulkier than plaintext after base64 + GCM overhead).
+const backupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
 router.post('/restore-backup', backupUpload.single('backup'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No backup file uploaded' });
 
-  const { password } = req.body || {};
+  const { password, prf_output } = req.body || {};
   const buf = req.file.buffer;
   let data;
+  // backupUserKey is set when we successfully unwrap the backup-time
+  // user_key from a v5 envelope. The import step uses it to decrypt content
+  // blobs before re-encrypting with the importing user's key.
+  let backupUserKey = null;
 
-  const { isEncrypted, decrypt } = require('../services/backupCrypto');
+  const backupCrypto = require('../services/backupCrypto');
+  const { isEncrypted, parseHeader, decryptLegacy, decryptV5Outer,
+    unwrapUserKeyWithPrfFromEnvelope, unwrapUserKeyWithPasswordFromEnvelope } = backupCrypto;
 
   if (isEncrypted(buf)) {
     if (!password) return res.status(400).json({ error: 'Password required to decrypt this backup' });
-    try {
-      const json = decrypt(buf, password);
-      data = JSON.parse(json);
-    } catch (err) {
-      return res.status(400).json({ error: err.message });
+
+    let header;
+    try { header = parseHeader(buf); }
+    catch (err) { return res.status(400).json({ error: err.message }); }
+
+    if (header.kind === 'v5') {
+      // Step 1: decrypt outer layer with password to get the envelope.
+      let envelope;
+      try { envelope = decryptV5Outer(buf, password); }
+      catch (err) { return res.status(400).json({ error: err.message }); }
+
+      // Step 2: unwrap the backup-time user_key. Try yubikey first if the
+      // envelope has yubikey metadata and the renderer hasn't already sent
+      // prf_output. Fall through to password wrap if no yubikey wrapping
+      // exists (non-yubikey backup).
+      if (envelope.yubikey) {
+        if (!prf_output) {
+          return res.status(422).json({
+            error: 'This backup was made on a YubiKey-protected account. Tap your YubiKey to continue.',
+            yubikey_required: true,
+            credential_id: envelope.yubikey.credential_id,
+            prf_salt: envelope.yubikey.prf_salt,
+          });
+        }
+        let prfBuf;
+        try { prfBuf = Buffer.from(prf_output, 'base64'); } catch { prfBuf = null; }
+        if (!prfBuf || prfBuf.length !== 32) {
+          return res.status(400).json({ error: 'Invalid prf_output' });
+        }
+        backupUserKey = unwrapUserKeyWithPrfFromEnvelope(envelope, prfBuf);
+        if (!backupUserKey) {
+          return res.status(401).json({ error: 'Hardware key did not match the credential used at backup time.' });
+        }
+      } else if (envelope.password_wrap) {
+        backupUserKey = unwrapUserKeyWithPasswordFromEnvelope(envelope, password);
+        if (!backupUserKey) {
+          return res.status(401).json({ error: 'Could not unwrap backup user_key with password. The file may be corrupted.' });
+        }
+      } else {
+        return res.status(400).json({ error: 'Backup envelope is missing both yubikey and password wrap. File may be corrupted.' });
+      }
+
+      data = envelope.data || {};
+    } else {
+      // v3 / v4 legacy reader — plaintext inside the outer layer.
+      let prfBuf = null;
+      if (prf_output) {
+        try { prfBuf = Buffer.from(prf_output, 'base64'); } catch { prfBuf = null; }
+        if (!prfBuf || prfBuf.length !== 32) {
+          return res.status(400).json({ error: 'Invalid prf_output' });
+        }
+      }
+      try {
+        const json = decryptLegacy(buf, password, prfBuf ? { prfOutput: prfBuf } : {});
+        data = JSON.parse(json);
+      } catch (err) {
+        if (err.code === 'YUBIKEY_REQUIRED') {
+          return res.status(422).json({
+            error: err.message,
+            yubikey_required: true,
+            credential_id: err.credential_id?.toString('base64'),
+            prf_salt: err.prf_salt?.toString('base64'),
+          });
+        }
+        return res.status(400).json({ error: err.message });
+      }
     }
   } else {
     // Legacy unencrypted JSON
@@ -495,6 +683,78 @@ router.post('/restore-backup', backupUpload.single('backup'), async (req, res) =
     } catch {
       return res.status(400).json({ error: 'Invalid backup file — not encrypted and not valid JSON' });
     }
+  }
+
+  // v5 backups carry sensitive fields as ciphertext (encrypted with the
+  // backup-time user_key, which we unwrapped above). Walk the data tree
+  // once and replace each lenc:v1:... blob with its plaintext, so
+  // importDataIntoDb (which expects plaintext input and re-encrypts with
+  // the importing user's key) works unchanged.
+  if (backupUserKey) {
+    const { safeDecryptWithKey } = require('../services/rowCrypto');
+    const dec = (v) => safeDecryptWithKey(backupUserKey, v);
+    if (Array.isArray(data.entries)) {
+      for (const e of data.entries) {
+        if (typeof e.body === 'string') e.body = dec(e.body);
+        if (typeof e.body_text === 'string') e.body_text = dec(e.body_text);
+      }
+    }
+    if (Array.isArray(data.notes)) {
+      for (const n of data.notes) {
+        if (typeof n.body === 'string') n.body = dec(n.body);
+      }
+    }
+    if (Array.isArray(data.oracle_sessions)) {
+      for (const s of data.oracle_sessions) {
+        if (Array.isArray(s.messages)) {
+          for (const m of s.messages) if (typeof m.content === 'string') m.content = dec(m.content);
+        }
+      }
+    }
+    if (Array.isArray(data.reflections)) {
+      for (const r of data.reflections) {
+        // r.blocks was already JSON-parsed at export time; nothing to do.
+        // If it ever arrives as a string it'd be ciphertext.
+        if (typeof r.blocks === 'string') {
+          try { r.blocks = JSON.parse(dec(r.blocks)); } catch {}
+        }
+      }
+    }
+    if (Array.isArray(data.note_reflections)) {
+      for (const r of data.note_reflections) {
+        if (typeof r.blocks === 'string') {
+          try { r.blocks = JSON.parse(dec(r.blocks)); } catch {}
+        }
+      }
+    }
+    if (Array.isArray(data.memories)) {
+      for (const m of data.memories) if (typeof m.content === 'string') m.content = dec(m.content);
+    }
+    if (Array.isArray(data.entry_versions)) {
+      for (const v of data.entry_versions) {
+        if (typeof v.body === 'string') v.body = dec(v.body);
+        if (typeof v.body_text === 'string') v.body_text = dec(v.body_text);
+      }
+    }
+    if (Array.isArray(data.note_versions)) {
+      for (const v of data.note_versions) {
+        if (typeof v.body === 'string') v.body = dec(v.body);
+      }
+    }
+    if (data.memory_summary && typeof data.memory_summary.summary === 'string') {
+      data.memory_summary.summary = dec(data.memory_summary.summary);
+    }
+    if (Array.isArray(data.threads)) {
+      for (const t of data.threads) {
+        if (typeof t.name === 'string') t.name = dec(t.name);
+        if (typeof t.description === 'string') t.description = dec(t.description);
+        if (typeof t.insight === 'string') t.insight = dec(t.insight);
+      }
+    }
+    // Zero out the key buffer now that we're done with it. Best-effort —
+    // V8 may have copies elsewhere — but explicit beats implicit.
+    try { backupUserKey.fill(0); } catch {}
+    backupUserKey = null;
   }
 
   // Run the shared import logic
@@ -533,14 +793,29 @@ router.post('/restore-backup', backupUpload.single('backup'), async (req, res) =
 /** Build the v3 export data object. Used by GET /export and POST /backup.
  *  @param {number} userId — export only this user's data (entries, notes, etc.)
  */
-function buildExportData(userId) {
+function buildExportData(userId, opts = {}) {
   // ── User-scoped data ────────────────────────────────────────────────────────
-  // Field-level encryption is keyed per-user. The export must contain plaintext
-  // so the importing user can re-encrypt with their own key — otherwise restore
-  // into a different account leaves every body / note / message / memory /
-  // reflection unreadable. safeDecrypt is a no-op for legacy unencrypted rows
-  // and a best-effort decrypt for encrypted ones.
-  const dec = (v) => safeDecrypt(userId, v);
+  // Two modes for sensitive fields:
+  //
+  //   plaintext (default, opts.keepFieldCipher = false):
+  //     decrypt with the current user's key on the way out. Used for the
+  //     plaintext-JSON export and for legacy backup formats (v3/v4) where
+  //     the outer file encryption is the only barrier. Lets the importing
+  //     user re-encrypt with their own key on restore.
+  //
+  //   ciphertext (opts.keepFieldCipher = true):
+  //     pass the lenc:v1:... blobs through verbatim. Used for v5 backups
+  //     where the envelope contains the backup-time user_key (wrapped by
+  //     yubikey or password). The restorer must produce that user_key
+  //     before they can read any content. Closes the password-only backup
+  //     bypass for yubikey-enabled accounts.
+  const dec = opts.keepFieldCipher ? ((v) => v) : ((v) => safeDecrypt(userId, v));
+  // For JSON-encoded encrypted blobs (reflections.blocks etc.), the plaintext
+  // path decrypts + JSON.parses; the keepFieldCipher path leaves the lenc:v1:
+  // blob untouched so the restorer can decrypt-and-parse on its end.
+  const decAndParse = opts.keepFieldCipher
+    ? ((v) => v)
+    : ((v) => parseJSON(safeDecrypt(userId, v), []));
 
   const entries = db.prepare(`
     SELECT id, title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at
@@ -578,11 +853,11 @@ function buildExportData(userId) {
 
   const reflections = db.prepare(`
     SELECT entry_id, blocks, created_at, updated_at FROM reflections WHERE user_id = ? ORDER BY created_at DESC
-  `).all(userId).map(r => ({ ...r, blocks: parseJSON(dec(r.blocks), []) }));
+  `).all(userId).map(r => ({ ...r, blocks: decAndParse(r.blocks) }));
 
   const noteReflections = db.prepare(`
     SELECT note_id, blocks, created_at, updated_at FROM note_reflections WHERE user_id = ? ORDER BY created_at DESC
-  `).all(userId).map(r => ({ ...r, blocks: parseJSON(dec(r.blocks), []) }));
+  `).all(userId).map(r => ({ ...r, blocks: decAndParse(r.blocks) }));
 
   const memories = db.prepare(`
     SELECT content, pinned, source_entry_id, created_at FROM memories WHERE user_id = ? ORDER BY created_at DESC

@@ -43,6 +43,7 @@ function timedRoute(prefix, modulePath) {
   if (dt > 50) lap(`route ${prefix} loaded (+${dt}ms)`);
 }
 timedRoute('/api/auth',     './routes/auth');
+timedRoute('/api/yubikey',  './routes/yubikey');
 timedRoute('/api/entries',  './routes/entries');
 timedRoute('/api/reflect',  './routes/reflect');
 timedRoute('/api/portrait', './routes/portrait');

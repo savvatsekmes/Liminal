@@ -37,8 +37,10 @@ contextBridge.exposeInMainWorld('liminal', {
   pickBackupFolder() {
     return ipcRenderer.invoke('liminal:pick-backup-folder');
   },
-  triggerBackup() {
-    return ipcRenderer.invoke('liminal:trigger-backup');
+  // Optional prfOutput (base64 string) — required when the account has
+  // YubiKey 2FA enabled, so the backup file can be bound to the hardware key.
+  triggerBackup(prfOutput) {
+    return ipcRenderer.invoke('liminal:trigger-backup', prfOutput || null);
   },
   setSessionPassword(pw, token) {
     ipcRenderer.send('liminal:set-session-password', pw, token);

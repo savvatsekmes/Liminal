@@ -641,7 +641,13 @@ async function createWindow() {
     }
   });
 
-  await mainWindow.loadURL(`http://127.0.0.1:${BACKEND_PORT}/`);
+  // Load via `localhost` rather than `127.0.0.1` so the renderer's origin
+  // is treated as a valid WebAuthn RP ID. The WebAuthn spec rejects bare IP
+  // addresses for rpId; localhost is the one special-cased loopback name
+  // that works without HTTPS. Internal IPC (TTS, control server, health
+  // probes) continues to use 127.0.0.1 explicitly — those don't go through
+  // Chromium's WebAuthn checks.
+  await mainWindow.loadURL(`http://localhost:${BACKEND_PORT}/`);
 
 
   // macOS renders Electron content noticeably larger than Windows for the same
@@ -1157,15 +1163,38 @@ function backendFetch(urlPath, options = {}) {
   });
 }
 
-/** Perform an encrypted backup to the given directory. Returns the file path. */
-async function performBackup(backupDir, maxBackups) {
+/** Perform an encrypted backup to the given directory. Returns the file path.
+ *  prfOutput (base64) is optional and required only for accounts that have
+ *  YubiKey 2FA enabled — the backend will reject the request with 422 if it
+ *  expects one and we didn't provide it.
+ *
+ *  allowPasswordOnly: when true and yubikey is enabled but no prf_output is
+ *  provided, fall back to password-only (v3) file encryption. The inner DB
+ *  contents are still yubikey-locked so this is safe — used by unattended
+ *  auto-backup paths where we can't prompt the user for a tap. */
+async function performBackup(backupDir, maxBackups, prfOutput, allowPasswordOnly = false) {
   // Request encrypted backup from backend
+  const body = { password: sessionPassword };
+  if (prfOutput) body.prf_output = prfOutput;
+  if (allowPasswordOnly) body.allow_password_only = true;
   const res = await backendFetch('/api/settings/backup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: sessionPassword }),
+    body: JSON.stringify(body),
     timeout: 30000,
   });
+
+  if (res.status === 422) {
+    // Backend wants a YubiKey tap. Propagate the cred_id + prf_salt up to
+    // the IPC caller so the renderer can run the assertion and retry.
+    let info = {};
+    try { info = JSON.parse(res.buf.toString('utf8')); } catch {}
+    const err = new Error(info.error || 'YubiKey assertion required');
+    err.yubikey_required = true;
+    err.credential_id = info.credential_id;
+    err.prf_salt = info.prf_salt;
+    throw err;
+  }
 
   if (res.status !== 200) {
     const errText = res.buf.toString('utf8');
@@ -1206,14 +1235,14 @@ function rotateBackups(dir, maxKeep) {
   } catch {}
 }
 
-ipcMain.handle('liminal:trigger-backup', async () => {
+ipcMain.handle('liminal:trigger-backup', async (_event, prfOutput) => {
   if (!sessionPassword) return { success: false, error: 'No session password — please log in first' };
   try {
     const settingsRes = await backendFetch('/api/settings');
     const settings = JSON.parse(settingsRes.buf.toString('utf8'));
     const backupDir = (settings.backup_location || '').trim() || path.join(USER_DATA, 'backups');
     const maxBackups = parseInt(settings.max_backups, 10) || 10;
-    const filepath = await performBackup(backupDir, maxBackups);
+    const filepath = await performBackup(backupDir, maxBackups, prfOutput);
     try {
       await backendFetch('/api/settings', {
         method: 'PUT',
@@ -1223,6 +1252,17 @@ ipcMain.handle('liminal:trigger-backup', async () => {
     } catch {}
     return { success: true, path: filepath };
   } catch (err) {
+    // Surface the YubiKey-required signal back to the renderer so it can run
+    // the WebAuthn assertion and call triggerBackup again with prf_output.
+    if (err.yubikey_required) {
+      return {
+        success: false,
+        yubikey_required: true,
+        credential_id: err.credential_id,
+        prf_salt: err.prf_salt,
+        error: err.message,
+      };
+    }
     return { success: false, error: err.message };
   }
 });
@@ -1300,7 +1340,11 @@ app.on('before-quit', async (event) => {
             mainWindow.webContents.send('liminal:backup-starting');
           }
           const maxBackups = parseInt(settings.max_backups, 10) || 10;
-          await performBackup(backupDir, maxBackups);
+          // Auto-backup-on-quit is unattended — there's no opportunity to
+          // prompt the user for a YubiKey tap. Pass allow_password_only so
+          // the backend falls back to v3 password-only file encryption when
+          // yubikey is enabled. The inner DB data remains yubikey-locked.
+          await performBackup(backupDir, maxBackups, null, true);
           try {
             await backendFetch('/api/settings', {
               method: 'PUT',

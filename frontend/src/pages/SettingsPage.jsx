@@ -1692,6 +1692,10 @@ function AccountSection({ cfg, set, save, showToast, username, onLogout, avatarU
 
       <div style={s.divider} />
 
+      <YubikeyPanel />
+
+      <div style={s.divider} />
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
         <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
           {t('settings.loggedInAs')} <strong style={{ color: 'var(--body)' }}>{username}</strong>
@@ -1941,10 +1945,14 @@ function DataSection({ showToast }) {
     setBackingUp(true);
     setBackupStatus(null);
     try {
+      // v5 backups don't require a YubiKey tap to create — protection lives
+      // inside the envelope (sensitive content stays encrypted with the
+      // backup-time user_key). The renderer just asks main to perform the
+      // backup with the cached session password.
       const result = await window.liminal.triggerBackup();
       setBackupStatus(result);
       if (result.success) setLastBackupTime(new Date().toISOString());
-      showToast(result.success ? t('settings.backupSuccess') : t('settings.backupFailed'));
+      showToast(result.success ? t('settings.backupSuccess') : (result.error || t('settings.backupFailed')));
     } finally {
       setBackingUp(false);
     }
@@ -1970,18 +1978,38 @@ function DataSection({ showToast }) {
     }
   }
 
-  async function doRestore(pw) {
+  async function doRestore(pw, prfOutputOverride = null) {
     setShowRestoreDialog(false);
     setRestoringBackup(true);
     try {
       const formData = new FormData();
       formData.append('backup', restoreFile);
       if (pw) formData.append('password', pw);
+      if (prfOutputOverride) formData.append('prf_output', prfOutputOverride);
       const res = await apiFetch('/api/settings/restore-backup', {
         method: 'POST',
         body: formData,
       });
       const result = await res.json();
+
+      // YubiKey-protected backup: the backend asked for a fresh PRF assertion.
+      // Prompt the user to tap their key, then retry the upload with prf_output.
+      if (res.status === 422 && result.yubikey_required && !prfOutputOverride) {
+        try {
+          const { assertYubikey } = await import('../utils/yubikey');
+          const { prf_output } = await assertYubikey({
+            credential_id: result.credential_id,
+            prf_salt: result.prf_salt,
+          });
+          // Retry — note we re-open the dialog state so the password input
+          // value is preserved by passing pw straight through.
+          return doRestore(pw, prf_output);
+        } catch (err) {
+          showToast(err?.message || 'Hardware key cancelled');
+          return;
+        }
+      }
+
       if (result.success) {
         const parts = [];
         if (result.entries) parts.push(`${result.entries} entries`);
@@ -2599,5 +2627,185 @@ function GeneralSection({ cfg, set, save, saving, showToast }) {
         </div>
       </Section>
     </>
+  );
+}
+
+// ── Hardware-key 2FA panel (Settings → Account tab) ────────────────────────
+// Sits below the recovery-key block. Lets the user enroll an optional FIDO2
+// security key (YubiKey or compatible) as a true second factor: once
+// enrolled, password alone cannot unlock — the user must also tap their
+// physical key. The recovery key (paper) remains the loss-of-key bypass.
+function YubikeyPanel() {
+  const [status, setStatus] = useState({ enabled: null });
+  const [showEnable, setShowEnable] = useState(false);
+  const [showDisable, setShowDisable] = useState(false);
+
+  async function refresh() {
+    try {
+      const r = await apiFetch('/api/yubikey/status');
+      const d = await r.json();
+      setStatus(d);
+    } catch {}
+  }
+  useEffect(() => { refresh(); }, []);
+
+  return (
+    <>
+      <div style={{ ...s.label, marginBottom: '14px' }}>Hardware key 2FA</div>
+      <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.6, marginBottom: '12px' }}>
+        Optional second factor using a FIDO2 security key (YubiKey or compatible). When enabled, your password alone won't unlock Liminal — you'll also need to tap your physical key. Your recovery key still works as a bypass if you ever lose the device.
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        {status.enabled === null ? (
+          <span style={{ fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>Checking…</span>
+        ) : status.enabled ? (
+          <>
+            <span style={{ fontSize: '12px', color: 'var(--strong)' }}>Hardware key 2FA is <strong>enabled</strong>.</span>
+            <Btn onClick={() => setShowDisable(true)}>Disable</Btn>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Hardware key 2FA is currently off.</span>
+            <Btn onClick={() => setShowEnable(true)}>Enable</Btn>
+          </>
+        )}
+      </div>
+
+      {showEnable && (
+        <YubikeyEnableFlow
+          onDone={() => { setShowEnable(false); refresh(); }}
+          onCancel={() => setShowEnable(false)}
+        />
+      )}
+      {showDisable && status.enabled && (
+        <YubikeyDisableFlow
+          credentialId={status.credential_id}
+          prfSalt={status.prf_salt}
+          onDone={() => { setShowDisable(false); refresh(); }}
+          onCancel={() => setShowDisable(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function YubikeyEnableFlow({ onDone, onCancel }) {
+  const [password, setPassword] = useState('');
+  const [recoveryAck, setRecoveryAck] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function run() {
+    setError('');
+    if (!password) { setError('Enter your current password'); return; }
+    if (!recoveryAck) { setError('Tick the box to confirm your recovery key is written down'); return; }
+    setBusy(true);
+    try {
+      const { enrollYubikey } = await import('../utils/yubikey');
+      const optionsRes = await apiFetch('/api/yubikey/enroll-options', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: password, recovery_ack: true }),
+      });
+      const options = await optionsRes.json();
+      if (!optionsRes.ok) { setError(options.error || 'Could not start enrollment'); setBusy(false); return; }
+
+      const { credential_id, prf_output, prf_salt } = await enrollYubikey(options);
+
+      const completeRes = await apiFetch('/api/yubikey/enroll-complete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: password, credential_id, prf_output, prf_salt }),
+      });
+      const completeData = await completeRes.json();
+      if (!completeRes.ok) { setError(completeData.error || 'Enrollment failed'); setBusy(false); return; }
+      onDone();
+    } catch (err) {
+      setError(err?.message || 'Enrollment failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: '14px', padding: '16px', background: 'var(--near-white)', borderRadius: '10px', border: 'var(--border-style)' }}>
+      <div style={{ fontSize: '12px', color: 'var(--body)', lineHeight: 1.6, marginBottom: '12px' }}>
+        Enrolling a hardware key means you'll need to tap it on every login. <strong>If you lose the key and don't have your recovery key written down, your journal is permanently locked.</strong> Make sure your recovery key is safe before continuing.
+      </div>
+      <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: 1.5, marginBottom: '14px', padding: '8px 10px', background: 'var(--white)', borderRadius: '6px', border: 'var(--border-style)' }}>
+        <strong style={{ color: 'var(--body)' }}>Tip:</strong> in the Windows prompt that follows, choose <strong>Security key</strong> rather than the phone/QR option. The phone path technically works but means scanning a QR code on every future login.
+      </div>
+      <label style={{ ...s.label, marginBottom: '6px', display: 'block' }}>Current password</label>
+      <input
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        style={{ ...s.input, marginBottom: '10px' }}
+        disabled={busy}
+      />
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12px', color: 'var(--body)', marginBottom: '14px', cursor: 'pointer', lineHeight: 1.5 }}>
+        <input
+          type="checkbox"
+          checked={recoveryAck}
+          onChange={(e) => setRecoveryAck(e.target.checked)}
+          disabled={busy}
+          style={{ marginTop: '2px' }}
+        />
+        <span>I have my recovery key written down somewhere safe (not on this device).</span>
+      </label>
+      {error && <div style={{ fontSize: '11px', color: '#c0392b', marginBottom: '10px' }}>{error}</div>}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <Btn primary onClick={run} disabled={busy}>{busy ? 'Tap your key…' : 'Enable hardware key'}</Btn>
+        <Btn onClick={onCancel} disabled={busy}>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+function YubikeyDisableFlow({ credentialId, prfSalt, onDone, onCancel }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function run() {
+    setError('');
+    if (!password) { setError('Enter your current password'); return; }
+    setBusy(true);
+    try {
+      const { assertYubikey } = await import('../utils/yubikey');
+      const { prf_output } = await assertYubikey({ credential_id: credentialId, prf_salt: prfSalt });
+      const res = await apiFetch('/api/yubikey/disable', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: password, prf_output }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || 'Could not disable'); setBusy(false); return; }
+      onDone();
+    } catch (err) {
+      setError(err?.message || 'Could not read hardware key');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: '14px', padding: '16px', background: 'var(--near-white)', borderRadius: '10px', border: 'var(--border-style)' }}>
+      <div style={{ fontSize: '12px', color: 'var(--body)', lineHeight: 1.6, marginBottom: '12px' }}>
+        Disable hardware-key 2FA. After this your password alone will unlock Liminal again. You'll need to enter your password and tap your enrolled key once to confirm.
+      </div>
+      <label style={{ ...s.label, marginBottom: '6px', display: 'block' }}>Current password</label>
+      <input
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        style={{ ...s.input, marginBottom: '10px' }}
+        disabled={busy}
+      />
+      {error && <div style={{ fontSize: '11px', color: '#c0392b', marginBottom: '10px' }}>{error}</div>}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <Btn primary onClick={run} disabled={busy}>{busy ? 'Tap your key…' : 'Disable hardware key'}</Btn>
+        <Btn onClick={onCancel} disabled={busy}>Cancel</Btn>
+      </div>
+    </div>
   );
 }

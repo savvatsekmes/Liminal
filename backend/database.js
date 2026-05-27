@@ -255,6 +255,17 @@ addColumnSafe('users', 'encryption_version',        'INTEGER DEFAULT 0');
 addColumnSafe('users', 'failed_attempts',       'INTEGER NOT NULL DEFAULT 0');
 addColumnSafe('users', 'consecutive_lockouts',  'INTEGER NOT NULL DEFAULT 0');
 addColumnSafe('users', 'lockout_until',         'INTEGER');
+// Optional FIDO2 hardware key 2FA. When enabled, login requires password +
+// YubiKey tap (or the recovery key as bypass). On enrollment we drop the
+// password-only wrapper of user_key and replace it with a wrapper derived
+// from the WebAuthn PRF extension output. The recovery-key wrapper stays
+// intact so losing the key never locks the user out permanently.
+// See backend/services/yubikeyCrypto.js for the wrap/unwrap helpers and
+// backend/routes/yubikey.js for the enroll / auth / disable endpoints.
+addColumnSafe('users', 'yubikey_enabled',       'INTEGER NOT NULL DEFAULT 0');
+addColumnSafe('users', 'yubikey_credential_id', 'BLOB');
+addColumnSafe('users', 'yubikey_prf_salt',      'BLOB');
+addColumnSafe('users', 'user_key_by_yubikey',   'BLOB');
 // Mark pre-existing users as onboarded
 db.prepare('UPDATE users SET onboarding_complete = 1 WHERE onboarding_complete = 0 AND last_login IS NOT NULL').run();
 

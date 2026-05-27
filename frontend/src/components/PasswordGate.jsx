@@ -404,6 +404,87 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
   );
 }
 
+// ── YubiKey 2FA step (rendered between LoginForm submit and onSuccess) ──────
+//
+// At this point the user's password has verified; we have a 2-minute
+// step_up_token from the backend plus the credential_id and prf_salt for
+// their enrolled key. Ask the user to tap, run the WebAuthn PRF assertion,
+// post prf_output to /login-yubikey, hand the resulting token to onSuccess.
+function YubikeyLoginStep({ step, password, onSuccess, onCancel }) {
+  const { t } = useLanguage();
+  const { theme } = useTheme();
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function runAssertion() {
+    setError('');
+    setBusy(true);
+    try {
+      const { assertYubikey } = await import('../utils/yubikey');
+      const { prf_output } = await assertYubikey({
+        credential_id: step.credentialId,
+        prf_salt: step.prfSalt,
+      });
+      const res = await fetch('/api/auth/login-yubikey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step_up_token: step.stepUpToken, prf_output }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Hardware key check failed');
+        return;
+      }
+      onSuccess(data.token, data.username, data.onboarding_complete, password, null, false);
+    } catch (err) {
+      setError(err?.message || 'Could not read hardware key');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Auto-fire the assertion on first render so the user immediately sees
+  // their OS's tap prompt without having to click a second button.
+  useEffect(() => { runAssertion(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  return (
+    <div style={s.overlay}>
+      <style>{mobileCSS}</style>
+      <div className="auth-card" style={s.card}>
+        <div className="auth-brand-col" style={s.brandCol}>
+          <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline className="auth-brand-logo" style={{ ...s.brandLogo, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+          <img src="/liminal-wordmark.png" alt="Liminal." style={{ ...s.brandWordmark, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
+          <div style={s.tagline}>{t('auth.tagline')}</div>
+        </div>
+        <div style={s.formCol}>
+          <div style={{ ...s.label, marginBottom: '14px', fontSize: '15px', color: 'var(--strong)' }}>
+            Hardware key required
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--body)', lineHeight: 1.55, marginBottom: '18px' }}>
+            Insert your YubiKey and tap the gold contact when it blinks.
+            {busy ? ' Waiting for key…' : ''}
+          </div>
+          {error && <div style={{ ...s.error, marginBottom: '14px' }}>{error}</div>}
+          <button
+            style={{ ...s.btn, opacity: busy ? 0.5 : 1 }}
+            type="button"
+            onClick={runAssertion}
+            disabled={busy}
+          >
+            {busy ? 'Waiting for tap…' : 'Try again'}
+          </button>
+          <button type="button" style={s.btnSecondary} onClick={onCancel}>
+            Cancel
+          </button>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '16px', textAlign: 'center', lineHeight: 1.5 }}>
+            Lost your key? Use <em>Forgot password</em> with your recovery key to disable hardware-key 2FA.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 function LoginForm({ onSuccess, onRegister, onForgot }) {
@@ -413,6 +494,10 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Set when the backend says "password ok, now tap your YubiKey". Carries
+  // the short-lived step_up_token + the credential/salt the renderer needs
+  // to call navigator.credentials.get() against the user's enrolled key.
+  const [yubikeyStep, setYubikeyStep] = useState(null);
   const lockoutState = useLockoutState(username);
 
   async function handleSubmit(e) {
@@ -437,6 +522,17 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
         // Refetch so the "X attempts left" hint and the locked banner update
         // immediately after a failed attempt instead of on the next poll tick.
         lockoutState.refetch();
+      } else if (data.yubikey_required) {
+        // Password verified but YubiKey 2FA is enabled. Hand off to the
+        // hardware-key step; it will POST to /login-yubikey and call
+        // onSuccess with the final token.
+        setYubikeyStep({
+          stepUpToken: data.step_up_token,
+          credentialId: data.credential_id,
+          prfSalt: data.prf_salt,
+          onboardingComplete: data.onboarding_complete,
+          username: data.username,
+        });
       } else {
         // Legacy-user migrations return a recovery_key on their first
         // post-encryption login; finishAuth will route us through the
@@ -448,6 +544,17 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (yubikeyStep) {
+    return (
+      <YubikeyLoginStep
+        step={yubikeyStep}
+        password={password}
+        onSuccess={onSuccess}
+        onCancel={() => { setYubikeyStep(null); setPassword(''); }}
+      />
+    );
   }
 
   return (

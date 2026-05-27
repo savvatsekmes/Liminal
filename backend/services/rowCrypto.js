@@ -72,6 +72,31 @@ function safeDecrypt(userId, value) {
   try { return decryptField(userId, value); } catch { return value; }
 }
 
+// ── Direct-key variants ─────────────────────────────────────────────────────
+//
+// Most call sites use the (userId)-based helpers above, which look up the
+// in-memory user_key from the userKeys Map. The backup-restore path needs to
+// decrypt blobs using a key it just unwrapped from the backup file — the key
+// belongs to the *original* account, not the current logged-in user, so it
+// shouldn't live in the userKeys Map. These variants take a raw 32-byte key
+// directly. Same ciphertext format (lenc:v1:base64(iv||ct||tag)).
+
+function decryptFieldWithKey(rawKey, value) {
+  if (value == null) return value;
+  if (typeof value !== 'string' || !isEncrypted(value)) return value;
+  const buf = Buffer.from(value.slice(SENTINEL.length), 'base64');
+  const iv = buf.subarray(0, IV_BYTES);
+  const tag = buf.subarray(buf.length - TAG_BYTES);
+  const ct = buf.subarray(IV_BYTES, buf.length - TAG_BYTES);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', rawKey, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
+}
+
+function safeDecryptWithKey(rawKey, value) {
+  try { return decryptFieldWithKey(rawKey, value); } catch { return value; }
+}
+
 module.exports = {
   setUserKey,
   clearUserKey,
@@ -81,5 +106,7 @@ module.exports = {
   encryptField,
   decryptField,
   safeDecrypt,
+  decryptFieldWithKey,
+  safeDecryptWithKey,
   SENTINEL,
 };

@@ -81,9 +81,18 @@ async function importFromNotion(sourcePath, onProgress = () => {}) {
 }
 
 async function embedAllEntries(onProgress = () => {}) {
+  // Pull user_id alongside the body so we can decrypt with the right per-
+  // user key. Pre-fix this function passed encrypted ciphertext (lenc:v1:…)
+  // straight to indexEntry, which then embedded the literal ciphertext
+  // bytes instead of the real content — every reindexed entry ended up with
+  // a near-meaningless embedding, and arc-anchor / similarity searches
+  // returned scores in the 0.1-0.2 range because the model was matching
+  // base64 surface features instead of topic.
+  const { safeDecrypt } = require('./rowCrypto');
+
   const rows = db
     .prepare(
-      `SELECT e.id, e.body_text FROM entries e
+      `SELECT e.id, e.user_id, e.body_text FROM entries e
        LEFT JOIN entry_embeddings ee ON ee.entry_id = e.id
        WHERE ee.entry_id IS NULL AND e.body_text != ''`
     )
@@ -91,9 +100,20 @@ async function embedAllEntries(onProgress = () => {}) {
 
   const total = rows.length;
   let done = 0;
+  let skippedNoKey = 0;
 
   for (const row of rows) {
-    const ok = await indexEntry(row.id, row.body_text);
+    const plaintext = safeDecrypt(row.user_id, row.body_text);
+    // safeDecrypt returns the raw value when decryption fails (e.g. no key
+    // in memory for this user). Detect that by checking the sentinel and
+    // skip — embedding ciphertext is worse than skipping.
+    if (typeof plaintext === 'string' && plaintext.startsWith('lenc:v1:')) {
+      skippedNoKey++;
+      done++;
+      if (done % 10 === 0 || done === total) onProgress(done, total);
+      continue;
+    }
+    const ok = await indexEntry(row.id, plaintext);
     if (ok) {
       db.prepare(
         'INSERT OR REPLACE INTO entry_embeddings (entry_id, embedded_at) VALUES (?, CURRENT_TIMESTAMP)'
@@ -101,6 +121,9 @@ async function embedAllEntries(onProgress = () => {}) {
     }
     done++;
     if (done % 10 === 0 || done === total) onProgress(done, total);
+  }
+  if (skippedNoKey > 0) {
+    console.warn(`[reindex] skipped ${skippedNoKey} entries because no in-memory user key was available to decrypt them. Log into each affected account and re-run.`);
   }
 }
 
