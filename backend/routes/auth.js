@@ -12,6 +12,7 @@ const { signToken, requireAuth } = authMiddleware;
 const userCrypto = require('../services/userCrypto');
 const rowCrypto = require('../services/rowCrypto');
 const yubikeyCrypto = require('../services/yubikeyCrypto');
+const yubikeyNative = require('../services/yubikeyNative');
 const { migrateLegacyUserRows } = require('../services/legacyRowMigration');
 const lockout = require('../services/lockout');
 
@@ -221,6 +222,83 @@ router.post('/login-yubikey', async (req, res) => {
   try { prfBuf = Buffer.from(prf_output, 'base64'); } catch { prfBuf = null; }
   if (!prfBuf || prfBuf.length !== 32) {
     return res.status(400).json({ error: 'Invalid prf_output' });
+  }
+
+  const userKey = yubikeyCrypto.unwrapUserKeyWithPrf(user.user_key_by_yubikey, prfBuf);
+  if (!userKey) {
+    const post = lockout.recordFailure(user.id);
+    if (post?.locked) return res.status(429).json(lockoutErrorPayload(post));
+    return res.status(401).json({
+      error: 'Hardware key did not match. Try tapping the correct key.',
+      attempts_before_lockout: post?.attempts_before_lockout,
+    });
+  }
+
+  rowCrypto.setUserKey(user.id, userKey);
+  db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+  lockout.recordSuccess(user.id);
+  const token = signToken(user.id, user.username);
+  res.json({
+    token,
+    username: user.username,
+    onboarding_complete: !!user.onboarding_complete,
+  });
+});
+
+// ── POST /api/auth/login-yubikey-native ─────────────────────────────────────
+// macOS counterpart of /login-yubikey. Instead of accepting a prf_output
+// the renderer extracted via WebAuthn, this endpoint spawns the bundled
+// yubikey_helper itself (Electron's Chromium on macOS can't surface the
+// FIDO2 PIN dialog so the browser path doesn't work there). On first call
+// without a PIN the helper returns PIN_REQUIRED; the frontend shows a PIN
+// field and re-posts here with the user-supplied PIN.
+router.post('/login-yubikey-native', async (req, res) => {
+  const { step_up_token, pin } = req.body || {};
+  if (!step_up_token) return res.status(400).json({ error: 'step_up_token required' });
+
+  let payload;
+  try {
+    payload = jwt.verify(step_up_token, authMiddleware.getSecret());
+  } catch {
+    return res.status(401).json({ error: 'Step-up token expired or invalid. Please re-enter your password.' });
+  }
+  if (payload.step_up !== 'yubikey' || !payload.userId) {
+    return res.status(401).json({ error: 'Invalid step-up token' });
+  }
+
+  const user = db.prepare(`SELECT id, username, onboarding_complete, ${KEY_FIELDS} FROM users WHERE id = ?`).get(payload.userId);
+  if (!user || !user.yubikey_enabled || !user.user_key_by_yubikey) {
+    return res.status(400).json({ error: 'YubiKey is not enabled on this account' });
+  }
+
+  const preState = lockout.getStateByUserId(user.id);
+  if (preState?.locked) return res.status(429).json(lockoutErrorPayload(preState));
+
+  let helperResult;
+  try {
+    helperResult = await yubikeyNative.assert({
+      credentialId: Buffer.from(user.yubikey_credential_id).toString('base64'),
+      salt: Buffer.from(user.yubikey_prf_salt).toString('base64'),
+      pin,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'YubiKey helper failed' });
+  }
+
+  if (helperResult.error_code === yubikeyNative.PIN_REQUIRED_CODE) {
+    return res.status(422).json({
+      error: helperResult.error,
+      error_code: yubikeyNative.PIN_REQUIRED_CODE,
+    });
+  }
+  if (helperResult.error) {
+    return res.status(400).json({ error: helperResult.error });
+  }
+
+  let prfBuf;
+  try { prfBuf = Buffer.from(helperResult.prf_output, 'base64'); } catch { prfBuf = null; }
+  if (!prfBuf || prfBuf.length !== 32) {
+    return res.status(500).json({ error: 'Helper returned invalid prf_output' });
   }
 
   const userKey = yubikeyCrypto.unwrapUserKeyWithPrf(user.user_key_by_yubikey, prfBuf);

@@ -45,6 +45,10 @@
       {
         "from": "dist/tts_server",
         "to": "tts_server"
+      },
+      {
+        "from": "dist/yubikey_helper",
+        "to": "yubikey_helper"
       }
     ],
     "mac": {

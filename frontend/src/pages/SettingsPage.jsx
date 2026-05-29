@@ -2690,8 +2690,11 @@ function YubikeyPanel() {
 }
 
 function YubikeyEnableFlow({ onDone, onCancel }) {
+  const isMac = /Mac/i.test(navigator.userAgent);
   const [password, setPassword] = useState('');
   const [recoveryAck, setRecoveryAck] = useState(false);
+  const [pin, setPin] = useState('');
+  const [needsPin, setNeedsPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -2701,6 +2704,29 @@ function YubikeyEnableFlow({ onDone, onCancel }) {
     if (!recoveryAck) { setError('Tick the box to confirm your recovery key is written down'); return; }
     setBusy(true);
     try {
+      if (isMac) {
+        // Native CTAP path: backend spawns the bundled yubikey_helper which
+        // talks to the device directly, bypassing the missing Electron PIN
+        // UI. First call goes without a PIN; if the device demands one the
+        // backend returns 422 + error_code=YUBIKEY_PIN_REQUIRED, we show a
+        // PIN field, and the user clicks Enable again with the PIN filled.
+        const res = await apiFetch('/api/yubikey/native-enroll', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword: password, recovery_ack: true, pin: pin || undefined }),
+        });
+        const data = await res.json();
+        if (res.status === 422 && data.error_code === 'YUBIKEY_PIN_REQUIRED') {
+          setNeedsPin(true);
+          setError('Your YubiKey has a PIN. Enter it below and click Enable again.');
+          setBusy(false);
+          return;
+        }
+        if (!res.ok) { setError(data.error || 'Enrollment failed'); setBusy(false); return; }
+        onDone();
+        return;
+      }
+
+      // Windows / browser-WebAuthn path (Windows Hello provides the PIN UI).
       const { enrollYubikey } = await import('../utils/yubikey');
       const optionsRes = await apiFetch('/api/yubikey/enroll-options', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2731,7 +2757,15 @@ function YubikeyEnableFlow({ onDone, onCancel }) {
         Enrolling a hardware key means you'll need to tap it on every login. <strong>If you lose the key and don't have your recovery key written down, your journal is permanently locked.</strong> Make sure your recovery key is safe before continuing.
       </div>
       <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: 1.5, marginBottom: '14px', padding: '8px 10px', background: 'var(--white)', borderRadius: '6px', border: 'var(--border-style)' }}>
-        <strong style={{ color: 'var(--body)' }}>Tip:</strong> in the Windows prompt that follows, choose <strong>Security key</strong> rather than the phone/QR option. The phone path technically works but means scanning a QR code on every future login.
+        {/Mac/i.test(navigator.userAgent) ? (
+          <>
+            <strong style={{ color: 'var(--body)' }}>macOS note:</strong> on Apple Silicon, USB-C devices need to be authorized once. Open <strong>System Settings → Privacy &amp; Security → Allow accessories to connect</strong> and set it to <strong>Always</strong>, then replug the YubiKey.
+          </>
+        ) : (
+          <>
+            <strong style={{ color: 'var(--body)' }}>Tip:</strong> in the Windows prompt that follows, choose <strong>Security key</strong> rather than the phone/QR option. The phone path technically works but means scanning a QR code on every future login.
+          </>
+        )}
       </div>
       <label style={{ ...s.label, marginBottom: '6px', display: 'block' }}>Current password</label>
       <input
@@ -2752,6 +2786,20 @@ function YubikeyEnableFlow({ onDone, onCancel }) {
         />
         <span>I have my recovery key written down somewhere safe (not on this device).</span>
       </label>
+      {needsPin && (
+        <>
+          <label style={{ ...s.label, marginBottom: '6px', display: 'block' }}>YubiKey PIN</label>
+          <input
+            type="password"
+            autoComplete="off"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="FIDO2 PIN set on your YubiKey"
+            style={{ ...s.input, marginBottom: '10px' }}
+            disabled={busy}
+          />
+        </>
+      )}
       {error && <div style={{ fontSize: '11px', color: '#c0392b', marginBottom: '10px' }}>{error}</div>}
       <div style={{ display: 'flex', gap: '8px' }}>
         <Btn primary onClick={run} disabled={busy}>{busy ? 'Tap your key…' : 'Enable hardware key'}</Btn>
@@ -2762,7 +2810,10 @@ function YubikeyEnableFlow({ onDone, onCancel }) {
 }
 
 function YubikeyDisableFlow({ credentialId, prfSalt, onDone, onCancel }) {
+  const isMac = /Mac/i.test(navigator.userAgent);
   const [password, setPassword] = useState('');
+  const [pin, setPin] = useState('');
+  const [needsPin, setNeedsPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -2771,6 +2822,23 @@ function YubikeyDisableFlow({ credentialId, prfSalt, onDone, onCancel }) {
     if (!password) { setError('Enter your current password'); return; }
     setBusy(true);
     try {
+      if (isMac) {
+        const res = await apiFetch('/api/yubikey/native-disable', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword: password, pin: pin || undefined }),
+        });
+        const data = await res.json();
+        if (res.status === 422 && data.error_code === 'YUBIKEY_PIN_REQUIRED') {
+          setNeedsPin(true);
+          setError('Your YubiKey has a PIN. Enter it below and try again.');
+          setBusy(false);
+          return;
+        }
+        if (!res.ok) { setError(data.error || 'Could not disable'); setBusy(false); return; }
+        onDone();
+        return;
+      }
+
       const { assertYubikey } = await import('../utils/yubikey');
       const { prf_output } = await assertYubikey({ credential_id: credentialId, prf_salt: prfSalt });
       const res = await apiFetch('/api/yubikey/disable', {
@@ -2801,6 +2869,20 @@ function YubikeyDisableFlow({ credentialId, prfSalt, onDone, onCancel }) {
         style={{ ...s.input, marginBottom: '10px' }}
         disabled={busy}
       />
+      {needsPin && (
+        <>
+          <label style={{ ...s.label, marginBottom: '6px', display: 'block' }}>YubiKey PIN</label>
+          <input
+            type="password"
+            autoComplete="off"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="FIDO2 PIN set on your YubiKey"
+            style={{ ...s.input, marginBottom: '10px' }}
+            disabled={busy}
+          />
+        </>
+      )}
       {error && <div style={{ fontSize: '11px', color: '#c0392b', marginBottom: '10px' }}>{error}</div>}
       <div style={{ display: 'flex', gap: '8px' }}>
         <Btn primary onClick={run} disabled={busy}>{busy ? 'Tap your key…' : 'Disable hardware key'}</Btn>

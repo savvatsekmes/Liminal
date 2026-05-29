@@ -25,6 +25,7 @@ const { requireAuth } = require('../middleware/auth');
 const userCrypto = require('../services/userCrypto');
 const yubikeyCrypto = require('../services/yubikeyCrypto');
 const rowCrypto = require('../services/rowCrypto');
+const yubikeyNative = require('../services/yubikeyNative');
 
 router.use(requireAuth);
 
@@ -190,6 +191,152 @@ router.post('/disable', async (req, res) => {
   // hold a stale reference if the DB row was the source of truth).
   rowCrypto.setUserKey(req.userId, userKey);
 
+  res.json({ enabled: false });
+});
+
+// ── POST /api/yubikey/native-enroll ─────────────────────────────────────────
+// macOS-only enrollment path. Electron's Chromium can't surface the FIDO2
+// PIN dialog, so we spawn the bundled yubikey_helper which talks CTAP2
+// directly to the device. The helper does makeCredential + immediate
+// assertion in one shot and returns credential_id + prf_salt + prf_output
+// in a single response — the equivalent of enroll-options + enroll-complete
+// combined. Frontend posts here once with the password + recovery
+// acknowledgement, and (after the first attempt returns PIN_REQUIRED) again
+// with the user-supplied PIN.
+router.post('/native-enroll', async (req, res) => {
+  const { currentPassword, recovery_ack, pin } = req.body || {};
+  if (!currentPassword) return res.status(400).json({ error: 'Current password required' });
+  if (!recovery_ack) return res.status(400).json({ error: 'You must confirm your recovery key is saved' });
+
+  const user = db.prepare(`SELECT id, password_hash, ${KEY_FIELDS} FROM users WHERE id = ?`).get(req.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.yubikey_enabled) return res.status(400).json({ error: 'YubiKey already enrolled. Disable it first.' });
+
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Password is incorrect' });
+
+  if (user.encryption_version !== 1 || !user.user_key_by_password) {
+    return res.status(400).json({ error: 'Account not in encrypted state — log out and back in to migrate first.' });
+  }
+
+  // Unwrap user_key while we have the password — we need it to rewrap with prf.
+  const userKey = userCrypto.unlockWithPassword(currentPassword, user);
+  if (!userKey) return res.status(500).json({ error: 'Could not unlock account key' });
+
+  let helperResult;
+  try {
+    helperResult = await yubikeyNative.enroll({ pin });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'YubiKey helper failed' });
+  }
+
+  if (helperResult.error_code === yubikeyNative.PIN_REQUIRED_CODE) {
+    // Surface the sentinel so the frontend shows a PIN field and retries.
+    return res.status(422).json({
+      error: helperResult.error,
+      error_code: yubikeyNative.PIN_REQUIRED_CODE,
+    });
+  }
+  if (helperResult.error) {
+    return res.status(400).json({ error: helperResult.error });
+  }
+
+  let prfBuf, credIdBuf, saltBuf;
+  try {
+    prfBuf = Buffer.from(helperResult.prf_output, 'base64');
+    credIdBuf = Buffer.from(helperResult.credential_id, 'base64');
+    saltBuf = Buffer.from(helperResult.prf_salt, 'base64');
+  } catch {
+    return res.status(500).json({ error: 'YubiKey helper returned invalid base64' });
+  }
+  if (prfBuf.length !== 32) return res.status(500).json({ error: 'Helper prf_output length wrong' });
+  if (saltBuf.length !== 32) return res.status(500).json({ error: 'Helper prf_salt length wrong' });
+
+  const userKeyByYubikey = yubikeyCrypto.wrapUserKeyWithPrf(userKey, prfBuf);
+
+  db.prepare(`
+    UPDATE users SET
+      yubikey_enabled = 1,
+      yubikey_credential_id = ?,
+      yubikey_prf_salt = ?,
+      user_key_by_yubikey = ?,
+      user_key_by_password = NULL
+    WHERE id = ?
+  `).run(credIdBuf, saltBuf, userKeyByYubikey, req.userId);
+
+  res.json({ enabled: true });
+});
+
+// ── POST /api/yubikey/native-disable ────────────────────────────────────────
+// macOS counterpart of /disable — the existing /disable expects a prf_output
+// from a prior WebAuthn assertion. Here we run the helper directly using the
+// stored credential_id + prf_salt, then do the same rewrap+clear the
+// /disable endpoint does.
+router.post('/native-disable', async (req, res) => {
+  const { currentPassword, pin } = req.body || {};
+  if (!currentPassword) return res.status(400).json({ error: 'Current password required' });
+
+  const user = db.prepare(`SELECT id, password_hash, ${KEY_FIELDS} FROM users WHERE id = ?`).get(req.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user.yubikey_enabled || !user.user_key_by_yubikey) {
+    return res.status(400).json({ error: 'YubiKey is not enabled' });
+  }
+
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Password is incorrect' });
+
+  let helperResult;
+  try {
+    helperResult = await yubikeyNative.assert({
+      credentialId: Buffer.from(user.yubikey_credential_id).toString('base64'),
+      salt: Buffer.from(user.yubikey_prf_salt).toString('base64'),
+      pin,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'YubiKey helper failed' });
+  }
+
+  if (helperResult.error_code === yubikeyNative.PIN_REQUIRED_CODE) {
+    return res.status(422).json({
+      error: helperResult.error,
+      error_code: yubikeyNative.PIN_REQUIRED_CODE,
+    });
+  }
+  if (helperResult.error) {
+    return res.status(400).json({ error: helperResult.error });
+  }
+
+  let prfBuf;
+  try { prfBuf = Buffer.from(helperResult.prf_output, 'base64'); } catch { prfBuf = null; }
+  if (!prfBuf || prfBuf.length !== 32) {
+    return res.status(500).json({ error: 'Helper returned invalid prf_output' });
+  }
+
+  const userKey = yubikeyCrypto.unwrapUserKeyWithPrf(user.user_key_by_yubikey, prfBuf);
+  if (!userKey) return res.status(401).json({ error: 'Hardware key did not match the enrolled credential' });
+
+  const rewrap = userCrypto.rewrapPassword(userKey, currentPassword,
+    userCrypto.decryptRecoveryKey(currentPassword, user) || ''
+  );
+
+  db.prepare(`
+    UPDATE users SET
+      password_salt = ?,
+      user_key_by_password = ?,
+      recovery_key_by_password = ?,
+      yubikey_enabled = 0,
+      yubikey_credential_id = NULL,
+      yubikey_prf_salt = NULL,
+      user_key_by_yubikey = NULL
+    WHERE id = ?
+  `).run(
+    rewrap.password_salt,
+    rewrap.user_key_by_password,
+    rewrap.recovery_key_by_password,
+    req.userId,
+  );
+
+  rowCrypto.setUserKey(req.userId, userKey);
   res.json({ enabled: false });
 });
 

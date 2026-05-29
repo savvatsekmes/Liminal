@@ -52,6 +52,13 @@ const RES = isDev ? REPO_ROOT : process.resourcesPath;
 const BACKEND_DIR  = isDev ? path.join(REPO_ROOT, 'backend')        : path.join(RES, 'backend');
 const FRONTEND_DIST = isDev ? path.join(REPO_ROOT, 'frontend', 'dist') : path.join(RES, 'frontend', 'dist');
 const TTS_DIR      = isDev ? REPO_ROOT                              : path.join(RES, 'tts_server');
+// macOS-only YubiKey helper binary. In dev the backend falls back to the
+// .venv-yubikey/bin/python interpreter + repo-root yubikey_helper.py so we
+// don't have to PyInstall on every change. In a packaged build, the helper
+// lives inside the .app's Resources dir.
+const YUBIKEY_HELPER_BIN = isDev
+  ? null  // backend's resolveHelper() picks the dev fallback automatically
+  : path.join(RES, 'yubikey_helper', 'yubikey_helper');
 
 // User data dir is per-OS; Electron picks the right one for us.
 //   Win:   %APPDATA%\Liminal\
@@ -442,6 +449,11 @@ function spawnBackend() {
     LIMINAL_CONTROL_URL: `http://127.0.0.1:${controlPort}`,
     NODE_ENV: isDev ? 'development' : 'production',
   };
+  // Only set the helper path env var in packaged builds; in dev the backend's
+  // resolveHelper() falls back to the repo-root .venv-yubikey + .py script.
+  if (YUBIKEY_HELPER_BIN) {
+    env.LIMINAL_YUBIKEY_HELPER = YUBIKEY_HELPER_BIN;
+  }
 
   const serverEntry = path.join(BACKEND_DIR, 'server.js');
   // In a packaged app, electron itself can run plain Node scripts via

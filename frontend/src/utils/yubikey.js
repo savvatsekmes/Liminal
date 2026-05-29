@@ -66,7 +66,15 @@ export async function enrollYubikey(options) {
       // discoverable credential not required for our use case; we always have
       // the credential_id to hand over at .get() time.
       requireResidentKey: false,
-      userVerification: 'discouraged',
+      // 'required' (not 'discouraged'): the YubiKey will not return an
+      // hmac-secret / PRF output unless user verification was performed
+      // during makeCredential. Without UV, the credential is created with
+      // hmac-secret DISABLED, so the follow-up .get() can't recover it
+      // either — Chromium then throws NotAllowedError. Requiring UV up
+      // front guarantees the PIN dialog appears and the credential is
+      // registered with hmac-secret enabled. Windows Hello already
+      // enforces UV, so this is a no-op there.
+      userVerification: 'required',
     },
     // WebAuthn Level 3 hint — tells the OS UI to skip the "phone or security
     // key" chooser and go straight to security key prompts. Chrome 122+ and
@@ -98,7 +106,7 @@ export async function enrollYubikey(options) {
       publicKey: {
         challenge: b64ToBytes(options.challenge),
         timeout: 60_000,
-        userVerification: 'discouraged',
+        userVerification: 'required',
         allowCredentials: [{ type: 'public-key', id: credentialId.buffer, transports: ['usb', 'nfc'] }],
         hints: ['security-key'],
         extensions: { prf: { eval: { first: prfSalt } } },
@@ -140,7 +148,7 @@ export async function assertYubikey({ credential_id, prf_salt }) {
     publicKey: {
       challenge,
       timeout: 60_000,
-      userVerification: 'discouraged',
+      userVerification: 'preferred',
       allowCredentials: [{ type: 'public-key', id: credentialId.buffer, transports: ['usb', 'nfc'] }],
       // Skip the Windows passkey chooser when the OS honours it.
       hints: ['security-key'],

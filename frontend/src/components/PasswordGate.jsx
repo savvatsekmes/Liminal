@@ -413,13 +413,40 @@ function RecoveryKeyReveal({ recoveryKey, isNewAccount, onConfirm }) {
 function YubikeyLoginStep({ step, password, onSuccess, onCancel }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
+  const isMac = /Mac/i.test(navigator.userAgent);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pin, setPin] = useState('');
+  const [needsPin, setNeedsPin] = useState(false);
 
   async function runAssertion() {
     setError('');
     setBusy(true);
     try {
+      if (isMac) {
+        // Native CTAP path: backend spawns yubikey_helper, taps come from the
+        // device itself, no browser PIN UI needed. If a PIN is set on the key
+        // the helper surfaces YUBIKEY_PIN_REQUIRED on first attempt; we show
+        // a PIN field and let the user resubmit.
+        const res = await fetch('/api/auth/login-yubikey-native', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step_up_token: step.stepUpToken, pin: pin || undefined }),
+        });
+        const data = await res.json();
+        if (res.status === 422 && data.error_code === 'YUBIKEY_PIN_REQUIRED') {
+          setNeedsPin(true);
+          setError('Your YubiKey has a PIN. Enter it below and tap your key when it flashes.');
+          return;
+        }
+        if (!res.ok) {
+          setError(data.error || 'Hardware key check failed');
+          return;
+        }
+        onSuccess(data.token, data.username, data.onboarding_complete, password, null, false);
+        return;
+      }
+
       const { assertYubikey } = await import('../utils/yubikey');
       const { prf_output } = await assertYubikey({
         credential_id: step.credentialId,
@@ -443,8 +470,10 @@ function YubikeyLoginStep({ step, password, onSuccess, onCancel }) {
     }
   }
 
-  // Auto-fire the assertion on first render so the user immediately sees
-  // their OS's tap prompt without having to click a second button.
+  // Auto-fire the assertion on first render. On macOS this triggers the
+  // native helper which immediately starts looking for a YubiKey tap;
+  // returns PIN_REQUIRED if the device needs one, after which the user
+  // re-clicks Try again with the PIN filled.
   useEffect(() => { runAssertion(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   return (
@@ -464,6 +493,17 @@ function YubikeyLoginStep({ step, password, onSuccess, onCancel }) {
             Insert your YubiKey and tap the gold contact when it blinks.
             {busy ? ' Waiting for key…' : ''}
           </div>
+          {needsPin && (
+            <input
+              type="password"
+              autoComplete="off"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="YubiKey PIN"
+              style={{ ...s.input, marginBottom: '12px' }}
+              disabled={busy}
+            />
+          )}
           {error && <div style={{ ...s.error, marginBottom: '14px' }}>{error}</div>}
           <button
             style={{ ...s.btn, opacity: busy ? 0.5 : 1 }}
