@@ -45,10 +45,6 @@
       {
         "from": "dist/tts_server",
         "to": "tts_server"
-      },
-      {
-        "from": "dist/yubikey_helper",
-        "to": "yubikey_helper"
       }
     ],
     "mac": {
@@ -59,7 +55,13 @@
       "category": "public.app-category.lifestyle",
       "identity": null,
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extraResources": [
+        {
+          "from": "dist/yubikey_helper",
+          "to": "yubikey_helper"
+        }
+      ]
     },
     "dmg": {
       "title": "Liminal ${version}",
