@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Liminal — macOS hardened-runtime entitlements.
+
+  Used during electron-builder's signing step on macOS. Hardened runtime
+  is required for notarization, and notarization is required for an
+  app distributed outside the Mac App Store to launch cleanly on
+  Sequoia and later without Gatekeeper warnings.
+
+  Hardened runtime disables a bunch of legacy capabilities by default
+  (JIT, library loading from non-canonical locations, etc.) — we have
+  to opt back in for the ones Electron + Node + our helper binaries
+  need. These do NOT loosen security for an end user; they relax the
+  process's own self-restrictions so Liminal can function.
+
+  Why each entitlement:
+
+  - allow-jit: Electron's V8 engine generates and executes machine
+    code at runtime for JavaScript. Without this, the renderer crashes
+    on first JS execution under hardened runtime.
+
+  - allow-unsigned-executable-memory: Electron's Node integration
+    and some native node_modules ship modules that mmap executable
+    memory not signed by Apple. Required for Electron to even boot.
+
+  - allow-dyld-environment-variables: The Electron main process
+    spawns the backend Node child via ELECTRON_RUN_AS_NODE=1, which
+    is propagated through DYLD_*-style env variables. Hardened
+    runtime would strip these on exec without this entitlement.
+
+  - disable-library-validation: We load:
+      * Node native modules (better-sqlite3, bcrypt, etc.)
+      * Bundled PyInstaller binaries (tts_server, yubikey_helper)
+      * Python's libraries inside those bundles
+    Library validation would reject anything not signed by the same
+    Team ID as the host app or by Apple. Our helpers are signed by us
+    (correct Team ID), but their child .so/.dylib loads are noisy
+    enough that the safer move is to disable this check.
+
+  - device.audio-input: Required so the Speech-to-Text dictation
+    feature can access the microphone. Paired with the
+    NSMicrophoneUsageDescription string in Info.plist (set via
+    package.json build.mac.extendInfo) so macOS shows a meaningful
+    consent prompt the first time the user taps Dictate.
+
+  Notably NOT here: app sandbox, network entitlements. We're using
+  Developer ID distribution, not App Store, so we don't sandbox.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>

@@ -10,7 +10,7 @@
     "dist": "electron-builder --prepackaged dist-installers/win-unpacked --win nsis-web",
     "rebuild:backend": "npx --yes @electron/rebuild --module-dir backend --types prod",
     "predist:mac": "npm run rebuild:backend",
-    "dist:mac": "electron-builder --mac dmg --arm64"
+    "dist:mac": "electron-builder --mac --arm64"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
@@ -27,7 +27,6 @@
       "output": "dist-installers",
       "buildResources": "electron"
     },
-    "afterSign": "scripts/mac-adhoc-sign.js",
     "files": [
       "electron/**/*",
       "package.json"
@@ -53,9 +52,23 @@
       ],
       "icon": "electron/icons/icon.icns",
       "category": "public.app-category.lifestyle",
-      "identity": null,
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
+      "hardenedRuntime": true,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "7YX5W79L52"
+      },
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Liminal needs the microphone to transcribe what you say when you use the dictation feature."
+      },
+      "signIgnore": [
+        "tts_server/_internal/.+\\.(dat|json|txt|csv|yaml|yml|md|rst|po|mo|html|css|gz|tar|whl|pem|crt|cfg|ini|toml|lock)$",
+        "tts_server/_internal/.+/zoneinfo/.+",
+        "tts_server/_internal/.+/tests?/.+",
+        "tts_server/_internal/.+\\.dist-info/.+",
+        "tts_server/_internal/.+/__pycache__/.+",
+        "tts_server/_internal/.+\\.(py|pyc|pyx|pxd|pxi)$"
+      ],
       "extraResources": [
         {
           "from": "dist/yubikey_helper",
