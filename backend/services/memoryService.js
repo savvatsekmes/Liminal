@@ -579,7 +579,10 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
   // not yet backfilled — ensures graceful degradation for first-run users).
   const [retrievedMemories, similarEntries] = await Promise.all([
     retrieveRelevantMemories(userId, currentEntryText, { k: 12 }),
-    retrieveSimilarEntries(currentEntryText, currentEntryId),
+    // Bumped from default k=3 → 8 so arc-anchor selection has enough
+    // candidates to cover both a short-arc (recent) AND long-arc (year+)
+    // window. Without this we'd often only see candidates from one window.
+    retrieveSimilarEntries(currentEntryText, currentEntryId, 8),
   ]);
   let memorySection = formatRetrievedMemoriesForPrompt(retrievedMemories);
   if (!memorySection) {
@@ -645,8 +648,16 @@ Speak to them as someone you know through this lens — not generically. Generic
   //   picks up the same thread.
   if (similarEntries.length > 0) {
     const EXCERPT_LEN = 350;
-    const ARC_MIN_DAYS = 7;
-    const ARC_MAX_DAYS = 365;
+    // Two arc windows so the model has material for BOTH "last month vs now"
+    // AND "a year ago vs now" type observations:
+    //
+    //   SHORT_ARC: 7-120 days back. Recent evolution within the season.
+    //   LONG_ARC:  120-1095 days back (~3 years). Year-scale evolution —
+    //              the "a year ago you were chasing bootcamps, now you're
+    //              fixing pipes" type of callback that the prior 365-day
+    //              cap was filtering out completely.
+    const SHORT_MIN = 7,  SHORT_MAX = 120;
+    const LONG_MIN  = 120, LONG_MAX = 1095;
     const now = Date.now();
     const ageDays = (e) => {
       const ref = e.date || e.created_at;
@@ -654,23 +665,28 @@ Speak to them as someone you know through this lens — not generically. Generic
       const ms = now - new Date(String(ref).replace(' ', 'T') + (ref.length > 10 ? '' : 'T00:00:00') + (ref.length > 10 ? 'Z' : '')).getTime();
       return Math.round(ms / 86400000);
     };
-    const eligible = similarEntries
-      .map((e) => ({ e, days: ageDays(e) }))
-      .filter((x) => x.days != null && x.days >= ARC_MIN_DAYS && x.days <= ARC_MAX_DAYS);
-    const arc = eligible.length ? eligible[0] : null; // top of the sort, already by similarity
-    const background = similarEntries.filter((e) => !arc || e.id !== arc.e.id);
+    const withAges = similarEntries.map((e) => ({ e, days: ageDays(e) }))
+      .filter((x) => x.days != null);
 
-    // Diagnostic — log what made it into the similar-entries pool and which
-    // (if any) was selected as the arc anchor. Lets us tell at a glance
-    // whether arc misses are "entry not indexed", "below the age floor", or
-    // "model declined the callback despite arc being in the prompt".
+    // Pick the top-similarity candidate from each window. Single pass over
+    // a similarity-sorted list, so .find returns the highest scoring one
+    // that fits the window.
+    const shortArc = withAges.find((x) => x.days >= SHORT_MIN && x.days <= SHORT_MAX) || null;
+    const longArc  = withAges.find((x) => x.days >  SHORT_MAX && x.days <= LONG_MAX)  || null;
+    const arcIds = new Set([shortArc?.e.id, longArc?.e.id].filter(Boolean));
+    const background = similarEntries.filter((e) => !arcIds.has(e.id));
+
+    // Diagnostic — log the candidate pool plus which (if any) anchors were
+    // selected for each window. Lets us tell at a glance whether arc misses
+    // are retrieval gaps or prompt-conservatism.
     try {
-      const summary = similarEntries.map((e) => {
-        const d = ageDays(e);
-        const within = d != null && d >= ARC_MIN_DAYS && d <= ARC_MAX_DAYS;
-        return `#${e.id}(${d}d${within ? '✓' : '✗'})`;
+      const summary = withAges.map((x) => {
+        const inShort = x.days >= SHORT_MIN && x.days <= SHORT_MAX;
+        const inLong  = x.days >  SHORT_MAX && x.days <= LONG_MAX;
+        const tag = inShort ? '🅢' : inLong ? '🅛' : '✗';
+        return `#${x.e.id}(${x.days}d${tag})`;
       }).join(' ');
-      console.log(`[reflect] arc-pool: ${summary} → arc=${arc ? '#' + arc.e.id + ' (' + arc.days + 'd)' : 'none'}`);
+      console.log(`[reflect] arc-pool: ${summary} → short=${shortArc ? '#' + shortArc.e.id + '/' + shortArc.days + 'd' : 'none'} long=${longArc ? '#' + longArc.e.id + '/' + longArc.days + 'd' : 'none'}`);
     } catch {}
 
     function timeLabel(days) {
@@ -680,11 +696,18 @@ Speak to them as someone you know through this lens — not generically. Generic
       return `${(days / 365).toFixed(1)} years ago`;
     }
 
-    if (arc) {
+    function renderArc(arc, label) {
       const dateStr = arc.e.date || arc.e.created_at?.split('T')[0] || 'unknown date';
       const body = String(arc.e.body_text || '').trim();
       const excerpt = body.length > EXCERPT_LEN ? body.slice(0, EXCERPT_LEN) + '…' : body;
-      sections.push(`## ARC ANCHOR — WHERE THEY WERE ${timeLabel(arc.days).toUpperCase()}\nThis is the most semantically similar past entry from at least a week back. Use it for ONE optional then-vs-now observation if (and only if) there's a real shift between then and now — different posture, different framing, different mood on the same topic. If the past entry is just topically similar without a clear evolution, leave it alone and treat it as background.\n\nA good then-vs-now move sounds like:\n- "A few weeks ago you were [grasping for / wrestling with / chasing] X; now you're [doing / noticing / letting go of] Y instead. That's the shift."\n- "Compared to [date], the tone here is [softer / harder / less tangled]."\nWeave this into the OPENING paragraph or one block, not multiple — over-using it makes the reflection feel like a status report.\n\nEntry from [${dateStr}] (${timeLabel(arc.days)}): "${arc.e.title || 'Untitled'}"\n${excerpt}`);
+      return `## ${label} — ${timeLabel(arc.days).toUpperCase()}\nEntry from [${dateStr}] (${timeLabel(arc.days)}): "${arc.e.title || 'Untitled'}"\n${excerpt}`;
+    }
+
+    if (shortArc || longArc) {
+      const blocks = [];
+      if (shortArc) blocks.push(renderArc(shortArc, 'SHORT-ARC ANCHOR'));
+      if (longArc)  blocks.push(renderArc(longArc,  'LONG-ARC ANCHOR'));
+      sections.push(`${blocks.join('\n\n')}\n\n## HOW TO USE THE ARC ANCHORS ABOVE\nThese are past entries highly similar to today's. Make ONE then-vs-now observation in the reflection when you can see clear evolution — different posture, different framing, or different tone on the same topic. Topic-similar-but-tone-different is enough; you don't need a dramatic shift. If both anchors are present, prefer the one that shows the stronger evolution; usually that's the long-arc one because more has changed.\n\nA good then-vs-now move sounds like one of these shapes:\n- "A few weeks ago you were [grasping / wrestling / chasing] X; now you're [doing / noticing / letting go of] Y. That's the shift."\n- "A year ago this same theme read as [pulling for it]; now it reads as [it appearing on its own]."\n- "Compared to [date], the tone here is [softer / harder / less tangled]."\n- Or just a clean compression: "Then: X. Now: Y."\n\nWeave the observation into the OPENING paragraph or ONE block — never multiple. Over-using it makes the reflection feel like a status report. If you genuinely can't see an evolution, leave the anchors as background.`);
     }
 
     if (background.length > 0) {
@@ -1188,7 +1211,10 @@ Rules:
 - Write in prose paragraphs. No bullet points ever. No lists.
 - The "quote" field on each block must always be null. Do NOT generate, recall, or invent quotes from wisdom traditions, philosophers, or any named author — the backend fills this slot in by selecting a real, attributable quote from a curated bank that thematically matches the block. Anything you put in this field will be discarded.
 - Write a closing paragraph with a final integrating thought.
-- End with one open question for the person to sit with.
+- End with one OPEN question for the person to sit with. Curious, not interrogative. The question must return the choice to the user — it should sound like the question YOU would actually ask if you were sitting across from them, not a directive dressed up as a question.
+  • GOOD shape: "What does [X] give you that [ordinary Y] doesn't?" / "What would change if you stopped treating this as a problem to solve?" / "Where in your body does this live right now?" — these open space.
+  • BAD shape: "Are you going to book the appointment this week, or wait for her to ask first?" / "When are you going to stop avoiding this?" — these put the user on trial and load the answer.
+  The test: a good closing question makes the user lean back and consider; a bad one makes them defend.
 - Do not be falsely positive or bypassy — show both sides of every theme.
 - Do NOT label which archetype you are drawing from — the blend is invisible.
 - When the entry describes a third party (a partner, parent, friend) and narrates THEIR inner state — "she's blocked", "he's avoiding", "they're bypassing" — do not validate or extend that diagnosis with your own confident claims about that person. They are not in the room. Reflect with the user about their own framing, their own feelings, their own pattern. (How forcefully you surface this is governed by candor mode — see above.)
