@@ -320,25 +320,16 @@ if (previewVersion) {
         {loading && blocks.length === 0 && !opening && <LoadingState />}
         {error && <div style={s.error}>{error}</div>}
         {!loading && !error && blocks.length === 0 && !opening && <EmptyState />}
-        {/* Time-travel anchor — shown above the opening as a small italic
-            "previously on" line when the LLM filled the time_anchor field.
-            Null when no meaningful then-vs-now observation was available. */}
-        {!error && timeAnchor && timeAnchor.observation && (
-          <div style={{
-            fontSize: '12px',
-            fontStyle: 'italic',
-            color: 'var(--muted)',
-            marginBottom: '14px',
-            paddingLeft: '12px',
-            borderLeft: '2px solid var(--border)',
-            lineHeight: 1.55,
-          }}>
-            {timeAnchor.observation}
-          </div>
-        )}
         {!error && opening && (
           <div style={s.opening}>
             {opening}
+            {/* Time-travel anchor — the "then vs now" observation, rendered
+                directly under the opening in the same italic format so it
+                reads as a continuation of the intro. Null when the LLM had no
+                meaningful shift to surface. */}
+            {timeAnchor && timeAnchor.observation && (
+              <div style={{ marginTop: '12px' }}>{timeAnchor.observation}</div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
               <button
                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '10px', border: 'none', background: 'none', color: readingOpening ? 'var(--strong)' : 'var(--muted)', cursor: 'pointer', padding: 0, transition: 'color 0.12s' }}

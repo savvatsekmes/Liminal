@@ -99,10 +99,27 @@ router.post('/', async (req, res) => {
     // Per-block post-processing: archetype tag, sanitise quote, strip orphan
     // bold, replace quote with curated-bank match. All synchronous except
     // the bank lookup (which embeds the body and picks via cosine).
+    // The prompt tells the model to substitute the [NAME] placeholder in the
+    // opening with the user's real name, but smaller local models forget
+    // ~10-20% of the time, leaking a literal "[NAME]". Fix it deterministically
+    // wherever it appears (opening, block titles/bodies, closing question,
+    // time anchor). If we don't know the name, drop the placeholder + its
+    // trailing punctuation/space cleanly rather than leave brackets.
+    function fixName(s) {
+      if (typeof s !== 'string' || !s.includes('[')) return s;
+      if (preferredName) {
+        return s.replace(/\[name\]/gi, preferredName);
+      }
+      // No name known — remove "[NAME]," / "[NAME] " / "[NAME]" gracefully.
+      return s.replace(/\[name\]\s*[,–—-]?\s*/gi, '').replace(/\s{2,}/g, ' ').trimStart();
+    }
+
     async function postProcessBlock(rawBlock, index) {
       let b = rawBlock;
       if (singleArchetype) b = { ...b, archetype: singleArchetype };
       b = sanitiseQuote(b);
+      if (b && typeof b.title === 'string') b = { ...b, title: fixName(b.title) };
+      if (b && typeof b.body === 'string') b = { ...b, body: fixName(b.body) };
       if (b && typeof b.body === 'string') {
         let body = b.body;
         const stars = (body.match(/\*\*/g) || []).length;
@@ -153,10 +170,16 @@ router.post('/', async (req, res) => {
     let openingFinal = null;
     let blockIndex = 0;
 
-    await reflectStream.run(systemPrompt, userMessage, { maxTokens: 2500 }, {
+    // num_ctx 16384 (vs the 8192 default): a context-rich entry — full
+    // portrait + retrieved memories + short/long arc anchors + an embedded
+    // video transcript — can push the prompt high enough that prompt + the
+    // 2500-token response overflows an 8192 window, truncating the model's
+    // JSON mid-output and producing an unparseable reflection. 16384 leaves
+    // comfortable headroom; qwen-class 9B models handle it without issue.
+    await reflectStream.run(systemPrompt, userMessage, { maxTokens: 2500, numCtx: 16384 }, {
       onOpening: (txt) => {
-        openingFinal = txt;
-        sendEvent('opening', { opening: txt });
+        openingFinal = fixName(txt);
+        sendEvent('opening', { opening: openingFinal });
       },
       onBlock: async (rawBlock) => {
         // Server-side cap: silently drop any block past maxBlocks. The
@@ -180,7 +203,7 @@ router.post('/', async (req, res) => {
         try {
           const cqMatch = final.raw.match(/"closing_question"\s*:\s*"((?:\\.|[^"\\])*)"/);
           if (cqMatch) {
-            try { closingQuestion = JSON.parse('"' + cqMatch[1] + '"').trim() || null; } catch {}
+            try { closingQuestion = fixName(JSON.parse('"' + cqMatch[1] + '"').trim()) || null; } catch {}
           }
           // Match either `"time_anchor": null` or `"time_anchor": { ... }`.
           const taMatch = final.raw.match(/"time_anchor"\s*:\s*(null|\{[\s\S]*?\})/);
@@ -191,7 +214,7 @@ router.post('/', async (req, res) => {
                 timeAnchor = {
                   anchor_kind: ta.anchor_kind === 'long' ? 'long' : 'short',
                   days_ago: Number.isFinite(ta.days_ago) ? Math.round(ta.days_ago) : null,
-                  observation: ta.observation.trim(),
+                  observation: fixName(ta.observation.trim()),
                 };
               }
             } catch {}
@@ -200,17 +223,57 @@ router.post('/', async (req, res) => {
         } catch (e) {
           console.warn('[reflect] post-field extraction failed:', e.message);
         }
-        // Salvage path: if the streaming parser couldn't extract any blocks
-        // (model emitted truly broken JSON), try the legacy structural salvage
-        // on the full raw text and emit those blocks now. Better late than
-        // empty.
+        // Recovery path: the streaming parser is incremental and brittle —
+        // an unescaped quote inside a block body desyncs its brace matcher and
+        // it extracts zero blocks even when the COMPLETE document is valid
+        // (or nearly valid) JSON. So when streaming produced nothing, try a
+        // full-document parse FIRST (with repair), then the structural
+        // salvage, then a friendly message. We must never dump the raw JSON
+        // string at the user as a "block" — that's the `{ "time_anchor":… }`
+        // leak the user reported.
+        if (finalBlocks.length === 0) {
+          const parsed = extractJsonObject(final.raw);
+          if (parsed && Array.isArray(parsed.blocks) && parsed.blocks.length) {
+            console.warn(`[reflect] recovered ${parsed.blocks.length} blocks via full-document parse`);
+            if (!openingFinal && typeof parsed.opening === 'string' && parsed.opening.trim()) {
+              openingFinal = fixName(parsed.opening.trim());
+              sendEvent('opening', { opening: openingFinal });
+            }
+            for (const rb of parsed.blocks) {
+              if (!rb || typeof rb.title !== 'string' || typeof rb.body !== 'string') continue;
+              const processed = await postProcessBlock(
+                { title: rb.title, body: rb.body, quote: rb.quote ?? null, archetype: rb.archetype || 'Auto' },
+                blockIndex,
+              );
+              blockIndex++;
+              finalBlocks.push(processed);
+              sendEvent('block', processed);
+            }
+            // Prefer the cleanly-parsed time_anchor / closing_question over the
+            // earlier regex extraction (more reliable when the full doc parsed).
+            if (parsed.closing_question && typeof parsed.closing_question === 'string') {
+              closingQuestion = fixName(parsed.closing_question.trim()) || closingQuestion;
+            }
+            if (parsed.time_anchor && typeof parsed.time_anchor === 'object'
+                && typeof parsed.time_anchor.observation === 'string'
+                && parsed.time_anchor.observation.trim()) {
+              timeAnchor = {
+                anchor_kind: parsed.time_anchor.anchor_kind === 'long' ? 'long' : 'short',
+                days_ago: Number.isFinite(parsed.time_anchor.days_ago) ? Math.round(parsed.time_anchor.days_ago) : null,
+                observation: fixName(parsed.time_anchor.observation.trim()),
+              };
+            }
+          }
+        }
+        // Structural salvage — pulls individual {"title","body"} blocks even
+        // when the surrounding JSON can't be fully parsed.
         if (finalBlocks.length === 0) {
           const salvaged = salvageReflection(final.raw);
           if (salvaged && salvaged.blocks.length) {
             console.warn(`[reflect] salvaged ${salvaged.blocks.length} blocks from end-of-stream`);
             if (!openingFinal && salvaged.opening) {
-              openingFinal = salvaged.opening;
-              sendEvent('opening', { opening: salvaged.opening });
+              openingFinal = fixName(salvaged.opening);
+              sendEvent('opening', { opening: openingFinal });
             }
             for (const rb of salvaged.blocks) {
               const processed = await postProcessBlock(rb, blockIndex);
@@ -220,11 +283,19 @@ router.post('/', async (req, res) => {
             }
           }
         }
-        // Truly empty fallback — at least surface the raw text so user sees
-        // something rather than blank panel.
+        // Truly unrecoverable — the model produced broken/empty output (often a
+        // transient Ollama hiccup or a very short entry). Show a clean,
+        // human-readable message and let the user retry, rather than leaking
+        // raw JSON braces into the panel.
         if (finalBlocks.length === 0) {
+          console.warn('[reflect] all recovery failed; raw head:', (final.raw || '').slice(0, 160));
           const fallback = await postProcessBlock(
-            { title: 'Reflection', body: final.raw, quote: null, archetype: singleArchetype || 'Auto' },
+            {
+              title: 'Reflection didn’t come through',
+              body: 'The reflection didn’t generate cleanly this time — this usually means the local model hiccuped mid-response. Tap **Reflect** to try again.',
+              quote: null,
+              archetype: singleArchetype || 'Auto',
+            },
             0,
           );
           finalBlocks.push(fallback);
@@ -717,6 +788,20 @@ function repairLlmJson(s) {
   let escape = false;
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
+    // Raw control-char escaping: lyrical models frequently emit LITERAL
+    // newlines (and occasionally tabs) inside a long "body" string. Strict
+    // JSON.parse rejects any unescaped control char (code < 0x20), so a single
+    // raw newline in one block body silently fails the whole document parse AND
+    // the per-block salvage parse — the block vanishes and the user gets the
+    // "didn't come through" fallback even though the prose was perfectly good.
+    // Convert them to valid JSON escapes so the block survives. (We're inside a
+    // string literal and the char is neither `"` nor `\`, so string/escape
+    // state is unchanged — safe to emit and continue.)
+    if (inStr && !escape && ch < ' ') {
+      const esc = { '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f' }[ch];
+      out += esc || '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
+      continue;
+    }
     // Trailing-comma stripping: outside a string, skip any comma whose next
     // non-whitespace char is `}` or `]`. Smaller LLMs (qwen 4b, llama 3 8b)
     // frequently slip into JS-style trailing commas which strict JSON.parse
