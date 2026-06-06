@@ -181,6 +181,8 @@ const s = {
 export default function MirrorPanel({
   blocks,
   opening,
+  timeAnchor,
+  closingQuestion,
   loading,
   error,
   entryText,
@@ -318,6 +320,22 @@ if (previewVersion) {
         {loading && blocks.length === 0 && !opening && <LoadingState />}
         {error && <div style={s.error}>{error}</div>}
         {!loading && !error && blocks.length === 0 && !opening && <EmptyState />}
+        {/* Time-travel anchor — shown above the opening as a small italic
+            "previously on" line when the LLM filled the time_anchor field.
+            Null when no meaningful then-vs-now observation was available. */}
+        {!error && timeAnchor && timeAnchor.observation && (
+          <div style={{
+            fontSize: '12px',
+            fontStyle: 'italic',
+            color: 'var(--muted)',
+            marginBottom: '14px',
+            paddingLeft: '12px',
+            borderLeft: '2px solid var(--border)',
+            lineHeight: 1.55,
+          }}>
+            {timeAnchor.observation}
+          </div>
+        )}
         {!error && opening && (
           <div style={s.opening}>
             {opening}
@@ -356,6 +374,28 @@ if (previewVersion) {
             onNavigateToEntry={onNavigateToEntry}
           />
         ))}
+        {/* Closing question — distinct callout below the blocks. Required
+            field on v2 reflections; null on legacy reflections, in which
+            case we render nothing and the block list ends as before.
+            Styling intentionally mirrors the opening (italic, body font,
+            14px, soft border) so it bookends the reflection visually
+            without introducing a foreign typeface. */}
+        {!error && closingQuestion && (
+          <div style={{
+            marginTop: '24px',
+            padding: '20px 24px',
+            background: 'var(--near-white)',
+            borderRadius: '10px',
+            borderLeft: '2px solid var(--border)',
+            fontSize: '14px',
+            fontStyle: 'italic',
+            lineHeight: 1.75,
+            color: 'var(--strong)',
+            textAlign: 'left',
+          }}>
+            {closingQuestion}
+          </div>
+        )}
       </div>
 
 {/* Archetype picker popup */}

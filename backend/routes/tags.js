@@ -109,9 +109,91 @@ Rules:
       if (out.length >= 5) break;
     }
     res.json({ tags: out });
+
+    // Fire-and-forget background emoji lookups for any suggested tags we
+    // haven't seen before. Keeps the suggest endpoint snappy while still
+    // priming the emoji cache so the next render lights them up.
+    setImmediate(async () => {
+      try {
+        const svc = require('../services/tagEmojiService');
+        const cache = svc.getCache();
+        for (const tag of out) {
+          if (cache[tag] === undefined) {
+            try { await svc.suggestEmojiForTag(tag); } catch {}
+          }
+        }
+      } catch {}
+    });
   } catch (err) {
     console.error('[tags/suggest] failed:', err.message);
     res.json({ tags: [] });
+  }
+});
+
+// ── Tag emoji map ───────────────────────────────────────────────────────────
+//
+// Three-layer resolution at the frontend: user overrides > hardcoded
+// TAG_EMOJI (in frontend/src/utils/tagEmoji.js) > LLM cache. This endpoint
+// returns layers 1 and 3 together; the frontend merges with its hardcoded
+// map and resolves per tag.
+const tagEmojiSvc = require('../services/tagEmojiService');
+
+router.get('/emoji-map', (req, res) => {
+  const merged = tagEmojiSvc.getMergedMap();
+  res.json(merged);
+});
+
+// POST /api/tags/emoji-suggest
+// Body: { tag: string }
+// Returns: { tag, emoji: string|null }
+// Idempotent — if the tag is already in the cache (including an empty-string
+// "we tried and got junk" sentinel), returns the cached value without
+// re-calling the LLM.
+router.post('/emoji-suggest', async (req, res) => {
+  const tag = String(req.body?.tag || '').trim().toLowerCase();
+  if (!tag) return res.status(400).json({ error: 'tag required' });
+  if (tag.length > 32) return res.status(400).json({ error: 'tag too long' });
+  try {
+    const emoji = await tagEmojiSvc.suggestEmojiForTag(tag);
+    res.json({ tag, emoji: emoji || null });
+  } catch (err) {
+    console.error('[tags/emoji-suggest] failed:', err.message);
+    res.status(500).json({ error: 'emoji suggestion failed' });
+  }
+});
+
+// PUT /api/tags/emoji-overrides
+// Body: { tag: string, emoji: string }  → sets an override
+// Body: { tag: string, emoji: null|"" } → clears the override (falls back
+// to hardcoded or cache)
+router.put('/emoji-overrides', (req, res) => {
+  const tag = String(req.body?.tag || '').trim().toLowerCase();
+  const emoji = req.body?.emoji || null;
+  if (!tag) return res.status(400).json({ error: 'tag required' });
+  try {
+    if (emoji) {
+      const validated = tagEmojiSvc.validateEmoji(emoji);
+      if (!validated) return res.status(400).json({ error: 'invalid emoji' });
+      const out = tagEmojiSvc.setOverride(tag, validated);
+      return res.json(out);
+    }
+    const out = tagEmojiSvc.clearOverride(tag);
+    res.json(out);
+  } catch (err) {
+    console.error('[tags/emoji-overrides] failed:', err.message);
+    res.status(500).json({ error: 'override update failed' });
+  }
+});
+
+router.delete('/emoji-overrides/:tag', (req, res) => {
+  const tag = String(req.params.tag || '').trim().toLowerCase();
+  if (!tag) return res.status(400).json({ error: 'tag required' });
+  try {
+    const out = tagEmojiSvc.clearOverride(tag);
+    res.json(out);
+  } catch (err) {
+    console.error('[tags/emoji-overrides DELETE] failed:', err.message);
+    res.status(500).json({ error: 'override clear failed' });
   }
 });
 

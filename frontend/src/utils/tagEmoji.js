@@ -66,14 +66,30 @@ const TAG_EMOJI = {
 
 /**
  * Returns the emoji prefix for a tag, or empty string if none.
- * Also detects if the tag already starts with an emoji (user-added).
+ *
+ * Resolution order:
+ *   1. user override     (from dynamicMap.overrides)
+ *   2. hardcoded classic (TAG_EMOJI)
+ *   3. LLM cache         (from dynamicMap.cache)
+ *   4. tag already starts with an emoji (user pasted one) → empty (don't double up)
+ *
+ * `dynamicMap` is { overrides, cache } as returned by GET /api/tags/emoji-map.
+ * Passing nothing keeps the legacy behaviour (hardcoded map only).
  */
-export function tagEmoji(tag) {
+export function tagEmoji(tag, dynamicMap = null) {
   if (!tag) return '';
   // If the tag already starts with an emoji (non-ASCII leading char), don't double up
   const first = tag.codePointAt(0);
   if (first > 0x2600) return '';
-  return TAG_EMOJI[tag.toLowerCase()] || '';
+  const key = tag.toLowerCase();
+  if (dynamicMap?.overrides && dynamicMap.overrides[key]) {
+    return dynamicMap.overrides[key];
+  }
+  if (TAG_EMOJI[key]) return TAG_EMOJI[key];
+  if (dynamicMap?.cache && dynamicMap.cache[key]) {
+    return dynamicMap.cache[key];
+  }
+  return '';
 }
 
 /**
@@ -87,8 +103,8 @@ export const IMG_EMOJI = {
 /**
  * Returns a display string: "emoji tag" or just "tag" if no emoji found.
  */
-export function tagLabel(tag) {
-  const emoji = tagEmoji(tag);
+export function tagLabel(tag, dynamicMap = null) {
+  const emoji = tagEmoji(tag, dynamicMap);
   return emoji ? `${emoji} ${tag}` : tag;
 }
 
@@ -97,7 +113,7 @@ export function tagLabel(tag) {
  * Falls back to the first codepoint if the tag itself begins with an emoji.
  * Used by the right-side tag strip on journal / notes / conversations list items.
  */
-export function tagEmojisFromTags(tags) {
+export function tagEmojisFromTags(tags, dynamicMap = null) {
   const out = [];
   const seen = new Set();
   for (const raw of tags || []) {
@@ -112,7 +128,11 @@ export function tagEmojisFromTags(tags) {
       const next = tag.codePointAt(glyph.length);
       if (next === 0xfe0f) glyph += '\uFE0F';
     } else {
-      glyph = TAG_EMOJI[tag.toLowerCase()] || '';
+      const key = tag.toLowerCase();
+      glyph = (dynamicMap?.overrides && dynamicMap.overrides[key])
+        || TAG_EMOJI[key]
+        || (dynamicMap?.cache && dynamicMap.cache[key])
+        || '';
     }
     if (glyph && !seen.has(glyph)) {
       seen.add(glyph);

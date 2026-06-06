@@ -170,6 +170,36 @@ router.post('/', async (req, res) => {
         sendEvent('block', processed);
       },
       onDone: async (final) => {
+        // Extract closing_question + time_anchor from the raw stream. The
+        // streaming parser only knows about opening + blocks; these two
+        // fields land at the JSON's top level alongside them. Regex-extract
+        // from the full raw text now that the stream is complete. Both are
+        // forgiving — missing or malformed = null, never throws.
+        let closingQuestion = null;
+        let timeAnchor = null;
+        try {
+          const cqMatch = final.raw.match(/"closing_question"\s*:\s*"((?:\\.|[^"\\])*)"/);
+          if (cqMatch) {
+            try { closingQuestion = JSON.parse('"' + cqMatch[1] + '"').trim() || null; } catch {}
+          }
+          // Match either `"time_anchor": null` or `"time_anchor": { ... }`.
+          const taMatch = final.raw.match(/"time_anchor"\s*:\s*(null|\{[\s\S]*?\})/);
+          if (taMatch && taMatch[1] !== 'null') {
+            try {
+              const ta = JSON.parse(taMatch[1]);
+              if (ta && typeof ta.observation === 'string' && ta.observation.trim()) {
+                timeAnchor = {
+                  anchor_kind: ta.anchor_kind === 'long' ? 'long' : 'short',
+                  days_ago: Number.isFinite(ta.days_ago) ? Math.round(ta.days_ago) : null,
+                  observation: ta.observation.trim(),
+                };
+              }
+            } catch {}
+          }
+          console.log(`[reflect] post-fields: closing_question=${closingQuestion ? '✓' : '✗'} time_anchor=${timeAnchor ? `✓(${timeAnchor.anchor_kind}/${timeAnchor.days_ago}d)` : '✗'}`);
+        } catch (e) {
+          console.warn('[reflect] post-field extraction failed:', e.message);
+        }
         // Salvage path: if the streaming parser couldn't extract any blocks
         // (model emitted truly broken JSON), try the legacy structural salvage
         // on the full raw text and emit those blocks now. Better late than
@@ -219,9 +249,19 @@ router.post('/', async (req, res) => {
           }
         }
 
+        // Emit the post-stream fields BEFORE done so the frontend can render
+        // them as part of the same reflection (not the next page load).
+        if (timeAnchor) sendEvent('time_anchor', { time_anchor: timeAnchor });
+        if (closingQuestion) sendEvent('closing_question', { closing_question: closingQuestion });
+
         // Save consolidated reflection to DB (strip our internal _index field).
         const savedBlocks = finalBlocks.map(({ _index, ...rest }) => rest);
-        const savedData = { opening: openingFinal, blocks: savedBlocks };
+        const savedData = {
+          opening: openingFinal,
+          blocks: savedBlocks,
+          time_anchor: timeAnchor,
+          closing_question: closingQuestion,
+        };
         console.log(`[reflect] Saving ${savedBlocks.length} blocks for entryId=${entryId}, archetypes=${savedBlocks.map(b => b.archetype).join(',')}`);
         if (entryId) {
           try {
@@ -298,15 +338,21 @@ router.get('/:entryId', (req, res) => {
     'SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?'
   ).get(req.params.entryId, req.userId);
   console.log(`[reflect] GET entryId=${req.params.entryId} userId=${req.userId} found=${!!row}`);
-  if (!row) return res.json({ opening: null, blocks: [] });
+  if (!row) return res.json({ opening: null, blocks: [], time_anchor: null, closing_question: null });
   const saved = JSON.parse(safeDecrypt(req.userId, row.blocks));
-  // Support old format (plain array) and new format ({ opening, blocks })
+  // Support old format (plain array), legacy { opening, blocks }, and the
+  // v2 format that also carries { time_anchor, closing_question }.
   if (Array.isArray(saved)) {
     console.log(`[reflect] GET archetypes=${saved.map(b => b.archetype).join(',')}`);
-    res.json({ opening: null, blocks: saved });
+    res.json({ opening: null, blocks: saved, time_anchor: null, closing_question: null });
   } else {
     console.log(`[reflect] GET archetypes=${(saved.blocks || []).map(b => b.archetype).join(',')}`);
-    res.json({ opening: saved.opening || null, blocks: saved.blocks || [] });
+    res.json({
+      opening: saved.opening || null,
+      blocks: saved.blocks || [],
+      time_anchor: saved.time_anchor || null,
+      closing_question: saved.closing_question || null,
+    });
   }
 });
 
@@ -324,23 +370,37 @@ router.put('/:entryId/blocks', (req, res) => {
   if (!owns) return res.status(404).json({ error: 'entry not found' });
 
   // Pull the previous saved blocks so we can flag any block whose content
-  // differs from what was there before as `edited: true`.
+  // differs from what was there before as `edited: true`. Also preserve the
+  // existing time_anchor + closing_question if present — editing blocks
+  // shouldn't drop those.
   let oldBlocks = [];
+  let preservedTimeAnchor = null;
+  let preservedClosingQuestion = null;
   try {
     const prev = db.prepare('SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?').get(entryId, req.userId);
     if (prev) {
       const saved = JSON.parse(safeDecrypt(req.userId, prev.blocks));
       oldBlocks = Array.isArray(saved) ? saved : (saved.blocks || []);
+      if (!Array.isArray(saved)) {
+        preservedTimeAnchor = saved.time_anchor || null;
+        preservedClosingQuestion = saved.closing_question || null;
+      }
     }
   } catch {}
   const tracked = applyPutWithEditTracking(oldBlocks, blocks);
 
   try {
+    const savedData = {
+      opening,
+      blocks: tracked,
+      time_anchor: preservedTimeAnchor,
+      closing_question: preservedClosingQuestion,
+    };
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify({ opening, blocks: tracked })));
-    res.json({ opening, blocks: tracked });
+    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify(savedData)));
+    res.json({ opening, blocks: tracked, time_anchor: preservedTimeAnchor, closing_question: preservedClosingQuestion });
   } catch (err) {
     console.error('[reflect] PUT blocks failed:', err.message);
     res.status(500).json({ error: 'Save failed.' });

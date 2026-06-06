@@ -52,13 +52,6 @@ const RES = isDev ? REPO_ROOT : process.resourcesPath;
 const BACKEND_DIR  = isDev ? path.join(REPO_ROOT, 'backend')        : path.join(RES, 'backend');
 const FRONTEND_DIST = isDev ? path.join(REPO_ROOT, 'frontend', 'dist') : path.join(RES, 'frontend', 'dist');
 const TTS_DIR      = isDev ? REPO_ROOT                              : path.join(RES, 'tts_server');
-// macOS-only YubiKey helper binary. In dev the backend falls back to the
-// .venv-yubikey/bin/python interpreter + repo-root yubikey_helper.py so we
-// don't have to PyInstall on every change. In a packaged build, the helper
-// lives inside the .app's Resources dir.
-const YUBIKEY_HELPER_BIN = isDev
-  ? null  // backend's resolveHelper() picks the dev fallback automatically
-  : path.join(RES, 'yubikey_helper', 'yubikey_helper');
 
 // User data dir is per-OS; Electron picks the right one for us.
 //   Win:   %APPDATA%\Liminal\
@@ -78,6 +71,27 @@ if (isDev && !process.env.LIMINAL_USE_PROD_DATA) {
 }
 const USER_DATA = app.getPath('userData');
 fs.mkdirSync(USER_DATA, { recursive: true });
+
+// ── GPU compositing fallback ─────────────────────────────────────────────────
+// Some integrated GPUs (notably Intel Iris Xe on certain driver versions)
+// silently fail to composite Chromium's output — the renderer loads fine but
+// the window paints pure black. Loading the same UI in a browser works because
+// the browser uses its own GPU stack. The fix is to disable Electron's
+// hardware acceleration, which forces software compositing (imperceptible for
+// a text-and-CSS app like this).
+//
+// We don't disable it for everyone — capable machines keep GPU compositing.
+// Instead a flag file `gpu-disabled.flag` (written by the tray menu item
+// "Fix black screen", or by auto-recovery on a detected GPU crash) opts the
+// machine into software rendering. Setting LIMINAL_DISABLE_GPU=1 also works.
+const GPU_DISABLE_FLAG = path.join(USER_DATA, 'gpu-disabled.flag');
+try {
+  if (process.env.LIMINAL_DISABLE_GPU === '1' || fs.existsSync(GPU_DISABLE_FLAG)) {
+    app.disableHardwareAcceleration();
+    try { fs.appendFileSync(path.join(USER_DATA, 'electron-boot.log'),
+      `[${new Date().toISOString()}] hardware acceleration DISABLED (gpu-disabled flag present)\n`); } catch {}
+  }
+} catch {}
 
 // ── Single-instance lock ─────────────────────────────────────────────────────
 // If a previous instance is still cleaning up (tray-Quit runs an async
@@ -449,11 +463,6 @@ function spawnBackend() {
     LIMINAL_CONTROL_URL: `http://127.0.0.1:${controlPort}`,
     NODE_ENV: isDev ? 'development' : 'production',
   };
-  // Only set the helper path env var in packaged builds; in dev the backend's
-  // resolveHelper() falls back to the repo-root .venv-yubikey + .py script.
-  if (YUBIKEY_HELPER_BIN) {
-    env.LIMINAL_YUBIKEY_HELPER = YUBIKEY_HELPER_BIN;
-  }
 
   const serverEntry = path.join(BACKEND_DIR, 'server.js');
   // In a packaged app, electron itself can run plain Node scripts via
@@ -466,6 +475,11 @@ function spawnBackend() {
     cwd: BACKEND_DIR,
     env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
+    // windowsHide suppresses the console window that would otherwise flash
+    // on every backend spawn. Critical because the backend can crash-loop
+    // (each restart = new spawn = new flash); without this you see N console
+    // windows pop in and out across a session.
+    windowsHide: true,
   });
 
   const out = openLogStream('backend');
@@ -517,6 +531,10 @@ function spawnTts() {
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Suppress flash console window on Windows. TTS server can crash-loop
+      // during model swaps or device-state churn — same flash risk as the
+      // backend spawn above.
+      windowsHide: true,
     });
 
     const out = openLogStream('tts_server');
@@ -606,6 +624,27 @@ async function createWindow() {
     forceShow();
   });
   setTimeout(forceShow, 1200);
+
+  // Auto-recovery for the detectable GPU-crash flavour of black screen: if the
+  // GPU process dies, write the gpu-disabled flag and relaunch into software
+  // compositing. (The silent compositing-failure flavour doesn't fire this —
+  // that's what the tray "Fix black screen" item is for.) Only fires once, and
+  // only if we're not already in software mode.
+  if (!fs.existsSync(GPU_DISABLE_FLAG) && process.env.LIMINAL_DISABLE_GPU !== '1') {
+    app.once('child-process-gone', (_e, details) => {
+      if (details?.type === 'GPU' && (details.reason === 'crashed' || details.reason === 'abnormal-exit')) {
+        try { fs.writeFileSync(GPU_DISABLE_FLAG, '1'); } catch {}
+        try { fs.appendFileSync(path.join(USER_DATA, 'electron-boot.log'),
+          `[${new Date().toISOString()}] GPU process gone (${details.reason}) — disabling accel + relaunching\n`); } catch {}
+        if (isQuitting) return;
+        isQuitting = true;
+        app.relaunch();
+        try { killChild(backendProc); } catch {}
+        try { killChild(ttsProc); } catch {}
+        app.exit(0);
+      }
+    });
+  }
 
   // Minimize to tray instead of closing
   mainWindow.on('close', (e) => {
@@ -941,6 +980,32 @@ function createTray() {
     {
       label: 'Share Access',
       click: () => showShareAccess(),
+    },
+    { type: 'separator' },
+    {
+      // Black-screen rescue. Usable from the tray even when the main window
+      // is painting black, because the tray process is independent of the
+      // GPU compositor. Toggles the gpu-disabled flag and restarts.
+      label: fs.existsSync(GPU_DISABLE_FLAG)
+        ? 'Re-enable GPU acceleration & restart'
+        : 'Fix black screen (disable GPU) & restart',
+      click: () => {
+        try {
+          if (fs.existsSync(GPU_DISABLE_FLAG)) {
+            fs.rmSync(GPU_DISABLE_FLAG, { force: true });
+          } else {
+            fs.writeFileSync(GPU_DISABLE_FLAG, '1');
+          }
+        } catch {}
+        if (isQuitting) return;
+        isQuitting = true;
+        try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); } catch {}
+        try { if (tray) { tray.destroy(); tray = null; } } catch {}
+        app.relaunch();
+        try { killChild(backendProc); } catch {}
+        try { killChild(ttsProc); } catch {}
+        app.exit(0);
+      },
     },
     { type: 'separator' },
     {

@@ -25,6 +25,7 @@ import { useTtsLoading, useLoadingMessage } from './utils/ttsStatus';
 import { useFont } from './hooks/useFont';
 import { applyFontScale, getFontScale, setFontScale, installZoomShortcuts } from './utils/fontScale';
 import { TutorialProvider, useTutorial } from './components/TutorialContext';
+import { TagEmojiProvider } from './hooks/useTagEmojis';
 import { TOUR_HOST } from './data/tutorials';
 
 // Apply font scale at module load so the very first paint already honours the
@@ -149,6 +150,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
   const {
     blocks,
     opening,
+    timeAnchor,
+    closingQuestion,
     loading: reflectLoading,
     error: reflectError,
     ttsOnline,
@@ -364,6 +367,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
           <MirrorPanel
             blocks={blocks}
             opening={opening}
+            timeAnchor={timeAnchor}
+            closingQuestion={closingQuestion}
             loading={reflectLoading}
             error={reflectError}
             entryText={activeEntry?.body_text || ''}
@@ -607,8 +612,10 @@ export default function App() {
         {authStatus === 'onboarding' && <Onboarding username={username} onComplete={handleOnboardingComplete} />}
         {authStatus === 'ok' && (
           <TutorialProvider initialSeen={tutorialsSeen} hydrated={tutorialsSeenLoaded}>
-            <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} layoutPreference={layoutPreference} />
-            <PendingTourTrigger pending={pendingTour} onConsumed={() => setPendingTour(null)} />
+            <TagEmojiProvider>
+              <AuthenticatedApp username={username} onLogout={handleLogout} isFirstSession={isFirstSession} avatarUrl={avatarUrl} onAvatarChange={setAvatarUrl} lockTimeoutMinutes={lockTimeoutMinutes} layoutPreference={layoutPreference} />
+              <PendingTourTrigger pending={pendingTour} onConsumed={() => setPendingTour(null)} />
+            </TagEmojiProvider>
           </TutorialProvider>
         )}
         {backupSplash && <BackupSplash />}

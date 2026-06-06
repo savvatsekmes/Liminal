@@ -6,6 +6,13 @@ import { useCrisisGate } from '../components/CrisisGate';
 export function useReflect() {
   const [blocks, setBlocks] = useState([]);
   const [opening, setOpening] = useState(null);
+  // v2 reflection fields. Emitted as SSE events after blocks finish (since
+  // they live at the JSON top level alongside opening/blocks). timeAnchor is
+  // nullable — model leaves it null when there's no clear then-vs-now move
+  // to make. closingQuestion is a string, intended to render as a distinct
+  // callout below the blocks.
+  const [timeAnchor, setTimeAnchor] = useState(null);
+  const [closingQuestion, setClosingQuestion] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const ttsOnline = useTtsOnline();
@@ -25,6 +32,8 @@ export function useReflect() {
     // streams in. The MirrorPanel renders empty state during the gap.
     setOpening(null);
     setBlocks([]);
+    setTimeAnchor(null);
+    setClosingQuestion(null);
 
     try {
       // Strip inline base64 image data from HTML before sending — backend reads from DB instead
@@ -103,6 +112,10 @@ export function useReflect() {
               }
               return next;
             });
+          } else if (eventName === 'time_anchor') {
+            setTimeAnchor(payload.time_anchor || null);
+          } else if (eventName === 'closing_question') {
+            setClosingQuestion(payload.closing_question || null);
           } else if (eventName === 'error') {
             streamErr = payload.error || 'Stream error';
           } else if (eventName === 'done') {
@@ -144,6 +157,8 @@ export function useReflect() {
   async function loadReflections(entryId) {
     setBlocks([]);
     setOpening(null);
+    setTimeAnchor(null);
+    setClosingQuestion(null);
     setError(null);
     if (!entryId) return;
     try {
@@ -152,6 +167,8 @@ export function useReflect() {
         const data = await res.json();
         setOpening(data.opening || null);
         setBlocks(data.blocks || []);
+        setTimeAnchor(data.time_anchor || null);
+        setClosingQuestion(data.closing_question || null);
       }
     } catch {}
   }
@@ -159,6 +176,8 @@ export function useReflect() {
   function clearBlocks() {
     setBlocks([]);
     setOpening(null);
+    setTimeAnchor(null);
+    setClosingQuestion(null);
     setError(null);
   }
 
@@ -225,7 +244,7 @@ export function useReflect() {
   }
 
   return {
-    blocks, opening, loading, error, ttsOnline,
+    blocks, opening, timeAnchor, closingQuestion, loading, error, ttsOnline,
     reflect, regenerateBlock, clearBlocks, loadReflections,
     updateBlock, patchBlock, deleteBlock, addBlock,
   };

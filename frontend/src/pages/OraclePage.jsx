@@ -10,11 +10,13 @@ import { useLockedTags } from '../hooks/useLockedTags';
 import { useCoreTags } from '../hooks/useCoreTags';
 import { apiFetch } from '../utils/api';
 import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
+import { useTagEmojis } from '../hooks/useTagEmojis';
+import EmojiPicker from '../components/EmojiPicker';
 
-function TagLabel({ tag }) {
+function TagLabel({ tag, dynamicMap }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
   if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
-  return tagLabel(tag);
+  return tagLabel(tag, dynamicMap);
 }
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
@@ -1716,8 +1718,10 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   const [menu, setMenu] = useState(null);
+  const [picker, setPicker] = useState(null);
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
   const { isCore, makeCore, removeCore } = useCoreTags();
+  const { dynamicMap, setOverride, clearOverride } = useTagEmojis();
   const core = isCore(label);
   const userLocked = isLocked(label);
   // Core tags are auto-locked — × never shows on them, across all surfaces.
@@ -1763,7 +1767,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={locked ? `${label} (locked)` : label}
       >
-        <TagLabel tag={label} />
+        <TagLabel tag={label} dynamicMap={dynamicMap} />
       </button>
       {hover && !locked && (
         <button
@@ -1783,19 +1787,34 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
           ×
         </button>
       )}
-      {menu && (
-        <TagContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={[
-            userLocked
-              ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
-              : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
-            core
-              ? { label: 'Remove from core', onClick: () => removeCore(label) }
-              : { label: 'Make core', onClick: () => makeCore(label) },
-          ]}
+      {menu && (() => {
+        const hasOverride = !!(dynamicMap.overrides && dynamicMap.overrides[label.toLowerCase()]);
+        return (
+          <TagContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              userLocked
+                ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
+                : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
+              core
+                ? { label: 'Remove from core', onClick: () => removeCore(label) }
+                : { label: 'Make core', onClick: () => makeCore(label) },
+              { label: 'Change emoji…', onClick: () => setPicker({ x: menu.x, y: menu.y }) },
+              ...(hasOverride ? [{ label: 'Reset emoji to default', onClick: () => clearOverride(label) }] : []),
+            ]}
+          />
+        );
+      })()}
+      {picker && (
+        <EmojiPicker
+          x={picker.x}
+          y={picker.y}
+          currentEmoji={dynamicMap.overrides?.[label.toLowerCase()] || null}
+          onPick={(e) => setOverride(label, e)}
+          onClear={() => clearOverride(label)}
+          onClose={() => setPicker(null)}
         />
       )}
     </div>
@@ -1805,6 +1824,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
 // ── Sidebar item ────────────────────────────────────────────────────────────
 
 function SidebarItem({ sess, active, onClick, onDelete, onNavigateToSource }) {
+  const { dynamicMap: tagEmojiMap } = useTagEmojis();
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   return (
@@ -1855,7 +1875,7 @@ function SidebarItem({ sess, active, onClick, onDelete, onNavigateToSource }) {
         </div>
       </div>
       {(() => {
-        const emojiTags = tagEmojisFromTags([...(sess.tags || []), ...(sess.auto_tags || [])]);
+        const emojiTags = tagEmojisFromTags([...(sess.tags || []), ...(sess.auto_tags || [])], tagEmojiMap);
         if (!emojiTags.length) return null;
         return (
           <div

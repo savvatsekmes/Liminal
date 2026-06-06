@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
+import { useTagEmojis } from '../hooks/useTagEmojis';
+import EmojiPicker from './EmojiPicker';
 import Calendar from './Calendar';
 import TagContextMenu from './TagContextMenu';
 import { useLockedTags } from '../hooks/useLockedTags';
@@ -472,8 +474,10 @@ function TagPill({ label, active, onClick }) {
 function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
   const [hover, setHover] = useState(false);
   const [menu, setMenu] = useState(null);
+  const [picker, setPicker] = useState(null);
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
   const { isCore, makeCore, removeCore } = useCoreTags();
+  const { dynamicMap, setOverride, clearOverride } = useTagEmojis();
   const core = isCore(label);
   const userLocked = isLocked(label);
   // Core tags are auto-locked — × never shows on them, across all surfaces.
@@ -521,7 +525,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
       >
         {IMG_EMOJI[label.toLowerCase()]
           ? <><img src={IMG_EMOJI[label.toLowerCase()]} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {label}</>
-          : tagLabel(label)}
+          : tagLabel(label, dynamicMap)}
       </button>
       {hover && !locked && (
         <button
@@ -541,19 +545,34 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
           ×
         </button>
       )}
-      {menu && (
-        <TagContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={[
-            userLocked
-              ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
-              : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
-            core
-              ? { label: 'Remove from core', onClick: () => removeCore(label) }
-              : { label: 'Make core', onClick: () => makeCore(label) },
-          ]}
+      {menu && (() => {
+        const hasOverride = !!(dynamicMap.overrides && dynamicMap.overrides[label.toLowerCase()]);
+        return (
+          <TagContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              userLocked
+                ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
+                : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
+              core
+                ? { label: 'Remove from core', onClick: () => removeCore(label) }
+                : { label: 'Make core', onClick: () => makeCore(label) },
+              { label: 'Change emoji…', onClick: () => setPicker({ x: menu.x, y: menu.y }) },
+              ...(hasOverride ? [{ label: 'Reset emoji to default', onClick: () => clearOverride(label) }] : []),
+            ]}
+          />
+        );
+      })()}
+      {picker && (
+        <EmojiPicker
+          x={picker.x}
+          y={picker.y}
+          currentEmoji={dynamicMap.overrides?.[label.toLowerCase()] || null}
+          onPick={(e) => setOverride(label, e)}
+          onClear={() => clearOverride(label)}
+          onClose={() => setPicker(null)}
         />
       )}
     </div>
@@ -599,6 +618,7 @@ function LinkedChatButton({ onClick }) {
 
 function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
   const [hover, setHover] = useState(false);
+  const { dynamicMap } = useTagEmojis();
 
   const tags = entry.tags || [];
   const isFight = tags.includes('fights');
@@ -607,7 +627,7 @@ function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
   // manual + auto. Includes auto_tags so historical entries (before
   // auto-tagging was removed) still surface their LLM-applied glyphs.
   // tagEmojisFromTags dedupes, so manual takes precedence on collisions.
-  const emojiTags = tagEmojisFromTags([...tags, ...(entry.auto_tags || [])]);
+  const emojiTags = tagEmojisFromTags([...tags, ...(entry.auto_tags || [])], dynamicMap);
 
   return (
     <div

@@ -30,11 +30,13 @@ import { MediaRow } from '../extensions/MediaRow';
 import { apiFetch } from '../utils/api';
 import { parseSqliteUtc } from '../utils/dates';
 import { tagLabel, tagEmoji, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
+import { useTagEmojis } from '../hooks/useTagEmojis';
+import EmojiPicker from '../components/EmojiPicker';
 
-function TagLabel({ tag }) {
+function TagLabel({ tag, dynamicMap }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
   if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
-  return tagLabel(tag);
+  return tagLabel(tag, dynamicMap);
 }
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
@@ -817,8 +819,10 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
   const [menu, setMenu] = useState(null); // { x, y }
+  const [picker, setPicker] = useState(null);
   const { isLocked, isAlwaysLocked, lock, unlock } = useLockedTags();
   const { isCore, makeCore, removeCore } = useCoreTags();
+  const { dynamicMap, setOverride, clearOverride } = useTagEmojis();
   const core = isCore(label);
   const userLocked = isLocked(label);
   // Core tags are auto-locked — × never shows on them, across all surfaces.
@@ -871,7 +875,7 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
         }}
         title={locked ? `${label} (locked)` : label}
       >
-        <TagLabel tag={label} />
+        <TagLabel tag={label} dynamicMap={dynamicMap} />
       </button>
       {hover && !locked && (
         <button
@@ -891,19 +895,34 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
           ×
         </button>
       )}
-      {menu && (
-        <TagContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={[
-            userLocked
-              ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
-              : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
-            core
-              ? { label: 'Remove from core', onClick: () => removeCore(label) }
-              : { label: 'Make core', onClick: () => makeCore(label) },
-          ]}
+      {menu && (() => {
+        const hasOverride = !!(dynamicMap.overrides && dynamicMap.overrides[label.toLowerCase()]);
+        return (
+          <TagContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              userLocked
+                ? { label: always ? 'Permanently locked' : 'Unlock tag', disabled: always, onClick: () => unlock(label) }
+                : { label: core ? 'Locked (core tag)' : 'Lock tag', disabled: core, onClick: () => lock(label) },
+              core
+                ? { label: 'Remove from core', onClick: () => removeCore(label) }
+                : { label: 'Make core', onClick: () => makeCore(label) },
+              { label: 'Change emoji…', onClick: () => setPicker({ x: menu.x, y: menu.y }) },
+              ...(hasOverride ? [{ label: 'Reset emoji to default', onClick: () => clearOverride(label) }] : []),
+            ]}
+          />
+        );
+      })()}
+      {picker && (
+        <EmojiPicker
+          x={picker.x}
+          y={picker.y}
+          currentEmoji={dynamicMap.overrides?.[label.toLowerCase()] || null}
+          onPick={(e) => setOverride(label, e)}
+          onClear={() => clearOverride(label)}
+          onClose={() => setPicker(null)}
         />
       )}
     </div>
@@ -943,6 +962,7 @@ function LinkedChatButton({ onClick }) {
 function NoteListItem({ note, active, onClick, onDelete, onNavigateToChat }) {
   const { t } = useLanguage();
   const [hover, setHover] = useState(false);
+  const { dynamicMap } = useTagEmojis();
   const meta = TYPE_META[note.type] || TYPE_META.idea;
   const preview = note.body
     ? note.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || '—'
@@ -988,7 +1008,7 @@ function NoteListItem({ note, active, onClick, onDelete, onNavigateToChat }) {
         </div>
       </div>
       {(() => {
-        const emojiTags = tagEmojisFromTags(note.tags || []);
+        const emojiTags = tagEmojisFromTags(note.tags || [], dynamicMap);
         if (!emojiTags.length) return null;
         return (
           <div
