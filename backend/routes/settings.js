@@ -1221,16 +1221,36 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
       INSERT INTO thread_nodes (thread_id, content_type, content_id, created_at)
       VALUES (@thread_id, @content_type, @content_id, @created_at)
     `);
+    // Defensive: a thread name/description/insight should arrive here as
+    // PLAINTEXT (the export decrypts, or the v5 restore decrypts with the
+    // backup key before this point). If it's still ciphertext, encryptField
+    // would store it unchanged (its isEncrypted guard skips re-encryption),
+    // producing a thread whose name can't be decrypted with the importing
+    // user's key — exactly the "lenc:v1: junk thread" corruption. Recover by
+    // trying the current user's key; if that also fails, the thread is
+    // unrecoverable, so skip it rather than create undecryptable junk.
+    const SENT = 'lenc:v1:';
+    const ensurePlain = (v) => {
+      const s = v == null ? '' : String(v);
+      if (!s.startsWith(SENT)) return s;            // already plaintext
+      const tryPlain = safeDecrypt(userId, s);       // maybe it's our own ciphertext
+      return String(tryPlain).startsWith(SENT) ? null : tryPlain; // null = unrecoverable
+    };
+    let skippedCorruptThreads = 0;
     for (const th of data.threads) {
       try {
+        const plainName = ensurePlain(th.name);
+        if (plainName === null) { skippedCorruptThreads++; counts.skipped++; continue; }
+        const plainDesc = ensurePlain(th.description);
+        const plainInsight = ensurePlain(th.insight);
         const res = insertThread.run({
           user_id: userId,
-          name: enc(th.name || ''),
-          description: enc(th.description || ''),
+          name: enc(plainName || ''),
+          description: enc(plainDesc || ''),
           status: th.status || 'active',
           weight: th.weight || 'medium',
           kind: th.kind || 'novel',
-          insight: enc(th.insight || ''),
+          insight: enc(plainInsight || ''),
           detected_at: th.detected_at || new Date().toISOString(),
           updated_at: th.updated_at || th.detected_at || new Date().toISOString(),
         });
@@ -1254,6 +1274,9 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
           } catch { counts.skipped++; }
         }
       } catch { counts.skipped++; }
+    }
+    if (skippedCorruptThreads > 0) {
+      console.warn(`[restore] skipped ${skippedCorruptThreads} thread(s) whose name could not be decrypted — prevented undecryptable junk threads.`);
     }
   }
 

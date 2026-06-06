@@ -125,45 +125,77 @@ async function callOllama(systemPrompt, userMessage, options = {}) {
   const ollamaUrl = options.ollamaUrl || cfg.ollamaUrl;
   const model = options.model || cfg.ollamaModel;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT);
+  // Retry transient connection failures. Ollama occasionally drops the socket
+  // mid-request when it's swapping models, cold-loading, or under brief VRAM
+  // pressure — node fetch surfaces these as a thrown error with an empty/“fetch
+  // failed” reason. A single drop used to abort heavy multi-call operations
+  // (notably thread detection, which fires 8-16 calls back-to-back). We retry
+  // network-level errors and 503 (model loading) with a short backoff; we do
+  // NOT retry 404 (model genuinely missing) or a real timeout abort.
+  const MAX_ATTEMPTS = 3;
+  let lastErr = null;
 
-  let response;
-  try {
-    response = await fetch(`${ollamaUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        stream: false,
-        think: options.think ?? cfg.ollamaThink ?? false,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        options: {
-          num_ctx: options.numCtx || 8192,
-        },
-      }),
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    if (response.status === 404) {
-      throw new Error(`Model "${model}" not found in Ollama. Pull it first with: ollama pull ${model}`);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT);
+    let response;
+    try {
+      response = await fetch(`${ollamaUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          stream: false,
+          think: options.think ?? cfg.ollamaThink ?? false,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          options: {
+            num_ctx: options.numCtx || 8192,
+          },
+        }),
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      // AbortError = genuine timeout — don't retry, surface immediately.
+      if (err.name === 'AbortError') {
+        throw new Error(`Ollama request timed out after ${OLLAMA_TIMEOUT / 1000}s`);
+      }
+      // Network-level failure (connection reset, socket hang up). Retry.
+      lastErr = err;
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[ollama] connection failed (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${attempt}s: ${err.message || err.cause?.code || 'network error'}`);
+        await new Promise((r) => setTimeout(r, attempt * 1000));
+        continue;
+      }
+      throw new Error(`Ollama connection failed after ${MAX_ATTEMPTS} attempts: ${err.message || 'network error'}`);
     }
-    throw new Error(`Ollama request failed: ${response.status} ${response.statusText}${errText ? ' — ' + errText : ''}`);
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      if (response.status === 404) {
+        throw new Error(`Model "${model}" not found in Ollama. Pull it first with: ollama pull ${model}`);
+      }
+      // 503 = model loading; retry. Other HTTP errors: surface.
+      if (response.status === 503 && attempt < MAX_ATTEMPTS) {
+        console.warn(`[ollama] 503 model-loading (attempt ${attempt}/${MAX_ATTEMPTS}), retrying…`);
+        await new Promise((r) => setTimeout(r, attempt * 1000));
+        continue;
+      }
+      throw new Error(`Ollama request failed: ${response.status} ${response.statusText}${errText ? ' — ' + errText : ''}`);
+    }
+
+    const data = await response.json();
+    // Strip any <think>...</think> tags that reasoning models may include,
+    // then strip any safety meta-reasoning that leaked outside <think>.
+    const noThink = (data.message?.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+    return stripModelMeta(noThink);
   }
 
-  const data = await response.json();
-  // Strip any <think>...</think> tags that reasoning models may include,
-  // then strip any safety meta-reasoning that leaked outside <think>.
-  const noThink = (data.message?.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
-  return stripModelMeta(noThink);
+  throw new Error(`Ollama connection failed: ${lastErr?.message || 'unknown'}`);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

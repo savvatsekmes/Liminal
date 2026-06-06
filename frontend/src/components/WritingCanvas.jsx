@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useDictation } from '../hooks/useDictation';
 import { useTagSuggestions } from '../hooks/useTagSuggestions';
 import { tagLabel, IMG_EMOJI } from '../utils/tagEmoji';
+import { useTagEmojis } from '../hooks/useTagEmojis';
 
-function TagLabel({ tag }) {
+function TagLabel({ tag, dynamicMap }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
   if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
-  return tagLabel(tag);
+  return tagLabel(tag, dynamicMap);
 }
 import MicButton from './MicButton';
 import { useCrisisGate } from './CrisisGate';
@@ -943,6 +944,16 @@ function ChatBubbleIcon({ linked }) {
 function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismissSuggestion, onTagsChange, onAutoTagsChange, ...rest }) {
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState('');
+  const { dynamicMap, primeUnknown } = useTagEmojis();
+
+  // Prime emoji lookups for any unknown tags shown in this selector — the
+  // entry's own tags AND the live LLM suggestions — so they light up with
+  // their emoji on the next render instead of appearing bare. The backend
+  // also primes suggested tags' emojis when it returns them; this is the
+  // frontend half that pulls those into the shared map.
+  useEffect(() => {
+    primeUnknown([...(tags || []), ...(autoTags || []), ...(suggestedTags || [])]);
+  }, [tags, autoTags, suggestedTags, primeUnknown]);
 
   // A toggle on a pill flips it within whichever list currently holds it.
   // Manual pills toggle in `tags`, auto pills toggle in `auto_tags`. A pill
@@ -1045,7 +1056,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => toggleTag(tag)}
           title="Manual tag — click to remove"
         >
-          <TagLabel tag={tag} />
+          <TagLabel tag={tag} dynamicMap={dynamicMap} />
         </button>
       ))}
       {sortedAuto.map((tag) => (
@@ -1055,7 +1066,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => toggleTag(tag)}
           title="Suggested tag — click to remove"
         >
-          <TagLabel tag={tag} />
+          <TagLabel tag={tag} dynamicMap={dynamicMap} />
         </button>
       ))}
       {sortedOther.map((tag) => (
@@ -1065,7 +1076,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => toggleTag(tag)}
           title="Filter tag — click to add to this entry"
         >
-          <TagLabel tag={tag} />
+          <TagLabel tag={tag} dynamicMap={dynamicMap} />
         </button>
       ))}
       {freshSuggestions.map((tag) => (
@@ -1075,7 +1086,7 @@ function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismi
           onClick={() => applySuggestion(tag)}
           title="Suggested — click to add"
         >
-          + <TagLabel tag={tag} />
+          + <TagLabel tag={tag} dynamicMap={dynamicMap} />
         </button>
       ))}
       {adding ? (
