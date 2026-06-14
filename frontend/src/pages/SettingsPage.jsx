@@ -384,6 +384,9 @@ const RECOMMENDED_MODELS = [
   { name: 'llama3.2:3b',  desc: 'Lightweight · 4GB VRAM · solid all-rounder' },
   { name: 'gemma3:4b',    desc: 'Lightweight · 5GB VRAM · Google · very capable' },
   // Mid-range — 6-10 GB VRAM (RTX 3060, RTX 4060, M1 Pro/M2 Pro)
+  // gemma4:12b leads the tier — the 12B sweet spot where reflections stop
+  // having tells: clean candor, no fabrication, accurate on dense material.
+  { name: 'gemma4:12b',   desc: '★ Recommended · Mid-range · 9GB VRAM · Google · best-balanced reflections' },
   { name: 'qwen3.5:9b',   desc: 'Mid-range · 6.6GB · strong multilingual + vision' },
   { name: 'mistral:7b',   desc: 'Mid-range · 7GB VRAM · excellent reasoning' },
   { name: 'llama3.1:8b',  desc: 'Mid-range · 8GB VRAM · high quality' },
