@@ -259,16 +259,29 @@ export default function MirrorPanel({
   async function handleReadOpening() {
     if (readingOpening) { stopSpeak(openingAudioRef, readingCancelledRef); setReadingOpening(false); return; }
     if (!opening) return;
+    // The time-anchor callback renders directly under the opening in the same
+    // block, so reading the opening aloud must include it — otherwise the spoken
+    // version silently drops the look-back sentence the user can see on screen.
+    const openingText = [opening, timeAnchor && timeAnchor.observation]
+      .filter(Boolean).join('\n\n');
     readingCancelledRef.current = false;
     setReadingOpening(true);
-    await streamSpeak(opening, openingAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
+    await streamSpeak(openingText, openingAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
     setReadingOpening(false);
   }
 
   async function handleReadAll() {
     if (readingAll) { stopSpeak(ttsAudioRef, readingCancelledRef); setReadingAll(false); return; }
     if (!blocks.length) return;
-    const fullText = [opening, ...blocks.map(b => [b.title, b.body, b.quote].filter(Boolean).join('. '))].filter(Boolean).join('\n\n');
+    // Read order mirrors what's on screen: opening, the time-anchor callback,
+    // every block, then the closing question. timeAnchor + closingQuestion were
+    // added after this handler and were being skipped by the read-all.
+    const fullText = [
+      opening,
+      timeAnchor && timeAnchor.observation,
+      ...blocks.map(b => [b.title, b.body, b.quote].filter(Boolean).join('. ')),
+      closingQuestion,
+    ].filter(Boolean).join('\n\n');
     if (!fullText.trim()) return;
     readingCancelledRef.current = false;
     setReadingAll(true);
