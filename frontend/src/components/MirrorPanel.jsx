@@ -201,7 +201,9 @@ export default function MirrorPanel({
   const { t } = useLanguage();
   const [readingAll, setReadingAll] = useState(false);
   const [readingOpening, setReadingOpening] = useState(false);
+  const [readingClosing, setReadingClosing] = useState(false);
   const openingAudioRef = useRef(null);
+  const closingAudioRef = useRef(null);
   const ttsAudioRef = useRef(null);
   const readingCancelledRef = useRef(false);
   const [archetypeOpen, setArchetypeOpen] = useState(false);
@@ -268,6 +270,15 @@ export default function MirrorPanel({
     setReadingOpening(true);
     await streamSpeak(openingText, openingAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
     setReadingOpening(false);
+  }
+
+  async function handleReadClosing() {
+    if (readingClosing) { stopSpeak(closingAudioRef, readingCancelledRef); setReadingClosing(false); return; }
+    if (!closingQuestion) return;
+    readingCancelledRef.current = false;
+    setReadingClosing(true);
+    await streamSpeak(closingQuestion, closingAudioRef, readingCancelledRef, { archetype: activeReadArchetype() });
+    setReadingClosing(false);
   }
 
   async function handleReadAll() {
@@ -390,14 +401,36 @@ if (previewVersion) {
             padding: '20px 24px',
             background: 'var(--near-white)',
             borderRadius: '10px',
-            borderLeft: '2px solid var(--border)',
             fontSize: '14px',
             fontStyle: 'italic',
+            fontWeight: 600,
             lineHeight: 1.75,
             color: 'var(--strong)',
             textAlign: 'left',
           }}>
             {closingQuestion}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '10px', border: 'none', background: 'none', color: readingClosing ? 'var(--strong)' : 'var(--muted)', cursor: 'pointer', padding: 0, transition: 'color 0.12s' }}
+                onClick={handleReadClosing}
+                aria-label={readingClosing ? 'Stop' : 'Listen'}
+              >
+                <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+                  <rect x="1" y={readingClosing ? 2 : 4} width="2" height={readingClosing ? 10 : 6} rx="1" fill="currentColor">
+                    {readingClosing && <animate attributeName="height" values="10;4;10" dur="0.8s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="4.5" y={readingClosing ? 0 : 2} width="2" height={readingClosing ? 14 : 10} rx="1" fill="currentColor">
+                    {readingClosing && <animate attributeName="height" values="14;6;14" dur="0.6s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="8" y={readingClosing ? 3 : 5} width="2" height={readingClosing ? 8 : 4} rx="1" fill="currentColor">
+                    {readingClosing && <animate attributeName="height" values="8;3;8" dur="0.7s" repeatCount="indefinite" />}
+                  </rect>
+                  <rect x="11.5" y={readingClosing ? 1 : 3} width="2" height={readingClosing ? 12 : 8} rx="1" fill="currentColor">
+                    {readingClosing && <animate attributeName="height" values="12;5;12" dur="0.9s" repeatCount="indefinite" />}
+                  </rect>
+                </svg>
+              </button>
+            </div>
           </div>
         )}
       </div>
