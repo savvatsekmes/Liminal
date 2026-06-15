@@ -458,7 +458,7 @@ function OllamaModelBrowser({ installedNames, ollamaOnline, onDownloaded }) {
         <select
           value={selected}
           onChange={e => setSelected(e.target.value)}
-          style={{ flex: 1, fontSize: '12px', padding: '6px 8px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)', color: 'var(--strong)', outline: 'none', fontFamily: 'var(--font)' }}
+          style={{ flex: 1, minWidth: 0, fontSize: '12px', padding: '6px 8px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)', color: 'var(--strong)', outline: 'none', fontFamily: 'var(--font)' }}
         >
           <option value=''>{t('settings.selectModel')}</option>
           {RECOMMENDED_MODELS.map(x => (
