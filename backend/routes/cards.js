@@ -77,7 +77,7 @@ router.get('/daily', async (req, res) => {
   // invalidates the cache and the next call regenerates the reading in the
   // new language. The `date` column isn't queried elsewhere so suffixing is safe.
   const lang = require('../services/settingsService').get('language') || 'en';
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = require('../dateUtil').localDateStr(); // local YYYY-MM-DD
   const dateKey = `${today}:${lang}`;
 
   // Check cache (skip with ?refresh=1)

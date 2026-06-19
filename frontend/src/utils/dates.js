@@ -21,3 +21,17 @@ export function parseSqliteUtc(s) {
   }
   return new Date(s);
 }
+
+// Today's date as a LOCAL "YYYY-MM-DD" string.
+//
+// `new Date().toISOString()` is UTC, which rolls the calendar date back a day
+// for users east of UTC (e.g. Australia, UTC+10) all morning — so journal
+// entries and notes get filed under "yesterday". Journaling dates are logical
+// local days, so build the string from local-time getters.
+export function todayLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}

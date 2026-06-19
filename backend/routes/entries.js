@@ -127,7 +127,7 @@ router.post('/', (req, res) => {
       `INSERT INTO entries (title, body, body_text, date, tags, user_id, moon_phase, moon_sign, sky_notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(title, encBody, encBodyText, date || now.toISOString().split('T')[0], JSON.stringify(tags), req.userId, moon.phase, moon.moonSign, skyNotes || null);
+    .run(title, encBody, encBodyText, date || require('../dateUtil').localDateStr(now), JSON.stringify(tags), req.userId, moon.phase, moon.moonSign, skyNotes || null);
 
   const entry = entryRow(req.userId, db.prepare('SELECT * FROM entries WHERE id = ?').get(result.lastInsertRowid));
 

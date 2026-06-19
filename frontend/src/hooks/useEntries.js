@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { lockbug } from '../utils/lockbugLog';
+import { todayLocal } from '../utils/dates';
 
 const API = '/api';
 
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return todayLocal();
 }
 
 export function useEntries() {

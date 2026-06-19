@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
+import { todayLocal } from '../utils/dates';
 
 const SUN_SIGN_TO_TAROT = {
   'Aries':       'The Emperor',
@@ -945,7 +946,7 @@ function BirthDetailsStep({ data, set, onContinue, onBack, saving }) {
   }
 
   const { t } = useLanguage();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const canContinue = dobStatus === 'ok' && !calculating;
 
   return (
