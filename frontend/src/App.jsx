@@ -152,6 +152,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     opening,
     timeAnchor,
     closingQuestion,
+    extractedItems,
     loading: reflectLoading,
     error: reflectError,
     ttsOnline,
@@ -369,6 +370,7 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             opening={opening}
             timeAnchor={timeAnchor}
             closingQuestion={closingQuestion}
+            extractedItems={extractedItems}
             loading={reflectLoading}
             error={reflectError}
             entryText={activeEntry?.body_text || ''}

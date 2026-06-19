@@ -66,14 +66,14 @@ router.delete('/custom-tags/:tag', (req, res) => {
 
 // ── POST /api/notes ───────────────────────────────────────────────────────────
 router.post('/', (req, res) => {
-  const { type = 'idea', body = '', attribution, target_date, custom_tag, tags = [], auto_tags = [] } = req.body;
+  const { type = 'idea', title, body = '', attribution, target_date, custom_tag, tags = [], auto_tags = [] } = req.body;
   const normalised = normaliseTagPair(tags, auto_tags);
   const result = db
     .prepare(
-      `INSERT INTO notes (type, body, attribution, target_date, custom_tag, tags, auto_tags, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO notes (type, title, body, attribution, target_date, custom_tag, tags, auto_tags, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(type, encryptField(req.userId, body), attribution || null, target_date || null, custom_tag || null, JSON.stringify(normalised.tags), JSON.stringify(normalised.auto_tags), req.userId);
+    .run(type, title || null, encryptField(req.userId, body), attribution || null, target_date || null, custom_tag || null, JSON.stringify(normalised.tags), JSON.stringify(normalised.auto_tags), req.userId);
 
   // Rosary bead: thread this note into the graph if it already has content.
   // Empty shells (created before autosave fills them) are skipped — the
@@ -243,6 +243,53 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
 
 // ── POST /api/notes/:id/reflect ───────────────────────────────────────────────
 // Generate a Mirror-style reflection on a note
+// note_reflections.blocks historically stored a bare blocks array. We now store
+// an object { blocks, extracted_items } so captured items persist for notes.
+// These helpers read/write transparently across both shapes.
+function readNoteReflection(noteId, userId) {
+  const row = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?').get(noteId, userId);
+  if (!row) return { blocks: [], extracted_items: null };
+  try {
+    const parsed = JSON.parse(safeDecrypt(userId, row.blocks));
+    if (Array.isArray(parsed)) return { blocks: parsed, extracted_items: null };
+    return { blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [], extracted_items: parsed.extracted_items || null };
+  } catch {
+    return { blocks: [], extracted_items: null };
+  }
+}
+function saveNoteReflection(noteId, userId, blocks, extractedItems) {
+  db.prepare(`
+    INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
+  `).run(noteId, userId, encryptField(userId, JSON.stringify({ blocks, extracted_items: extractedItems || null })));
+}
+
+// ── POST /api/notes/captured-check ──────────────────────────────────────────
+// Given a list of { tag, text } captured items, return a parallel boolean array
+// marking which already exist as a note (same tag + same body text). Backs the
+// "already added" state in the captured-items section so the user can't file a
+// duplicate. Note bodies are encrypted, so we decrypt per-tag once and match.
+router.post('/captured-check', (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!items.length) return res.json({ results: [] });
+  const norm = (s) => String(s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const cleanTag = (t) => String(t || '').replace(/[^a-z0-9_-]/gi, '');
+  const tags = [...new Set(items.map(i => cleanTag(i.tag)).filter(Boolean))];
+  const existingByTag = {};
+  for (const tag of tags) {
+    const rows = db.prepare('SELECT body FROM notes WHERE user_id = ? AND tags LIKE ?').all(req.userId, `%"${tag}"%`);
+    const set = new Set();
+    for (const r of rows) { try { set.add(norm(safeDecrypt(req.userId, r.body))); } catch {} }
+    existingByTag[tag] = set;
+  }
+  const results = items.map(i => {
+    const set = existingByTag[cleanTag(i.tag)];
+    return !!(set && set.has(norm(i.text)));
+  });
+  res.json({ results });
+});
+
 router.post('/:id/reflect', async (req, res) => {
   const note = db.prepare('SELECT * FROM notes WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!note) return res.status(404).json({ error: 'Note not found' });
@@ -478,14 +525,25 @@ ${toneBlockNote}`;
           sendEvent('block', fallback);
         }
 
-        // Persist (strip our internal _index field).
         const savedBlocks = finalBlocks.map(({ _index, ...rest }) => rest);
+
+        // Captured items — focused second pass scraping goals / gratitudes /
+        // dreams / books / affirmations, streamed in last. Best-effort; never
+        // blocks the reflection. Computed BEFORE the save so it persists.
+        let extracted = null;
         try {
-          db.prepare(`
-            INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-          `).run(note.id, req.userId, encryptField(req.userId, JSON.stringify(savedBlocks)));
+          extracted = await require('../services/extractService').extractActionItems(noteText, lang);
+          if (extracted && Object.values(extracted).some(a => a.length)) {
+            sendEvent('extracted_items', { extracted });
+          }
+        } catch (e) {
+          console.warn('[notes/reflect] extraction failed:', e.message);
+        }
+
+        // Persist as { blocks, extracted_items } (legacy rows are a bare array;
+        // saveNoteReflection / readNoteReflection handle both shapes).
+        try {
+          saveNoteReflection(note.id, req.userId, savedBlocks, extracted);
         } catch (e) {
           console.error('[notes/reflect] save failed:', e.message);
         }
@@ -519,20 +577,12 @@ router.put('/:id/reflect/blocks', (req, res) => {
   const owns = db.prepare('SELECT 1 FROM notes WHERE id = ? AND user_id = ?').get(noteId, req.userId);
   if (!owns) return res.status(404).json({ error: 'note not found' });
 
-  let oldBlocks = [];
-  try {
-    const prev = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?').get(noteId, req.userId);
-    if (prev) oldBlocks = JSON.parse(safeDecrypt(req.userId, prev.blocks));
-  } catch {}
-  const tracked = applyPutWithEditTracking(oldBlocks, blocks);
+  const prev = readNoteReflection(noteId, req.userId);
+  const tracked = applyPutWithEditTracking(prev.blocks, blocks);
 
   try {
-    db.prepare(`
-      INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-    `).run(noteId, req.userId, encryptField(req.userId, JSON.stringify(tracked)));
-    res.json({ blocks: tracked });
+    saveNoteReflection(noteId, req.userId, tracked, prev.extracted_items);
+    res.json({ blocks: tracked, extracted_items: prev.extracted_items });
   } catch (err) {
     console.error('[notes] PUT reflect/blocks failed:', err.message);
     res.status(500).json({ error: 'Save failed.' });
@@ -551,21 +601,19 @@ router.patch('/:id/reflect/blocks/:index', (req, res) => {
   const owns = db.prepare('SELECT 1 FROM notes WHERE id = ? AND user_id = ?').get(noteId, req.userId);
   if (!owns) return res.status(404).json({ error: 'note not found' });
 
-  const row = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?').get(noteId, req.userId);
-  if (!row) return res.status(404).json({ error: 'reflection not found' });
+  const prev = readNoteReflection(noteId, req.userId);
+  if (!prev.blocks.length && !db.prepare('SELECT 1 FROM note_reflections WHERE note_id = ? AND user_id = ?').get(noteId, req.userId)) {
+    return res.status(404).json({ error: 'reflection not found' });
+  }
 
   try {
-    const blocks = JSON.parse(safeDecrypt(req.userId, row.blocks));
+    const blocks = prev.blocks;
     if (!Array.isArray(blocks) || index < 0 || index >= blocks.length) {
       return res.status(400).json({ error: 'index out of range' });
     }
     blocks[index] = applyPatchWithEditTracking(blocks[index], patch);
-    db.prepare(`
-      INSERT INTO note_reflections (note_id, user_id, blocks, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(note_id, user_id) DO UPDATE SET blocks = excluded.blocks, updated_at = CURRENT_TIMESTAMP
-    `).run(noteId, req.userId, encryptField(req.userId, JSON.stringify(blocks)));
-    res.json({ blocks });
+    saveNoteReflection(noteId, req.userId, blocks, prev.extracted_items);
+    res.json({ blocks, extracted_items: prev.extracted_items });
   } catch (err) {
     console.error('[notes] PATCH reflect block failed:', err.message);
     res.status(500).json({ error: 'Save failed.' });
@@ -575,14 +623,8 @@ router.patch('/:id/reflect/blocks/:index', (req, res) => {
 // ── GET /api/notes/:id/reflect ─────────────────────────────────────────────
 // Load a previously saved reflection for a note
 router.get('/:id/reflect', (req, res) => {
-  const row = db.prepare('SELECT blocks FROM note_reflections WHERE note_id = ? AND user_id = ?')
-    .get(req.params.id, req.userId);
-  if (!row) return res.json({ blocks: [] });
-  try {
-    res.json({ blocks: JSON.parse(safeDecrypt(req.userId, row.blocks)) });
-  } catch {
-    res.json({ blocks: [] });
-  }
+  const { blocks, extracted_items } = readNoteReflection(req.params.id, req.userId);
+  res.json({ blocks, extracted_items });
 });
 
 module.exports = router;

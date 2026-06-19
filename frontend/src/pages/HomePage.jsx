@@ -1247,8 +1247,8 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
 
   // Tag widget configs — id → backend source + tag
   const TAG_WIDGET_CONFIG = {
-    gratitude:    { source: 'entries', tag: 'gratitude' },
-    dreams:       { source: 'entries', tag: 'dream' },
+    gratitude:    { source: 'both',    tag: 'gratitude' },
+    dreams:       { source: 'both',    tag: 'dream' },
     reading:      { source: 'notes',   tag: 'reading' },
     bucket:       { source: 'notes',   tag: 'bucket' },
     affirmations: { source: 'notes',   tag: 'affirmation' },
@@ -2210,8 +2210,15 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
         const cfg = TAG_WIDGET_CONFIG[widgetId];
         const items = tagged[widgetId] || [];
         const label = t(WIDGET_LABELS[widgetId] || widgetId);
-        const onClick = cfg.source === 'entries' ? onNavigateToEntry : onNavigateToNote;
-        const sourceLabel = cfg.source === 'entries' ? t('home.sourceJournal') : t('home.sourceNotes');
+        // Route per item: with source 'both', each item carries its own kind
+        // (entry vs note). Single-source widgets fall back to the config.
+        const routeItem = (it) =>
+          (it.kind === 'entry' || (!it.kind && cfg.source === 'entries'))
+            ? onNavigateToEntry?.(it.id)
+            : onNavigateToNote?.(it.id);
+        const sourceLabel = cfg.source === 'entries' ? t('home.sourceJournal')
+          : cfg.source === 'both' ? t('home.sourceJournalNotes')
+          : t('home.sourceNotes');
         return (
           <div style={{ ...s.themesRhythmPill, ...(isMobile ? { padding: '14px 16px', borderRadius: '12px' } : {}) }}>
             <div style={s.themesHeader}>
@@ -2222,8 +2229,8 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
                 {items.map((it, i) => (
                   <div
-                    key={it.id}
-                    onClick={() => onClick?.(it.id)}
+                    key={`${it.kind || cfg.source}-${it.id}`}
+                    onClick={() => routeItem(it)}
                     style={{
                       display: 'flex',
                       alignItems: 'flex-start',

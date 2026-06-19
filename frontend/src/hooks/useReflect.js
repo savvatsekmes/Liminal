@@ -13,6 +13,9 @@ export function useReflect() {
   // callout below the blocks.
   const [timeAnchor, setTimeAnchor] = useState(null);
   const [closingQuestion, setClosingQuestion] = useState(null);
+  // Captured items scraped from the entry (goals/gratitudes/dreams/books/
+  // affirmations). Emitted as a final SSE event after the reflection blocks.
+  const [extractedItems, setExtractedItems] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const ttsOnline = useTtsOnline();
@@ -34,6 +37,7 @@ export function useReflect() {
     setBlocks([]);
     setTimeAnchor(null);
     setClosingQuestion(null);
+    setExtractedItems(null);
 
     try {
       // Strip inline base64 image data from HTML before sending — backend reads from DB instead
@@ -116,6 +120,8 @@ export function useReflect() {
             setTimeAnchor(payload.time_anchor || null);
           } else if (eventName === 'closing_question') {
             setClosingQuestion(payload.closing_question || null);
+          } else if (eventName === 'extracted_items') {
+            setExtractedItems(payload.extracted || null);
           } else if (eventName === 'error') {
             streamErr = payload.error || 'Stream error';
           } else if (eventName === 'done') {
@@ -159,6 +165,7 @@ export function useReflect() {
     setOpening(null);
     setTimeAnchor(null);
     setClosingQuestion(null);
+    setExtractedItems(null);
     setError(null);
     if (!entryId) return;
     try {
@@ -169,6 +176,7 @@ export function useReflect() {
         setBlocks(data.blocks || []);
         setTimeAnchor(data.time_anchor || null);
         setClosingQuestion(data.closing_question || null);
+        setExtractedItems(data.extracted_items || null);
       }
     } catch {}
   }
@@ -178,6 +186,7 @@ export function useReflect() {
     setOpening(null);
     setTimeAnchor(null);
     setClosingQuestion(null);
+    setExtractedItems(null);
     setError(null);
   }
 
@@ -244,7 +253,7 @@ export function useReflect() {
   }
 
   return {
-    blocks, opening, timeAnchor, closingQuestion, loading, error, ttsOnline,
+    blocks, opening, timeAnchor, closingQuestion, extractedItems, loading, error, ttsOnline,
     reflect, regenerateBlock, clearBlocks, loadReflections,
     updateBlock, patchBlock, deleteBlock, addBlock,
   };

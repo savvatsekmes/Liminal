@@ -325,6 +325,19 @@ router.post('/', async (req, res) => {
         if (timeAnchor) sendEvent('time_anchor', { time_anchor: timeAnchor });
         if (closingQuestion) sendEvent('closing_question', { closing_question: closingQuestion });
 
+        // Captured items — a focused second pass that scrapes goals / gratitudes
+        // / dreams / books / affirmations from the entry, streamed in LAST (the
+        // reflection blocks are already on screen). Best-effort: an all-empty
+        // result or a failure never blocks the reflection.
+        let extracted = null;
+        try {
+          extracted = await require('../services/extractService').extractActionItems(text, lang);
+          const any = extracted && Object.values(extracted).some(a => a.length);
+          if (any) sendEvent('extracted_items', { extracted });
+        } catch (e) {
+          console.warn('[reflect] extraction failed:', e.message);
+        }
+
         // Save consolidated reflection to DB (strip our internal _index field).
         const savedBlocks = finalBlocks.map(({ _index, ...rest }) => rest);
         const savedData = {
@@ -332,6 +345,7 @@ router.post('/', async (req, res) => {
           blocks: savedBlocks,
           time_anchor: timeAnchor,
           closing_question: closingQuestion,
+          extracted_items: extracted,
         };
         console.log(`[reflect] Saving ${savedBlocks.length} blocks for entryId=${entryId}, archetypes=${savedBlocks.map(b => b.archetype).join(',')}`);
         if (entryId) {
@@ -423,6 +437,7 @@ router.get('/:entryId', (req, res) => {
       blocks: saved.blocks || [],
       time_anchor: saved.time_anchor || null,
       closing_question: saved.closing_question || null,
+      extracted_items: saved.extracted_items || null,
     });
   }
 });
@@ -447,6 +462,7 @@ router.put('/:entryId/blocks', (req, res) => {
   let oldBlocks = [];
   let preservedTimeAnchor = null;
   let preservedClosingQuestion = null;
+  let preservedExtracted = null;
   try {
     const prev = db.prepare('SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?').get(entryId, req.userId);
     if (prev) {
@@ -455,6 +471,7 @@ router.put('/:entryId/blocks', (req, res) => {
       if (!Array.isArray(saved)) {
         preservedTimeAnchor = saved.time_anchor || null;
         preservedClosingQuestion = saved.closing_question || null;
+        preservedExtracted = saved.extracted_items || null;
       }
     }
   } catch {}
@@ -466,12 +483,13 @@ router.put('/:entryId/blocks', (req, res) => {
       blocks: tracked,
       time_anchor: preservedTimeAnchor,
       closing_question: preservedClosingQuestion,
+      extracted_items: preservedExtracted,
     };
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
     ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify(savedData)));
-    res.json({ opening, blocks: tracked, time_anchor: preservedTimeAnchor, closing_question: preservedClosingQuestion });
+    res.json({ opening, blocks: tracked, time_anchor: preservedTimeAnchor, closing_question: preservedClosingQuestion, extracted_items: preservedExtracted });
   } catch (err) {
     console.error('[reflect] PUT blocks failed:', err.message);
     res.status(500).json({ error: 'Save failed.' });

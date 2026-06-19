@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import MirrorBlock from './MirrorBlock';
 import AILabel from './AILabel';
+import CapturedItems from './CapturedItems';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from './ArchetypeAvatar';
@@ -183,6 +184,7 @@ export default function MirrorPanel({
   opening,
   timeAnchor,
   closingQuestion,
+  extractedItems,
   loading,
   error,
   entryText,
@@ -433,6 +435,9 @@ if (previewVersion) {
             </div>
           </div>
         )}
+        {/* Captured items — goals / gratitudes / dreams / books / affirmations
+            scraped from the entry, streamed in as the final section. */}
+        {!error && <CapturedItems items={extractedItems} />}
       </div>
 
 {/* Archetype picker popup */}

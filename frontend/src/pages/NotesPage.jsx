@@ -40,6 +40,7 @@ function TagLabel({ tag, dynamicMap }) {
 }
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
+import CapturedItems from '../components/CapturedItems';
 import AILabel from '../components/AILabel';
 import MicButton from '../components/MicButton';
 import CardPullModal from '../components/CardPullModal';
@@ -84,7 +85,10 @@ const TYPE_META = {
 
 function formatDate(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
+  // created_at is a SQLite UTC timestamp ("YYYY-MM-DD HH:MM:SS"); parse it as
+  // UTC so it renders on the user's LOCAL day. Parsing the naive string directly
+  // would treat it as local time and show the wrong day east of UTC.
+  return parseSqliteUtc(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase();
 }
 
 export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onNoteSelected, onTalkAboutNote, onNavigateToChat }) {
@@ -137,6 +141,10 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
   const [showCal, setShowCal] = useState(true);
   const [search, setSearch] = useState('');
   const [reflectBlocks, setReflectBlocks] = useState([]);
+  // Captured items scraped from the note (goals/gratitudes/dreams/books/
+  // affirmations), emitted as a final SSE event and persisted with the
+  // reflection so they survive navigating away and back.
+  const [noteExtracted, setNoteExtracted] = useState(null);
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState(null);
   const [previewVersion, setPreviewVersion] = useState(null);
@@ -171,12 +179,16 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
   // Load saved reflection when note changes
   useEffect(() => {
     setReflectBlocks([]);
+    setNoteExtracted(null);
     setReflectError(null);
     setPreviewVersion(null);
     if (!activeNote?.id) return;
     apiFetch(`/api/notes/${activeNote.id}/reflect`)
       .then((r) => r.json())
-      .then((data) => { if (data.blocks?.length) setReflectBlocks(data.blocks); })
+      .then((data) => {
+        if (data.blocks?.length) setReflectBlocks(data.blocks);
+        setNoteExtracted(data.extracted_items || null);
+      })
       .catch(() => {});
   }, [activeNote?.id]);
 
@@ -188,6 +200,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
     setReflectError(null);
     // Clear prior blocks so the new reflection visibly streams in fresh.
     setReflectBlocks([]);
+    setNoteExtracted(null);
     let lang;
     try { lang = localStorage.getItem('lang') || undefined; } catch {}
     try {
@@ -238,6 +251,8 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
               if (typeof _index === 'number' && _index >= 0 && _index < next.length) next[_index] = rest;
               return next;
             });
+          } else if (eventName === 'extracted_items') {
+            setNoteExtracted(payload.extracted || null);
           } else if (eventName === 'error') {
             streamErr = payload.error || 'Stream error';
           }
@@ -690,6 +705,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
           <NoteMirrorPanel
             note={activeNote}
             blocks={reflectBlocks}
+            extractedItems={noteExtracted}
             loading={reflecting}
             error={reflectError}
             onReflect={handleReflect}
@@ -1918,7 +1934,7 @@ function formatVersionDate(isoStr) {
 }
 
 
-function NoteMirrorPanel({ note, blocks, loading, error, onReflect, onUpdateBlock, onPatchBlock, onDeleteBlock, onAddBlock, previewVersion, onClearPreview }) {
+function NoteMirrorPanel({ note, blocks, extractedItems, loading, error, onReflect, onUpdateBlock, onPatchBlock, onDeleteBlock, onAddBlock, previewVersion, onClearPreview }) {
   const { t } = useLanguage();
   const hasContent = note?.body?.trim();
   const [readingAll, setReadingAll] = useState(false);
@@ -2095,6 +2111,9 @@ const panelStyle = {
             onDelete={editMode && onDeleteBlock && note?.id ? () => onDeleteBlock(note.id, i) : undefined}
           />
         ))}
+        {/* Captured items — scraped goals / gratitudes / dreams / books /
+            affirmations, streamed in as the final section. */}
+        {!error && <CapturedItems items={extractedItems} />}
       </div>
 
       {/* Archetype picker popup */}

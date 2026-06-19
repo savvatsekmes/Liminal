@@ -143,7 +143,7 @@ router.get('/insight', async (req, res) => {
 // Counts both manual `tags` and LLM-applied `auto_tags` so suggestions the
 // user has accepted also surface as recurring themes.
 router.get('/themes', (req, res) => {
-  const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const cutoff = require('../dateUtil').localDateStr(new Date(Date.now() - 90 * 86400000));
   const entries = db.prepare(
     `SELECT tags, auto_tags FROM entries
        WHERE user_id = ?
@@ -178,7 +178,7 @@ router.get('/rhythm', (req, res) => {
   const days = [];
   for (let i = 364; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000);
-    days.push(d.toISOString().slice(0, 10));
+    days.push(require('../dateUtil').localDateStr(d));
   }
 
   const entries = db.prepare(
@@ -236,55 +236,75 @@ router.get('/goals', (req, res) => {
 // Open Questions widgets. Goals has its own dedicated route above; this one
 // is for the new tag widgets so they can share a single backend handler.
 router.get('/tagged', (req, res) => {
-  const source = req.query.source === 'entries' ? 'entries' : 'notes';
+  // 'both' merges entries + notes — used by gratitude/dreams, which can be
+  // tagged on a journal entry OR captured into a note from a reflection.
+  const q = req.query.source;
+  const source = q === 'entries' ? 'entries' : q === 'both' ? 'both' : 'notes';
   // Sanitise — tag goes straight into a LIKE pattern, so allow only safe chars.
   const tag = String(req.query.tag || '').replace(/[^a-z0-9_-]/gi, '');
   const limit = Math.min(Number(req.query.limit) || 5, 20);
   if (!tag) return res.json({ items: [] });
 
   const tagPattern = `%"${tag}"%`;
-  const rows = source === 'entries'
-    ? db.prepare(
-        `SELECT id, title, body_text, date, created_at, updated_at
-         FROM entries
-         WHERE user_id = ? AND tags LIKE ?
-         ORDER BY COALESCE(date, date(created_at)) DESC, updated_at DESC
-         LIMIT ?`
-      ).all(req.userId, tagPattern, limit)
-    : db.prepare(
-        `SELECT id, title, body, target_date, updated_at
-         FROM notes
-         WHERE user_id = ? AND tags LIKE ?
-         ORDER BY (target_date IS NULL), target_date ASC, updated_at DESC
-         LIMIT ?`
-      ).all(req.userId, tagPattern, limit);
 
   function stripHtml(html) {
     if (!html) return '';
     return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  const items = rows.map(r => {
-    const plain = source === 'entries'
-      ? (safeDecrypt(req.userId, r.body_text) || '')
-      : stripHtml(safeDecrypt(req.userId, r.body));
-    const title = r.title && r.title.trim() ? r.title.trim() : plain.slice(0, 80);
-    const preview = plain.slice(0, 140);
-    return {
-      id: r.id,
-      title,
-      preview: preview && preview !== title ? preview : '',
-      date: source === 'entries' ? (r.date || null) : (r.target_date || null),
-    };
-  });
+  function entryItems() {
+    const rows = db.prepare(
+      `SELECT id, title, body_text, date, created_at, updated_at
+       FROM entries WHERE user_id = ? AND tags LIKE ?
+       ORDER BY COALESCE(date, date(created_at)) DESC, updated_at DESC LIMIT ?`
+    ).all(req.userId, tagPattern, limit);
+    return rows.map(r => {
+      const plain = safeDecrypt(req.userId, r.body_text) || '';
+      const title = r.title && r.title.trim() ? r.title.trim() : plain.slice(0, 80);
+      const preview = plain.slice(0, 140);
+      return {
+        id: r.id, kind: 'entry', title,
+        preview: preview && preview !== title ? preview : '',
+        date: r.date || null,
+        _sort: r.date || r.created_at || '',
+      };
+    });
+  }
 
+  function noteItems() {
+    const rows = db.prepare(
+      `SELECT id, title, body, target_date, updated_at
+       FROM notes WHERE user_id = ? AND tags LIKE ?
+       ORDER BY (target_date IS NULL), target_date ASC, updated_at DESC LIMIT ?`
+    ).all(req.userId, tagPattern, limit);
+    return rows.map(r => {
+      const plain = stripHtml(safeDecrypt(req.userId, r.body));
+      const title = r.title && r.title.trim() ? r.title.trim() : plain.slice(0, 80);
+      const preview = plain.slice(0, 140);
+      return {
+        id: r.id, kind: 'note', title,
+        preview: preview && preview !== title ? preview : '',
+        date: r.target_date || null,
+        _sort: r.updated_at || '',
+      };
+    });
+  }
+
+  let merged;
+  if (source === 'entries') merged = entryItems();
+  else if (source === 'notes') merged = noteItems();
+  else merged = [...entryItems(), ...noteItems()]
+    .sort((a, b) => (a._sort < b._sort ? 1 : a._sort > b._sort ? -1 : 0))
+    .slice(0, limit);
+
+  const items = merged.map(({ _sort, ...rest }) => rest);
   res.json({ items });
 });
 
 // ── GET /api/home/sky — moon sign + retrogrades + next event, daily cache ───
 router.get('/sky', (req, res) => {
   const sky = require('../services/skyService');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = require('../dateUtil').localDateStr();
 
   const cached = db.prepare(
     "SELECT data, entry_hash FROM home_cache WHERE user_id = ? AND cache_key = 'sky'"
