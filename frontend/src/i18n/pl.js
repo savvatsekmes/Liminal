@@ -698,6 +698,8 @@ export default {
   "common.savedToMemory": "Zapisano",
   "common.saveToJournal": "Zapisz w dzienniku",
   "common.savedToJournal": "Zapisano",
+  "common.saveToNote": "Zapisz w notatce",
+  "common.savedToNote": "Zapisano",
   "common.addToDictionary": "Dodaj do słownika",
   "common.noSuggestions": "Brak podpowiedzi",
   "findBar.find": "Znajdź",

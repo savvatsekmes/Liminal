@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "已保存",
   "common.saveToJournal": "保存到日记",
   "common.savedToJournal": "已保存",
+  "common.saveToNote": "保存到笔记",
+  "common.savedToNote": "已保存",
   "common.addToDictionary": "添加到词典",
   "common.noSuggestions": "无建议",
   "home.portraitEmpty": "你的画像尚未生成",

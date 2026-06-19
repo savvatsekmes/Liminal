@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "Сохранено",
   "common.saveToJournal": "Сохранить в дневник",
   "common.savedToJournal": "Сохранено",
+  "common.saveToNote": "Сохранить в заметку",
+  "common.savedToNote": "Сохранено",
   "common.addToDictionary": "Добавить в словарь",
   "common.noSuggestions": "Нет вариантов",
   "home.portraitEmpty": "Ваш портрет ещё не создан",

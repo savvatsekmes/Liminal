@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "保存しました",
   "common.saveToJournal": "ジャーナルに保存",
   "common.savedToJournal": "保存しました",
+  "common.saveToNote": "ノートに保存",
+  "common.savedToNote": "保存しました",
   "common.addToDictionary": "辞書に追加",
   "common.noSuggestions": "候補なし",
   "home.portraitEmpty": "ポートレートはまだ生成されていません",

@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "Kaydedildi",
   "common.saveToJournal": "Günlüğe kaydet",
   "common.savedToJournal": "Kaydedildi",
+  "common.saveToNote": "Nota kaydet",
+  "common.savedToNote": "Kaydedildi",
   "common.addToDictionary": "Sözlüğe ekle",
   "common.noSuggestions": "Öneri yok",
   "home.portraitEmpty": "Portren henüz oluşturulmadı",

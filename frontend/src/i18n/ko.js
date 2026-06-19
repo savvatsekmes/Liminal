@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "저장됨",
   "common.saveToJournal": "일기에 저장",
   "common.savedToJournal": "저장됨",
+  "common.saveToNote": "노트에 저장",
+  "common.savedToNote": "저장됨",
   "common.addToDictionary": "사전에 추가",
   "common.noSuggestions": "제안 없음",
   "home.portraitEmpty": "아직 초상이 생성되지 않았습니다",

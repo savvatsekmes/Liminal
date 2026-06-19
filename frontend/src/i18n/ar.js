@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "تم الحفظ",
   "common.saveToJournal": "حفظ في اليوميات",
   "common.savedToJournal": "تم الحفظ",
+  "common.saveToNote": "حفظ في الملاحظة",
+  "common.savedToNote": "تم الحفظ",
   "common.addToDictionary": "إضافة إلى القاموس",
   "common.noSuggestions": "لا توجد اقتراحات",
   "home.portraitEmpty": "لم تُولَّد صورتك الشخصية بعد",

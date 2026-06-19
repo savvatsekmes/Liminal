@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { apiFetch } from '../utils/api';
+import { todayLocal } from '../utils/dates';
 import { useLanguage } from '../i18n/LanguageContext';
 import { checkWord, suggestWords, addToUserDictionary, wordAtPoint, replaceWordInRange } from '../utils/spellcheck';
 
@@ -29,12 +30,14 @@ export default function SelectionMenu() {
   const spellRangeRef = useRef(null);
   const [savedToMemory, setSavedToMemory] = useState(false);
   const [savedToJournal, setSavedToJournal] = useState(false);
+  const [savedToNote, setSavedToNote] = useState(false);
   const [adjustedPos, setAdjustedPos] = useState(null);
 
   const dismiss = useCallback(() => {
     setPopup(null);
     setSavedToMemory(false);
     setSavedToJournal(false);
+    setSavedToNote(false);
     if (audioRef.current) stopSpeak(audioRef, cancelRef);
   }, []);
 
@@ -84,6 +87,7 @@ export default function SelectionMenu() {
       }
       setSavedToMemory(false);
       setSavedToJournal(false);
+      setSavedToNote(false);
 
       // Detect if the click landed inside an atom NodeView (YouTube embed,
       // image, tarot reading). These have `selectable: false` so right-click
@@ -421,7 +425,7 @@ export default function SelectionMenu() {
   async function handleSaveToJournal() {
     if (!hasSelection) return;
     const text = popup.selection;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal();
     const title = today + ' — ' + text.slice(0, 60).replace(/\n/g, ' ');
     const body = '<p>' + text.split('\n\n').map(p => p.replace(/\n/g, '<br>')).join('</p><p>') + '</p>';
     try {
@@ -435,6 +439,28 @@ export default function SelectionMenu() {
       // up in the journal list immediately.
       window.dispatchEvent(new CustomEvent('liminal:entries-changed'));
       setSavedToJournal(true);
+      setTimeout(() => setPopup(null), 900);
+    } catch {
+      setPopup(null);
+    }
+  }
+  async function handleSaveToNote() {
+    if (!hasSelection) return;
+    const text = popup.selection;
+    // Match useNotes.createNote's POST shape: a default 'idea' note whose body
+    // is the selected text wrapped as HTML paragraphs (blank lines → new <p>,
+    // single newlines → <br>).
+    const body = '<p>' + text.split('\n\n').map(p => p.replace(/\n/g, '<br>')).join('</p><p>') + '</p>';
+    try {
+      const res = await apiFetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'idea', body, tags: [] }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      // useNotes listens for this and refetches so the new note shows up.
+      window.dispatchEvent(new CustomEvent('liminal:notes-changed'));
+      setSavedToNote(true);
       setTimeout(() => setPopup(null), 900);
     } catch {
       setPopup(null);
@@ -554,6 +580,15 @@ export default function SelectionMenu() {
         label={savedToJournal ? '✓ ' + t('common.savedToJournal') : t('common.saveToJournal')}
         onClick={handleSaveToJournal}
         disabled={savedToJournal}
+      />
+    );
+    items.push(
+      <MenuItem
+        key="note"
+        icon={savedToNote ? null : <PlusIcon />}
+        label={savedToNote ? '✓ ' + t('common.savedToNote') : t('common.saveToNote')}
+        onClick={handleSaveToNote}
+        disabled={savedToNote}
       />
     );
     items.push(<Separator key="sep-sel" />);

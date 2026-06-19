@@ -702,6 +702,8 @@ export default {
   "common.savedToMemory": "Sparat",
   "common.saveToJournal": "Spara till dagbok",
   "common.savedToJournal": "Sparat",
+  "common.saveToNote": "Spara till anteckning",
+  "common.savedToNote": "Sparat",
   "common.addToDictionary": "Lägg till i ordlista",
   "common.noSuggestions": "Inga förslag",
   "home.portraitEmpty": "Ditt porträtt har inte genererats än",

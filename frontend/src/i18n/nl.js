@@ -702,6 +702,8 @@ export default {
   "common.savedToMemory": "Opgeslagen",
   "common.saveToJournal": "Opslaan in dagboek",
   "common.savedToJournal": "Opgeslagen",
+  "common.saveToNote": "Opslaan in notitie",
+  "common.savedToNote": "Opgeslagen",
   "common.addToDictionary": "Aan woordenboek toevoegen",
   "common.noSuggestions": "Geen suggesties",
   "home.portraitEmpty": "Je portret is nog niet gegenereerd",

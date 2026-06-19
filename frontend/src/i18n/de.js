@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "Gespeichert",
   "common.saveToJournal": "Im Tagebuch speichern",
   "common.savedToJournal": "Gespeichert",
+  "common.saveToNote": "In Notiz speichern",
+  "common.savedToNote": "Gespeichert",
   "common.addToDictionary": "Zum Wörterbuch hinzufügen",
   "common.noSuggestions": "Keine Vorschläge",
   "home.portraitEmpty": "Dein Portrait wurde noch nicht erstellt",

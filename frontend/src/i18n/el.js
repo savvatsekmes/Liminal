@@ -609,6 +609,8 @@ export default {
   "common.savedToMemory": "Αποθηκεύτηκε",
   "common.saveToJournal": "Αποθήκευση στο ημερολόγιο",
   "common.savedToJournal": "Αποθηκεύτηκε",
+  "common.saveToNote": "Αποθήκευση στη σημείωση",
+  "common.savedToNote": "Αποθηκεύτηκε",
   "common.addToDictionary": "Προσθήκη στο λεξικό",
   "common.noSuggestions": "Καμία πρόταση",
   "home.portraitEmpty": "Το πορτρέτο σου δεν έχει δημιουργηθεί ακόμα",
