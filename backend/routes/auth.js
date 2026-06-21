@@ -64,7 +64,7 @@ router.post('/register', async (req, res) => {
   if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
   if (!agreed_to_terms) return res.status(400).json({ error: 'You must agree to the Terms of Service' });
 
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
+  const existing = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username.trim());
   if (existing) return res.status(409).json({ error: 'Username already taken' });
 
   const hash = await bcrypt.hash(password, SALT_ROUNDS);
@@ -98,7 +98,7 @@ router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
-  const user = db.prepare(`SELECT id, username, password_hash, onboarding_complete, ${KEY_FIELDS} FROM users WHERE username = ?`).get(username.trim());
+  const user = db.prepare(`SELECT id, username, password_hash, onboarding_complete, ${KEY_FIELDS} FROM users WHERE username = ? COLLATE NOCASE`).get(username.trim());
   if (!user) return res.status(401).json({ error: 'Invalid username or password' });
 
   // Lockout gate. Refuse all unlock attempts while lockout_until is in the
@@ -369,7 +369,7 @@ router.post('/recover', async (req, res) => {
   }
   if (newPassword.length < 4) return res.status(400).json({ error: 'New password must be at least 4 characters' });
 
-  const user = db.prepare(`SELECT id, username, ${KEY_FIELDS} FROM users WHERE username = ?`).get(username.trim());
+  const user = db.prepare(`SELECT id, username, ${KEY_FIELDS} FROM users WHERE username = ? COLLATE NOCASE`).get(username.trim());
   if (!user || user.encryption_version !== 1) {
     return res.status(401).json({ error: 'Account not found or not recoverable' });
   }
@@ -626,7 +626,7 @@ router.post('/wipe-with-recovery-key', (req, res) => {
     return res.status(400).json({ error: 'username and recovery_key required' });
   }
 
-  const user = db.prepare(`SELECT id, ${KEY_FIELDS} FROM users WHERE username = ?`).get(username.trim());
+  const user = db.prepare(`SELECT id, ${KEY_FIELDS} FROM users WHERE username = ? COLLATE NOCASE`).get(username.trim());
   if (!user || user.encryption_version !== 1) {
     return res.status(401).json({ error: 'Account not found or not recoverable' });
   }

@@ -111,6 +111,8 @@ export default {
   "auth.login": "Open journal →",
   "auth.register": "Start Journal",
   "auth.createAccount": "Create Account →",
+  "auth.existingAccountWarning": "You already have an account on this device. A new account starts empty — your existing entries won’t appear in it. If you’re returning, log in instead.",
+  "auth.existingAccountLogin": "← Go back and log in",
   "auth.creating": "Creating…",
   "auth.chooseUsername": "Choose a username",
   "auth.createPassword": "Create a password",

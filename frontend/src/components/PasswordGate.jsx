@@ -266,6 +266,10 @@ export default function PasswordGate({ onSuccess }) {
 
   function finishAuth(token, username, onboardingComplete, password, recoveryKey, isNewAccount = false) {
     setStoredToken(token);
+    // Remember the username so the login screen pre-fills it next launch — a
+    // returning user who half-remembers their name (or its casing) is no longer
+    // funneled into creating a duplicate account.
+    try { if (username) localStorage.setItem('liminal_last_username', username); } catch {}
     if (recoveryKey) {
       setPending({ username, onboardingComplete, password, recoveryKey, isNewAccount });
       setView('recovery-reveal');
@@ -530,7 +534,11 @@ function YubikeyLoginStep({ step, password, onSuccess, onCancel }) {
 function LoginForm({ onSuccess, onRegister, onForgot }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
-  const [username, setUsername] = useState('');
+  // Pre-fill the last username used on this device so returning users only need
+  // their password — they don't have to recall the exact name/casing.
+  const [username, setUsername] = useState(() => {
+    try { return localStorage.getItem('liminal_last_username') || ''; } catch { return ''; }
+  });
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -616,7 +624,7 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
             id="login-username"
             style={s.input}
             type="text"
-            autoFocus
+            autoFocus={!username}
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -628,6 +636,7 @@ function LoginForm({ onSuccess, onRegister, onForgot }) {
             id="login-password"
             style={{ ...s.input, marginBottom: error ? '0' : '20px', opacity: lockoutState.locked ? 0.5 : 1 }}
             type="password"
+            autoFocus={!!username}
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -1084,6 +1093,14 @@ function RegisterForm({ onSuccess, onBack }) {
   const [showTerms, setShowTerms] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Warn when this device already has an account — a new one starts empty and
+  // won't show existing entries. This is the guard against the "kept making new
+  // accounts" spiral: returning users should log in, not register again.
+  const [hasExistingAccount, setHasExistingAccount] = useState(false);
+  useEffect(() => {
+    fetch('/api/auth/status').then((r) => r.json())
+      .then((d) => setHasExistingAccount(!!d.hasUsers)).catch(() => {});
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -1133,6 +1150,18 @@ function RegisterForm({ onSuccess, onBack }) {
           <div style={s.tagline}>{t('auth.tagline')}</div>
         </div>
         <div style={s.formCol}>
+          {hasExistingAccount && (
+            <div style={{ ...s.error, borderColor: 'var(--strong)', marginBottom: '18px', lineHeight: 1.6 }}>
+              {t('auth.existingAccountWarning')}
+              <button
+                type="button"
+                onClick={onBack}
+                style={{ display: 'block', marginTop: '8px', background: 'none', border: 'none', color: 'var(--strong)', fontSize: '12px', fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontFamily: 'var(--font)' }}
+              >
+                {t('auth.existingAccountLogin')}
+              </button>
+            </div>
+          )}
           <label style={s.label} htmlFor="reg-username">{t('auth.chooseUsername')}</label>
           <input
             id="reg-username"

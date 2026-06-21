@@ -8,6 +8,28 @@ const db = new Database(path.join(DATA_DIR, 'liminal.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+// Checkpoint + close on shutdown.
+//
+// In WAL mode all recent writes live in liminal.db-wal until a checkpoint folds
+// them into liminal.db. The backend is killed with SIGTERM on app quit, so
+// without an explicit checkpoint the main .db can stay a near-empty page with
+// ALL real data in the -wal sidecar. That's normally fine (WAL replays on next
+// open), but it's fragile: any tool/backup/sync that copies only liminal.db —
+// or any folder churn that drops the -wal — reverts the database to empty and
+// loses everything. Checkpoint(TRUNCATE) on every clean shutdown keeps the main
+// .db self-contained. Handlers are idempotent and swallow errors so a shutdown
+// can never hang or crash on them.
+let _closed = false;
+function checkpointAndClose() {
+  if (_closed) return;
+  _closed = true;
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
+  try { db.close(); } catch {}
+}
+process.once('exit', checkpointAndClose);
+process.once('SIGTERM', () => { checkpointAndClose(); process.exit(0); });
+process.once('SIGINT', () => { checkpointAndClose(); process.exit(0); });
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS entries (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
