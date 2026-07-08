@@ -220,14 +220,11 @@ router.post('/reindex', (req, res) => {
   });
 });
 
-// ── GET /api/settings/export ──────────────────────────────────────────────────
-// Download full Liminal backup as JSON (all user data, v3 format)
-router.get('/export', (req, res) => {
-  const exportData = buildExportData(resolveUserId(req));
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Content-Disposition', `attachment; filename="liminal-backup-${new Date().toISOString().split('T')[0]}.json"`);
-  res.json(exportData);
-});
+// NOTE: the old unauthenticated GET /api/settings/export route was removed — it
+// returned the full journal as PLAINTEXT JSON with no password check (soft-auth
+// fell back to the first user). Nothing in the app called it; the encrypted,
+// password-gated POST /api/settings/backup flow (buildExportData with
+// keepFieldCipher) is the supported path. buildExportData stays for that.
 
 // ── DELETE helpers ────────────────────────────────────────────────────────────
 
