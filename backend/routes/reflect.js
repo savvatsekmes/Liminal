@@ -649,9 +649,23 @@ Rules:
 - ${isHtml ? 'The input is HTML. Preserve all HTML tags, structure, and formatting exactly. Only change the text content within tags.' : 'Return plain text only.'}
 - Return ONLY the polished text, no commentary or explanation`;
 
+  // Neutralize embedded base64 data blobs (images pasted/imported into the
+  // entry) before sending to the model. A multi-KB `data:image/...;base64,...`
+  // URI makes smaller local models describe/analyze the image instead of
+  // editing the prose (they return "this is a PNG data URI…" commentary). Swap
+  // each blob for a short token, then restore it verbatim in the polished
+  // output so the image survives untouched.
+  const blobs = [];
+  const prepared = text.replace(
+    /data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g,
+    (m) => { const token = `LIMINALBLOB${blobs.length}`; blobs.push(m); return token; },
+  );
+
   try {
-    const maxTokens = Math.max(1000, Math.ceil(text.length / 2));
-    const polished = await llm.call(systemPrompt, text, { maxTokens, language: false });
+    // Size the budget off the prose (post-strip) length, not the base64 blob.
+    const maxTokens = Math.max(1000, Math.ceil(prepared.length / 2));
+    let polished = await llm.call(systemPrompt, prepared, { maxTokens, language: false });
+    blobs.forEach((val, i) => { polished = polished.split(`LIMINALBLOB${i}`).join(val); });
     res.json({ polished: polished.trim() });
   } catch (err) {
     console.error('[reflect/polish] Error:', err.message);
