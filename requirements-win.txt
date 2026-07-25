@@ -1,0 +1,46 @@
+# Windows TTS server build recipe (PyInstaller -> dist/tts_server)
+#
+# This is the environment the bundled Windows tts_server.exe is built from.
+# Verified 2026-07-25: builds, runs, and synthesizes on RTX 4090 and RTX 5090.
+#
+# Build steps:
+#   python -m venv .venv-chatterbox-new
+#   .venv-chatterbox-new\Scripts\activate
+#   pip install -r requirements-win.txt
+#   # IMPORTANT: force GPU torch LAST — chatterbox pins torch==2.6.0 and will
+#   # otherwise pull the CPU build / an sm_120-incapable wheel over the top:
+#   pip install --force-reinstall --no-deps torch==2.7.1 torchaudio==2.7.1 \
+#       --index-url https://download.pytorch.org/whl/cu128
+#   python -m PyInstaller tts_server.spec --noconfirm
+#
+# Why torch 2.7.1+cu128 specifically:
+#   The RTX 5090 is Blackwell (compute capability sm_120). torch 2.6.0 — which
+#   chatterbox declares as its dependency — only ships kernels up to sm_90, so
+#   it errors with "sm_120 is not compatible with the current PyTorch install".
+#   cu128 wheels cover sm_75 -> sm_120, i.e. one build serves every GPU from a
+#   2080 Ti to a 5090. The torch==2.6.0 pin is only a declared preference;
+#   chatterbox 0.1.7's inference code runs fine on 2.7.1 (verified end to end).
+#
+# Model source note:
+#   We moved from the community fork (rsxdalv/chatterbox@1a2e63a, 23 langs) to
+#   the OFFICIAL resemble-ai build below. Voice quality is noticeably better.
+#   Language count is unchanged at 23 — the marketed "Multilingual v3 = 25"
+#   counts 4 dialects/language-packs separately.
+
+# Official Chatterbox (Turbo + Multilingual + Original model classes)
+chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git
+
+# TTS server + STT
+fastapi
+uvicorn
+faster-whisper
+soundfile
+numpy
+
+# Build-time only
+pyinstaller
+accelerate
+sentencepiece
+
+# torch/torchaudio are intentionally NOT pinned here — install them last with
+# the cu128 index URL shown in the build steps above.
