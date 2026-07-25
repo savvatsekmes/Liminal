@@ -55,6 +55,10 @@ venv/
 .venv-tts/
 .venv-turbo/
 .venv-yubikey/
+.venv-chatterbox-new/
+
+# Scratch audio from TTS A/B comparisons
+tts_compare_out/
 
 # Personal voice clones — local-only, never ship to the public build
 backend/default-voices/For_Savva_Only/
