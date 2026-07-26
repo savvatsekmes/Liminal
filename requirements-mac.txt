@@ -9,6 +9,7 @@ certifi==2026.4.22
 cffi==2.0.0
 cfgv==3.5.0
 charset-normalizer==3.4.7
+chatterbox-tts==0.1.7
 click==8.3.3
 conformer==0.3.2
 decorator==5.2.1
@@ -79,11 +80,10 @@ starlette==1.0.0
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.20.3
-torch==2.11.0
-torchaudio==2.11.0
+torch==2.6.0
+torchaudio==2.6.0
 tqdm==4.67.3
 transformers==4.46.3
-tts-webui.chatterbox-tts @ git+https://github.com/rsxdalv/chatterbox.git@1a2e63a15632a3c470c3337f44d85f923693a6b0
 typer==0.25.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
