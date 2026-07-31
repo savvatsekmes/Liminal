@@ -16,6 +16,9 @@ export function useReflect() {
   // Captured items scraped from the entry (goals/gratitudes/dreams/books/
   // affirmations). Emitted as a final SSE event after the reflection blocks.
   const [extractedItems, setExtractedItems] = useState(null);
+  // The user's written answer to the closing question. Persisted with the
+  // reflection so it reappears under the question on return.
+  const [closingAnswer, setClosingAnswer] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const ttsOnline = useTtsOnline();
@@ -38,6 +41,7 @@ export function useReflect() {
     setTimeAnchor(null);
     setClosingQuestion(null);
     setExtractedItems(null);
+    setClosingAnswer(null);
 
     try {
       // Strip inline base64 image data from HTML before sending — backend reads from DB instead
@@ -166,6 +170,7 @@ export function useReflect() {
     setTimeAnchor(null);
     setClosingQuestion(null);
     setExtractedItems(null);
+    setClosingAnswer(null);
     setError(null);
     if (!entryId) return;
     try {
@@ -177,8 +182,25 @@ export function useReflect() {
         setTimeAnchor(data.time_anchor || null);
         setClosingQuestion(data.closing_question || null);
         setExtractedItems(data.extracted_items || null);
+        setClosingAnswer(data.closing_answer || null);
       }
     } catch {}
+  }
+
+  // Persist the user's answer to the closing question. Called on blur / debounce
+  // from the answer box; failures are non-fatal (the text stays on screen).
+  async function saveClosingAnswer(entryId, answer) {
+    setClosingAnswer(answer);
+    if (!entryId) return;
+    try {
+      await apiFetch(`/api/reflect/${entryId}/answer`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answer }),
+      });
+    } catch (err) {
+      console.error('[useReflect] saveClosingAnswer failed:', err.message);
+    }
   }
 
   function clearBlocks() {
@@ -187,6 +209,7 @@ export function useReflect() {
     setTimeAnchor(null);
     setClosingQuestion(null);
     setExtractedItems(null);
+    setClosingAnswer(null);
     setError(null);
   }
 
@@ -253,8 +276,9 @@ export function useReflect() {
   }
 
   return {
-    blocks, opening, timeAnchor, closingQuestion, extractedItems, loading, error, ttsOnline,
-    reflect, regenerateBlock, clearBlocks, loadReflections,
+    blocks, opening, timeAnchor, closingQuestion, extractedItems, closingAnswer,
+    loading, error, ttsOnline,
+    reflect, regenerateBlock, clearBlocks, loadReflections, saveClosingAnswer,
     updateBlock, patchBlock, deleteBlock, addBlock,
   };
 }

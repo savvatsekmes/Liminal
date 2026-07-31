@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import MirrorBlock from './MirrorBlock';
 import AILabel from './AILabel';
 import CapturedItems from './CapturedItems';
+import ChatBubbleIcon from './ChatBubbleIcon';
 import { useLanguage } from '../i18n/LanguageContext';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from './ArchetypeAvatar';
@@ -185,6 +186,10 @@ export default function MirrorPanel({
   timeAnchor,
   closingQuestion,
   extractedItems,
+  closingAnswer,
+  onSaveAnswer,
+  onTalkAboutAnswer,
+  entryLinked,
   loading,
   error,
   entryText,
@@ -204,6 +209,11 @@ export default function MirrorPanel({
   const [readingAll, setReadingAll] = useState(false);
   const [readingOpening, setReadingOpening] = useState(false);
   const [readingClosing, setReadingClosing] = useState(false);
+  // Local draft of the answer to the closing question. Seeded from the saved
+  // value and re-synced when switching entries; persisted on blur.
+  const [answerDraft, setAnswerDraft] = useState(closingAnswer || '');
+  const [talking, setTalking] = useState(false);
+  useEffect(() => { setAnswerDraft(closingAnswer || ''); }, [closingAnswer, entryId]);
   const openingAudioRef = useRef(null);
   const closingAudioRef = useRef(null);
   const ttsAudioRef = useRef(null);
@@ -432,6 +442,72 @@ if (previewVersion) {
                   </rect>
                 </svg>
               </button>
+            </div>
+
+            {/* Answer box — write back to the question, then optionally carry
+                the exchange into a full conversation. Saved with the reflection
+                so it's still here next time. */}
+            <div style={{ marginTop: '4px', fontStyle: 'normal', fontWeight: 400 }}>
+              <textarea
+                value={answerDraft}
+                onChange={(e) => setAnswerDraft(e.target.value)}
+                onBlur={() => {
+                  if ((closingAnswer || '') !== answerDraft) onSaveAnswer?.(answerDraft);
+                }}
+                placeholder={t('mirror.answerPlaceholder') || 'Write your answer…'}
+                rows={3}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  resize: 'vertical',
+                  fontSize: '13px',
+                  lineHeight: 1.6,
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: 'var(--border-style)',
+                  background: 'var(--white)',
+                  color: 'var(--strong)',
+                  fontFamily: 'var(--font)',
+                  outline: 'none',
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button
+                  onClick={async () => {
+                    if (talking) return;
+                    setTalking(true);
+                    // Persist any unsaved edit before handing off to the chat.
+                    if ((closingAnswer || '') !== answerDraft) await onSaveAnswer?.(answerDraft);
+                    try { await onTalkAboutAnswer?.(answerDraft); } finally { setTalking(false); }
+                  }}
+                  disabled={talking}
+                  title={entryLinked ? t('journal.goToChat') : t('journal.talkAboutThis')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font)',
+                    // Match the journal canvas's chat button: indigo once a
+                    // linked session exists, muted before that.
+                    color: entryLinked ? 'rgb(99,102,241)' : 'var(--muted)',
+                    background: entryLinked ? 'rgba(99,102,241,0.1)' : 'var(--near-white)',
+                    border: 'none',
+                    borderRadius: '20px',
+                    padding: '6px 14px',
+                    cursor: talking ? 'default' : 'pointer',
+                    opacity: talking ? 0.6 : 1,
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08), inset 0 -1px 0 rgba(0,0,0,0.06)',
+                    transition: 'color 0.15s, background 0.15s',
+                  }}
+                >
+                  <ChatBubbleIcon linked={entryLinked} />
+                  {talking
+                    ? (t('mirror.talkStarting') || 'Opening…')
+                    : (entryLinked ? t('journal.goToChat') : t('journal.talkAboutThis'))}
+                </button>
+              </div>
             </div>
           </div>
         )}

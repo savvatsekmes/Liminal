@@ -15,8 +15,11 @@ const CATEGORY_META = {
   dreams:       { tag: 'dream',       labelKey: 'captured.dreams',       addKey: 'captured.addToDreams',       addFallback: 'Add to Dreams',       emoji: '🌙' },
   books:        { tag: 'reading',     labelKey: 'captured.books',        addKey: 'captured.addToBooks',        addFallback: 'Add to Reading',      emoji: '📚' },
   affirmations: { tag: 'affirmation', labelKey: 'captured.affirmations', addKey: 'captured.addToAffirmations', addFallback: 'Add to Affirmations', emoji: '✨' },
+  // Filed as a native `quote` note (not `idea`) so it renders with quotation
+  // marks and an attribution line like a hand-made quote note.
+  quotes:       { tag: 'quote',       labelKey: 'captured.quotes',       addKey: 'captured.addToQuotes',       addFallback: 'Add to Quotes',       emoji: '❝', noteType: 'quote' },
 };
-const ORDER = ['goals', 'gratitudes', 'dreams', 'books', 'affirmations'];
+const ORDER = ['goals', 'gratitudes', 'dreams', 'books', 'affirmations', 'quotes'];
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -74,7 +77,12 @@ export default function CapturedItems({ items }) {
         headers: { 'Content-Type': 'application/json' },
         // Title and body both get the item text — the captured phrase is short
         // enough to be the title, and the body carries it as note content.
-        body: JSON.stringify({ type: 'idea', title: text, body, tags: [CATEGORY_META[cat].tag] }),
+        body: JSON.stringify({
+          type: CATEGORY_META[cat].noteType || 'idea',
+          title: text,
+          body,
+          tags: [CATEGORY_META[cat].tag],
+        }),
       });
       if (!res.ok) throw new Error('save failed');
       window.dispatchEvent(new CustomEvent('liminal:notes-changed'));

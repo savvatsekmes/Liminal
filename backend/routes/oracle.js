@@ -208,6 +208,62 @@ router.get('/linked-session', (req, res) => {
   res.json({ session: sessionRow(session) });
 });
 
+// ── POST /api/oracle/sessions/:id/seed ────────────────────────────────────
+// Seed a linked session from a reflection's closing question, so "talk about
+// this" lands the user in a conversation already in progress rather than a
+// blank chat. Inserts the question as an assistant message (no LLM call — we
+// already have the text), then, if the user wrote an answer, inserts it as
+// their reply and generates Liminal's response to it.
+// Body: { question: string, answer?: string, archetype?: string }
+router.post('/sessions/:id/seed', async (req, res) => {
+  const { question, answer, archetype } = req.body || {};
+  if (!question?.trim()) return res.status(400).json({ error: 'question is required' });
+
+  const session = db.prepare(
+    'SELECT * FROM oracle_sessions WHERE id = ? AND user_id = ?'
+  ).get(req.params.id, req.userId);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  // Only seed an empty session — re-opening an existing conversation must not
+  // duplicate the question or replay the answer.
+  const existing = db.prepare(
+    'SELECT COUNT(*) AS n FROM oracle_messages WHERE session_id = ?'
+  ).get(session.id).n;
+  if (existing > 0) return res.json({ seeded: false, reason: 'session already has messages' });
+
+  const activeArchetype = archetype || session.archetype;
+
+  db.prepare(
+    'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
+  ).run(session.id, 'assistant', encryptField(req.userId, question.trim()), activeArchetype);
+
+  if (!answer?.trim()) return res.json({ seeded: true, answered: false });
+
+  db.prepare(
+    'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
+  ).run(session.id, 'user', encryptField(req.userId, answer.trim()), activeArchetype);
+
+  try {
+    const history = [
+      { role: 'assistant', content: question.trim() },
+      { role: 'user', content: answer.trim() },
+    ];
+    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session, answer.trim());
+    const reply = (await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 400 })).trim();
+    if (reply) {
+      db.prepare(
+        'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
+      ).run(session.id, 'assistant', encryptField(req.userId, reply), activeArchetype);
+    }
+    res.json({ seeded: true, answered: true, replied: !!reply });
+  } catch (err) {
+    // The question + answer are already saved; a failed reply just means the
+    // user opens the chat and can continue manually.
+    console.error('[oracle] seed reply failed:', err.message);
+    res.json({ seeded: true, answered: true, replied: false });
+  }
+});
+
 // ── POST /api/oracle/sessions/:id/messages ────────────────────────────────
 router.post('/sessions/:id/messages', async (req, res) => {
   const { content, archetype } = req.body;

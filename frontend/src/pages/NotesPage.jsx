@@ -41,6 +41,8 @@ function TagLabel({ tag, dynamicMap }) {
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
 import CapturedItems from '../components/CapturedItems';
+import ChatBubbleIcon from '../components/ChatBubbleIcon';
+import { stripMedia, restoreMedia } from '../utils/polishMedia';
 import AILabel from '../components/AILabel';
 import MicButton from '../components/MicButton';
 import CardPullModal from '../components/CardPullModal';
@@ -1421,12 +1423,9 @@ async function handlePolish() {
     try {
       await apiFetch(`/api/notes/${note.id}/snapshot`, { method: 'POST' }).catch(() => {});
 
-      // Strip card reading blocks before polishing — preserve them as placeholders
-      const cardReadings = [];
-      const strippedHtml = html.replace(/<div data-card-reading[^>]*><\/div>/g, (match) => {
-        cardReadings.push(match);
-        return `<!--card-reading-${cardReadings.length - 1}-->`;
-      });
+      // Swap embedded media (videos, images, tarot readings, toggle blocks) for
+      // tokens so the model only rewrites prose and can't drop them.
+      const { html: strippedHtml, atoms } = stripMedia(html);
 
       const res = await apiFetch('/api/reflect/polish', {
         method: 'POST',
@@ -1435,11 +1434,7 @@ async function handlePolish() {
       });
       const data = await res.json();
       if (data.polished) {
-        // Re-insert card reading blocks
-        let polished = data.polished;
-        cardReadings.forEach((block, i) => {
-          polished = polished.replace(`<!--card-reading-${i}-->`, block);
-        });
+        const polished = restoreMedia(data.polished, atoms);
 
         ed.commands.setContent(polished, false);
         onChange(note.id, { body: polished });
@@ -2333,14 +2328,8 @@ function SpinnerIcon() {
   );
 }
 
-function ChatBubbleIcon({ linked }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6l-3 3V11H4a2 2 0 0 1-2-2V3z" />
-      {linked && <circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none" />}
-    </svg>
-  );
-}
+// ChatBubbleIcon now lives in components/ChatBubbleIcon.jsx — shared with the
+// journal canvas and the reflection answer box.
 
 function WaveformIcon({ playing }) {
   return (

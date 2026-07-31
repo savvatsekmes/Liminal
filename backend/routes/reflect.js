@@ -438,7 +438,40 @@ router.get('/:entryId', (req, res) => {
       time_anchor: saved.time_anchor || null,
       closing_question: saved.closing_question || null,
       extracted_items: saved.extracted_items || null,
+      closing_answer: saved.closing_answer || null,
     });
+  }
+});
+
+// ── PATCH /api/reflect/:entryId/answer ───────────────────────────────────────
+// Save the user's written answer to the reflection's closing question. Stored
+// alongside the reflection (not in the entry body) so it persists and reappears
+// under the question when they come back. Body: { answer: string }
+router.patch('/:entryId/answer', (req, res) => {
+  const entryId = Number(req.params.entryId);
+  if (!entryId) return res.status(400).json({ error: 'invalid entryId' });
+  const answer = typeof req.body?.answer === 'string' ? req.body.answer : '';
+
+  const owns = db.prepare('SELECT 1 FROM entries WHERE id = ? AND user_id = ?').get(entryId, req.userId);
+  if (!owns) return res.status(404).json({ error: 'entry not found' });
+
+  const row = db.prepare('SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?').get(entryId, req.userId);
+  if (!row) return res.status(404).json({ error: 'reflection not found' });
+
+  try {
+    const saved = JSON.parse(safeDecrypt(req.userId, row.blocks));
+    // Legacy rows are a bare blocks array — normalise to the object shape so the
+    // answer has somewhere to live without dropping the existing blocks.
+    const data = Array.isArray(saved) ? { opening: null, blocks: saved } : saved;
+    data.closing_answer = answer.trim() || null;
+    db.prepare(
+      `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify(data)));
+    res.json({ closing_answer: data.closing_answer });
+  } catch (err) {
+    console.error('[reflect] PATCH answer failed:', err.message);
+    res.status(500).json({ error: 'Save failed.' });
   }
 });
 
@@ -463,6 +496,7 @@ router.put('/:entryId/blocks', (req, res) => {
   let preservedTimeAnchor = null;
   let preservedClosingQuestion = null;
   let preservedExtracted = null;
+  let preservedAnswer = null;
   try {
     const prev = db.prepare('SELECT blocks FROM reflections WHERE entry_id = ? AND user_id = ?').get(entryId, req.userId);
     if (prev) {
@@ -472,6 +506,7 @@ router.put('/:entryId/blocks', (req, res) => {
         preservedTimeAnchor = saved.time_anchor || null;
         preservedClosingQuestion = saved.closing_question || null;
         preservedExtracted = saved.extracted_items || null;
+        preservedAnswer = saved.closing_answer || null;
       }
     }
   } catch {}
@@ -484,6 +519,7 @@ router.put('/:entryId/blocks', (req, res) => {
       time_anchor: preservedTimeAnchor,
       closing_question: preservedClosingQuestion,
       extracted_items: preservedExtracted,
+      closing_answer: preservedAnswer,
     };
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)

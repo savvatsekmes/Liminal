@@ -153,6 +153,8 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
     timeAnchor,
     closingQuestion,
     extractedItems,
+    closingAnswer,
+    saveClosingAnswer,
     loading: reflectLoading,
     error: reflectError,
     ttsOnline,
@@ -245,6 +247,39 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
       handleViewChange('oracle');
     } catch (err) {
       console.error('Failed to create linked session:', err);
+    }
+  }
+
+  // "Talk about this" under a reflection's closing question. Opens the entry's
+  // linked chat (creating it if needed) and — for a brand-new session — seeds it
+  // with the question plus the user's answer so they land mid-conversation
+  // rather than in a blank chat.
+  async function handleTalkAboutAnswer(answer) {
+    const entry = activeEntry;
+    if (!entry?.id || !closingQuestion) return;
+    try {
+      let sessionId = entry.linked_session_id;
+      if (!sessionId) {
+        const res = await apiFetch('/api/oracle/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceEntryId: entry.id }),
+        });
+        const session = await res.json();
+        sessionId = session.id;
+        await updateEntry(entry.id, { linked_session_id: sessionId });
+      }
+      // No-ops if the session already has messages, so re-opening never
+      // duplicates the question or replays the answer.
+      await apiFetch(`/api/oracle/sessions/${sessionId}/seed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: closingQuestion, answer: answer || '' }),
+      });
+      setPendingSessionId(sessionId);
+      handleViewChange('oracle');
+    } catch (err) {
+      console.error('Failed to open conversation from reflection:', err);
     }
   }
 
@@ -371,6 +406,10 @@ function AuthenticatedApp({ username, onLogout, isFirstSession, avatarUrl, onAva
             timeAnchor={timeAnchor}
             closingQuestion={closingQuestion}
             extractedItems={extractedItems}
+            closingAnswer={closingAnswer}
+            onSaveAnswer={(answer) => saveClosingAnswer(activeEntry?.id, answer)}
+            onTalkAboutAnswer={handleTalkAboutAnswer}
+            entryLinked={!!activeEntry?.linked_session_id}
             loading={reflectLoading}
             error={reflectError}
             entryText={activeEntry?.body_text || ''}

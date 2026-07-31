@@ -10,6 +10,8 @@ function TagLabel({ tag, dynamicMap }) {
   return tagLabel(tag, dynamicMap);
 }
 import MicButton from './MicButton';
+import ChatBubbleIcon from './ChatBubbleIcon';
+import { stripMedia, restoreMedia } from '../utils/polishMedia';
 import { useCrisisGate } from './CrisisGate';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { InstagramEmbed } from '../extensions/InstagramEmbed';
@@ -200,6 +202,24 @@ export default function WritingCanvas({
   // hooks normalising the parsed doc) that don't reflect real user edits.
   const loadedHtmlRef = useRef('');
   const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved
+  // Local draft of the title.
+  //
+  // The input used to bind straight to `entry.title` while onChange saved
+  // asynchronously. Each save replaced the `entry` object, so React re-rendered
+  // the input with a value that briefly lagged the DOM — and a controlled input
+  // whose value prop changes has its caret forced to the end. Typing at the
+  // START of an existing title therefore jumped to the end after one keystroke.
+  // Holding the draft locally keeps the caret stable; we only re-sync from
+  // props when the entry actually changes, or when the title is updated
+  // elsewhere (e.g. auto-title) while the field isn't focused.
+  const [titleDraft, setTitleDraft] = useState(entry?.title || '');
+  const titleFocusedRef = useRef(false);
+  useEffect(() => {
+    setTitleDraft(entry?.title || '');
+  }, [entry?.id]);
+  useEffect(() => {
+    if (!titleFocusedRef.current) setTitleDraft(entry?.title || '');
+  }, [entry?.title]);
   const editorWrapRef = useRef(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState([]);
@@ -267,12 +287,9 @@ async function fetchVersions() {
       // Snapshot before polish so user can undo
       await apiFetch(`/api/entries/${entry.id}/snapshot`, { method: 'POST' }).catch(() => {});
 
-      // Strip card reading blocks before polishing — preserve them as placeholders
-      const cardReadings = [];
-      const strippedHtml = html.replace(/<div data-card-reading[^>]*><\/div>/g, (match) => {
-        cardReadings.push(match);
-        return `<!--card-reading-${cardReadings.length - 1}-->`;
-      });
+      // Swap embedded media (videos, images, tarot readings, toggle blocks) for
+      // tokens so the model only rewrites prose and can't drop them.
+      const { html: strippedHtml, atoms } = stripMedia(html);
 
       const res = await apiFetch('/api/reflect/polish', {
         method: 'POST',
@@ -281,11 +298,7 @@ async function fetchVersions() {
       });
       const data = await res.json();
       if (data.polished) {
-        // Re-insert card reading blocks
-        let polished = data.polished;
-        cardReadings.forEach((block, i) => {
-          polished = polished.replace(`<!--card-reading-${i}-->`, block);
-        });
+        const polished = restoreMedia(data.polished, atoms);
 
         editor.commands.setContent(polished, false);
         const text = editor.getText();
@@ -698,8 +711,14 @@ const editor = useEditor({
         <div style={s.meta}>
           <input
             style={s.dateTitle}
-            value={entry.title || ''}
-            onChange={(e) => entry?.id && onUpdate({ title: e.target.value }, entry.id)}
+            value={titleDraft}
+            onFocus={() => { titleFocusedRef.current = true; }}
+            onBlur={() => { titleFocusedRef.current = false; }}
+            onChange={(e) => {
+              const next = e.target.value;
+              setTitleDraft(next);
+              if (entry?.id) onUpdate({ title: next }, entry.id);
+            }}
             placeholder={t('journal.entryTitle')}
             aria-label={t('journal.entryTitle')}
           />
@@ -932,14 +951,9 @@ function WaveformIcon({ playing }) {
   );
 }
 
-function ChatBubbleIcon({ linked }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6l-3 3V11H4a2 2 0 0 1-2-2V3z" />
-      {linked && <circle cx="8" cy="6" r="1.5" fill="currentColor" stroke="none" />}
-    </svg>
-  );
-}
+// ChatBubbleIcon now lives in components/ChatBubbleIcon.jsx — shared with the
+// notes canvas and the reflection answer box so every "talk about this" control
+// looks identical.
 
 function TagSelector({ tags, autoTags = [], allTags, suggestedTags = [], onDismissSuggestion, onTagsChange, onAutoTagsChange, ...rest }) {
   const [adding, setAdding] = useState(false);

@@ -20,6 +20,7 @@ const CATEGORY_TAGS = {
   dreams: 'dream',
   books: 'reading',
   affirmations: 'affirmation',
+  quotes: 'quote',
 };
 
 const CATEGORIES = Object.keys(CATEGORY_TAGS);
@@ -27,20 +28,21 @@ const CATEGORIES = Object.keys(CATEGORY_TAGS);
 function buildPrompt(lang) {
   return `You extract concrete, file-able items from a personal journal entry or note. You do NOT interpret, reflect, or add anything — you only pull out things the writer actually expressed, lightly tidied.
 
-Return ONLY a JSON object with exactly these five keys, each an array of short strings (max ~12 words each):
+Return ONLY a JSON object with exactly these six keys, each an array of short strings (max ~12 words each, except quotes which may run longer):
 {
   "goals": [],         // things the writer wants to do, learn, achieve, change. e.g. "Learn to astral travel", "Finish the Seraph build"
   "gratitudes": [],    // things the writer is thankful for or appreciates. e.g. "My mum's tzatziki", "A hard but good week at kung fu"
   "dreams": [],        // aspirations or actual sleeping dreams described. e.g. "Become a kung fu grandmaster"
   "books": [],         // specific books, authors, or things to read mentioned as wanting to read
-  "affirmations": []   // self-statements, mantras, or beliefs the writer affirms. e.g. "I don't need to suffer because someone else is"
+  "affirmations": [],  // self-statements, mantras, or beliefs the writer affirms. e.g. "I don't need to suffer because someone else is"
+  "quotes": []         // quotable lines: something the writer quoted from someone else, OR a strikingly well-put line of their own worth keeping. Include the attribution inline if they named a source, e.g. "There is no spoon — The Matrix". Verbatim, don't paraphrase.
 }
 
 Rules:
 - HIGH PRECISION. Only include an item if the writer clearly expressed it. If a category has nothing, return an empty array. Empty is the correct, common answer — never invent items to fill a category.
 - Write each item in clean first-person or imperative, as a short standalone phrase. Strip filler ("I think maybe I should...") down to the core ("...").
 - Do NOT duplicate the same item across categories. Pick the single best fit.
-- Do NOT include vague feelings, observations, or reflections — only the five concrete categories above.
+- Do NOT include vague feelings, observations, or reflections — only the six concrete categories above.
 - Books means actual books/reading, not metaphors.
 - Output ONLY the JSON object. No preamble, no markdown fences, no commentary.${lang && lang !== 'en' ? `\n- Write the item strings in the same language as the entry (${lang}).` : ''}`;
 }
@@ -70,14 +72,14 @@ function parseJson(raw) {
   return null;
 }
 
-function cleanItems(arr) {
+function cleanItems(arr, maxLen = 140) {
   if (!Array.isArray(arr)) return [];
   const seen = new Set();
   const out = [];
   for (const v of arr) {
     if (typeof v !== 'string') continue;
     const s = v.trim().replace(/\s+/g, ' ').replace(/^["'`]+|["'`]+$/g, '').trim();
-    if (s.length < 2 || s.length > 140) continue;
+    if (s.length < 2 || s.length > maxLen) continue;
     const key = s.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -99,7 +101,8 @@ async function extractActionItems(text, lang = 'en') {
     const result = {};
     let total = 0;
     for (const c of CATEGORIES) {
-      result[c] = cleanItems(parsed[c]);
+      // Quotes are allowed to run longer than the one-line action items.
+      result[c] = cleanItems(parsed[c], c === 'quotes' ? 300 : 140);
       total += result[c].length;
     }
     console.log(`[extract] ${total} item(s): ` + CATEGORIES.map(c => `${c}=${result[c].length}`).join(' '));
