@@ -42,7 +42,7 @@ import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
 import CapturedItems from '../components/CapturedItems';
 import ChatBubbleIcon from '../components/ChatBubbleIcon';
-import { stripMedia, restoreMedia } from '../utils/polishMedia';
+import { stripMedia, restoreMedia, splitBlocks } from '../utils/polishMedia';
 import AILabel from '../components/AILabel';
 import MicButton from '../components/MicButton';
 import CardPullModal from '../components/CardPullModal';
@@ -1427,14 +1427,22 @@ async function handlePolish() {
       // tokens so the model only rewrites prose and can't drop them.
       const { html: strippedHtml, atoms } = stripMedia(html);
 
+      // Segmented polish — see WritingCanvas: the model rewrites block text
+      // only, we rebuild the structure locally.
+      const split = splitBlocks(strippedHtml);
       const res = await apiFetch('/api/reflect/polish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: strippedHtml, format: 'html' }),
+        body: JSON.stringify(
+          split ? { segments: split.segments, format: 'html' } : { text: strippedHtml, format: 'html' },
+        ),
       });
       const data = await res.json();
-      if (data.polished) {
-        const polished = restoreMedia(data.polished, atoms);
+      const polishedHtml = split && Array.isArray(data.segments)
+        ? split.rebuild(data.segments)
+        : data.polished;
+      if (polishedHtml) {
+        const polished = restoreMedia(polishedHtml, atoms);
 
         ed.commands.setContent(polished, false);
         onChange(note.id, { body: polished });

@@ -56,3 +56,51 @@ export function restoreMedia(html, atoms) {
   });
   return out;
 }
+
+// ── Structure-preserving polish ─────────────────────────────────────────────
+//
+// Models — especially small local ones — reliably flatten a multi-paragraph
+// HTML document into one blob when asked to "preserve the tags". So we never
+// let them own the structure: we hand over the text of each block element
+// separately and rebuild the document ourselves from the originals.
+//
+// Leaf blocks only (the <p> inside a <blockquote>, each <li> rather than the
+// whole <ul>), so list and quote markup survives untouched.
+const LEAF_BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote';
+const MEDIA_TOKEN_ONLY = /^LIMINALMEDIA\d+$/;
+
+// Returns null when there's nothing worth segmenting (caller falls back to the
+// whole-text path). Otherwise { segments, rebuild(polishedSegments) -> html }.
+export function splitBlocks(html) {
+  if (!html) return null;
+  let root;
+  try {
+    const doc = new DOMParser().parseFromString(`<div id="liminal-root">${html}</div>`, 'text/html');
+    root = doc.getElementById('liminal-root');
+  } catch {
+    return null;
+  }
+  if (!root) return null;
+
+  const leaves = Array.from(root.querySelectorAll(LEAF_BLOCK_SELECTOR))
+    .filter((el) => !el.querySelector(LEAF_BLOCK_SELECTOR));
+
+  // Skip empties and the placeholder paragraphs standing in for media, so the
+  // model never sees a token it could mangle.
+  const sendable = leaves.filter((el) => {
+    const text = (el.textContent || '').trim();
+    return text && !MEDIA_TOKEN_ONLY.test(text);
+  });
+  if (!sendable.length) return null;
+
+  return {
+    segments: sendable.map((el) => el.innerHTML),
+    rebuild(polished) {
+      sendable.forEach((el, i) => {
+        const v = polished?.[i];
+        if (typeof v === 'string' && v.trim()) el.innerHTML = v;
+      });
+      return root.innerHTML;
+    },
+  };
+}

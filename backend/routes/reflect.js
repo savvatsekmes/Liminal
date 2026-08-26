@@ -663,12 +663,7 @@ Return ONLY the JSON object.`;
 // Polish text — fix spelling, grammar, and readability while preserving voice.
 // Body: { text, format? }  (format: 'html' | 'plain', default 'html')
 // Returns: { polished }
-router.post('/polish', async (req, res) => {
-  const { text, format } = req.body;
-  if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
-
-  const isHtml = format !== 'plain';
-  const systemPrompt = `You are a gentle writing editor for personal journal entries and notes.
+const POLISH_JOB = `You are a gentle writing editor for personal journal entries and notes.
 
 Your job:
 - Fix spelling and grammar mistakes
@@ -681,7 +676,38 @@ Rules:
 - Do NOT add new ideas, metaphors, or flourishes
 - Do NOT remove meaning or cut content
 - Keep approximately the same length
-- Do NOT add a title or heading
+- Do NOT add a title or heading`;
+
+// Pull the model's sections back out by marker number rather than by order, so
+// a stray blank line or reordered chunk can't shift everything by one.
+function parsePolishSegments(raw, expected) {
+  const out = new Array(expected).fill(null);
+  const re = /<<<\s*(\d+)\s*>>>/g;
+  const marks = [];
+  let m;
+  while ((m = re.exec(raw)) !== null) marks.push({ n: Number(m[1]), end: re.lastIndex, start: m.index });
+  for (let i = 0; i < marks.length; i++) {
+    const body = raw.slice(marks[i].end, i + 1 < marks.length ? marks[i + 1].start : raw.length).trim();
+    const idx = marks[i].n - 1;
+    if (idx >= 0 && idx < expected && body) out[idx] = body;
+  }
+  return out;
+}
+
+router.post('/polish', async (req, res) => {
+  const { text, format, segments } = req.body;
+  const isSegmented = Array.isArray(segments) && segments.length > 0;
+  if (!isSegmented && (!text || !text.trim())) return res.status(400).json({ error: 'text is required' });
+
+  const isHtml = format !== 'plain';
+  const systemPrompt = isSegmented
+    ? `${POLISH_JOB}
+- The writing is split into numbered sections. Each section starts with a marker line of the form <<<N>>>.
+- Return EVERY section, each preceded by its OWN identical marker, in the same order.
+- NEVER merge, split, reorder, add or drop sections. Return exactly as many sections as you were given.
+- A section may contain inline HTML tags such as <strong>, <em> or <a>. Keep those tags. Do NOT add block tags like <p> or <div>.
+- Return ONLY the marked sections, no commentary or explanation`
+    : `${POLISH_JOB}
 - ${isHtml ? 'The input is HTML. Preserve all HTML tags, structure, and formatting exactly. Only change the text content within tags.' : 'Return plain text only.'}
 - Return ONLY the polished text, no commentary or explanation`;
 
@@ -692,17 +718,59 @@ Rules:
   // each blob for a short token, then restore it verbatim in the polished
   // output so the image survives untouched.
   const blobs = [];
-  const prepared = text.replace(
+  const deblob = (s) => s.replace(
     /data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g,
     (m) => { const token = `LIMINALBLOB${blobs.length}`; blobs.push(m); return token; },
   );
+  const reblob = (s) => {
+    let out = s;
+    blobs.forEach((val, i) => { out = out.split(`LIMINALBLOB${i}`).join(val); });
+    return out;
+  };
+
+  // num_ctx 16384: a long entry plus its rewrite easily overflows the 8192
+  // default, which truncates the response and degrades what comes back.
+  const NUM_CTX = 16384;
 
   try {
-    // Size the budget off the prose (post-strip) length, not the base64 blob.
+    if (isSegmented) {
+      // Structure-preserving path. The client sends the entry's block elements;
+      // the model only ever rewrites the prose inside them and the client
+      // rebuilds the HTML. Models — especially small local ones — reliably
+      // flatten multi-paragraph HTML into a single blob when asked to preserve
+      // tags themselves, so we never let them own the structure.
+      const prepared = segments.map((s, i) => `<<<${i + 1}>>>\n${deblob(String(s ?? ''))}`).join('\n\n');
+      const maxTokens = Math.max(1000, Math.ceil(prepared.length / 2));
+      const raw = await llm.call(systemPrompt, prepared, { maxTokens, numCtx: NUM_CTX, language: false });
+      const parsed = parsePolishSegments(raw, segments.length);
+
+      // Anything the model dropped or merged gets a second, single-section pass
+      // rather than being lost. Capped so a pathological response can't fan out
+      // into dozens of slow calls — leftovers fall back to the original text.
+      const missing = parsed.map((v, i) => (v === null ? i : -1)).filter((i) => i >= 0);
+      if (missing.length) {
+        console.warn(`[reflect/polish] ${missing.length}/${segments.length} sections missing — retrying individually`);
+        for (const i of missing.slice(0, 12)) {
+          try {
+            const one = await llm.call(
+              `${POLISH_JOB}\n- Keep any inline HTML tags. Do NOT add block tags.\n- Return ONLY the polished text.`,
+              deblob(String(segments[i] ?? '')),
+              { maxTokens: 800, numCtx: NUM_CTX, language: false },
+            );
+            if (one?.trim()) parsed[i] = one.trim();
+          } catch {}
+        }
+      }
+
+      const out = parsed.map((v, i) => reblob(v ?? String(segments[i] ?? '')));
+      return res.json({ segments: out });
+    }
+
+    // Legacy whole-text path (plain text, and any older client).
+    const prepared = deblob(text);
     const maxTokens = Math.max(1000, Math.ceil(prepared.length / 2));
-    let polished = await llm.call(systemPrompt, prepared, { maxTokens, language: false });
-    blobs.forEach((val, i) => { polished = polished.split(`LIMINALBLOB${i}`).join(val); });
-    res.json({ polished: polished.trim() });
+    const polished = await llm.call(systemPrompt, prepared, { maxTokens, numCtx: NUM_CTX, language: false });
+    res.json({ polished: reblob(polished).trim() });
   } catch (err) {
     console.error('[reflect/polish] Error:', err.message);
     res.status(500).json({ error: 'Polish failed.' });

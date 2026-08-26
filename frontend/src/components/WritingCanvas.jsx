@@ -11,7 +11,7 @@ function TagLabel({ tag, dynamicMap }) {
 }
 import MicButton from './MicButton';
 import ChatBubbleIcon from './ChatBubbleIcon';
-import { stripMedia, restoreMedia } from '../utils/polishMedia';
+import { stripMedia, restoreMedia, splitBlocks } from '../utils/polishMedia';
 import { useCrisisGate } from './CrisisGate';
 import { YoutubeEmbed } from '../extensions/YoutubeEmbed';
 import { InstagramEmbed } from '../extensions/InstagramEmbed';
@@ -291,14 +291,24 @@ async function fetchVersions() {
       // tokens so the model only rewrites prose and can't drop them.
       const { html: strippedHtml, atoms } = stripMedia(html);
 
+      // Send the block elements separately and rebuild the document here —
+      // models flatten multi-paragraph HTML into one blob if asked to preserve
+      // the tags themselves. Falls back to whole-text polish if there's nothing
+      // to segment.
+      const split = splitBlocks(strippedHtml);
       const res = await apiFetch('/api/reflect/polish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: strippedHtml, format: 'html' }),
+        body: JSON.stringify(
+          split ? { segments: split.segments, format: 'html' } : { text: strippedHtml, format: 'html' },
+        ),
       });
       const data = await res.json();
-      if (data.polished) {
-        const polished = restoreMedia(data.polished, atoms);
+      const polishedHtml = split && Array.isArray(data.segments)
+        ? split.rebuild(data.segments)
+        : data.polished;
+      if (polishedHtml) {
+        const polished = restoreMedia(polishedHtml, atoms);
 
         editor.commands.setContent(polished, false);
         const text = editor.getText();
