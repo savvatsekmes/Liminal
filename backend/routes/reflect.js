@@ -331,7 +331,7 @@ router.post('/', async (req, res) => {
         // result or a failure never blocks the reflection.
         let extracted = null;
         try {
-          extracted = await require('../services/extractService').extractActionItems(text, lang);
+          extracted = await require("../services/extractService").extractActionItems(text, lang, { html: htmlBody });
           const any = extracted && Object.values(extracted).some(a => a.length);
           if (any) sendEvent('extracted_items', { extracted });
         } catch (e) {

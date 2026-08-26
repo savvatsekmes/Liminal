@@ -71,7 +71,12 @@ export default function CapturedItems({ items }) {
     if (state[key] === 'saving' || state[key] === 'done') return;
     setState((p) => ({ ...p, [key]: 'saving' }));
     try {
-      const body = '<p>' + escapeHtml(text) + '</p>';
+      // Multi-line quotes (poems, stanzas) keep their shape: blank lines become
+      // separate paragraphs, single newlines become <br>.
+      const body = text
+        .split(/\n{2,}/)
+        .map((para) => '<p>' + escapeHtml(para).split('\n').join('<br>') + '</p>')
+        .join('');
       const res = await apiFetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -185,7 +190,7 @@ const s = {
     padding: '5px 0 5px 14px',
   },
   bullet: { color: 'var(--muted)', fontSize: '12px', flexShrink: 0, lineHeight: 1.5 },
-  itemText: { fontSize: '13px', color: 'var(--body)', lineHeight: 1.5, flex: 1, minWidth: 0 },
+  itemText: { fontSize: '13px', color: 'var(--body)', lineHeight: 1.5, flex: 1, minWidth: 0, whiteSpace: 'pre-wrap' },
   addBtn: {
     flexShrink: 0,
     fontSize: '11px',

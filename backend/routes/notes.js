@@ -532,7 +532,7 @@ ${toneBlockNote}`;
         // blocks the reflection. Computed BEFORE the save so it persists.
         let extracted = null;
         try {
-          extracted = await require('../services/extractService').extractActionItems(noteText, lang);
+          extracted = await require('../services/extractService').extractActionItems(noteText, lang, { html: note.body || '' });
           if (extracted && Object.values(extracted).some(a => a.length)) {
             sendEvent('extracted_items', { extracted });
           }
