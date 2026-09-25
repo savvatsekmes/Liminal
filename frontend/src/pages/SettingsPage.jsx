@@ -391,7 +391,7 @@ const RECOMMENDED_MODELS = [
   { name: 'mistral:7b',   desc: 'Mid-range · 7GB VRAM · excellent reasoning' },
   { name: 'llama3.1:8b',  desc: 'Mid-range · 8GB VRAM · high quality' },
   // High-end — 12+ GB VRAM (RTX 3080, RTX 4070+, M2 Max/Ultra)
-  { name: 'qwen3.5:27b',  desc: 'High-end · 17GB · near-frontier quality' },
+  { name: 'qwen3.8:27b',  desc: 'High-end · 18GB · newest Qwen · vision + 256K context' },
   { name: 'qwen3.5:35b',  desc: 'High-end · 24GB · exceptional quality' },
   { name: 'gemma4:e4b',   desc: 'High-end · 20GB+ VRAM · Google · expert MoE' },
   { name: 'llama3.1:70b',  desc: 'High-end · 40GB+ VRAM · best open-source' },
