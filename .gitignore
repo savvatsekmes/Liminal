@@ -70,3 +70,7 @@ notion_import_data.json
 # Never committed: the repo is public and vendors do not allow offering this
 # to other users. Kept locally; see scripts/dist-win.js for the release guard.
 backend/personal/
+
+# Per-project Codex CLI config. Can contain MCP server tokens (e.g. Notion) in
+# plain text, and this repo is public — never commit it.
+.codex/
