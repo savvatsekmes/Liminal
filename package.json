@@ -7,7 +7,7 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dist": "electron-builder --prepackaged dist-installers/win-unpacked --win nsis-web",
+    "dist": "node scripts/dist-win.js",
     "rebuild:backend": "npx --yes @electron/rebuild --module-dir backend --types prod",
     "predist:mac": "npm run rebuild:backend",
     "dist:mac": "electron-builder --mac --arm64"
@@ -27,6 +27,7 @@
       "output": "dist-installers",
       "buildResources": "electron"
     },
+    "afterPack": "scripts/assert-no-personal.js",
     "files": [
       "electron/**/*",
       "package.json"
@@ -35,7 +36,7 @@
       {
         "from": "backend",
         "to": "backend",
-        "filter": ["**/*", "!data/**", "data/*.js", "data/quotes/**", "!default-voices/For_Savva_Only/**", "!.env"]
+        "filter": ["**/*", "!data/**", "data/*.js", "data/quotes/**", "!default-voices/For_Savva_Only/**", "!personal/**", "!.env"]
       },
       {
         "from": "frontend/dist",

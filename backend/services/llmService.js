@@ -80,7 +80,35 @@ function getSettings() {
     ollamaUrl:        s.get('ollama_url') || 'http://localhost:11434',
     ollamaModel:      s.get('ollama_model') || 'llama3.1',
     ollamaThink:      s.get('ollama_think') === 'true',
+    claudeSubscriptionModel:  s.get('claude_subscription_model') || 'default',
+    chatgptSubscriptionModel: s.get('chatgpt_subscription_model') || 'default',
   };
+}
+
+// ── Personal-only providers ──────────────────────────────────────────────────
+// Claude / ChatGPT through the user's own subscription login. They live in
+// backend/personal/, which is excluded from every distributed build (vendors
+// don't allow apps to offer their consumer login to other people), so in a
+// shipped build the folder is absent and these providers don't exist.
+const PERSONAL_PROVIDERS = new Set(['claude_subscription', 'chatgpt_subscription']);
+let _personal;
+function personalModule() {
+  if (_personal === undefined) {
+    const path = require('path');
+    const dir = path.join(__dirname, '..', 'personal');
+    // Only "the folder isn't there" means unavailable — a broken module inside
+    // it should fail loudly, not silently vanish.
+    _personal = require('fs').existsSync(path.join(dir, 'index.js')) ? require(dir) : null;
+  }
+  return _personal;
+}
+function personalFor(provider) {
+  const mod = personalModule();
+  if (!mod) throw new Error('This provider is only available in personal builds of Liminal.');
+  return mod;
+}
+function personalModel(provider, options, cfg) {
+  return options.model || (provider === 'claude_subscription' ? cfg.claudeSubscriptionModel : cfg.chatgptSubscriptionModel);
 }
 
 // ── Claude ────────────────────────────────────────────────────────────────────
@@ -204,6 +232,11 @@ async function call(systemPrompt, userMessage, options = {}) {
   systemPrompt = withLanguage(systemPrompt, options);
   const provider = options.provider || getSettings().provider;
 
+  if (PERSONAL_PROVIDERS.has(provider)) {
+    return personalFor(provider).call(provider, systemPrompt, userMessage,
+      { ...options, model: personalModel(provider, options, getSettings()) });
+  }
+
   switch (provider) {
     case 'claude':  return callClaude(systemPrompt, userMessage, options);
     case 'openai':  return callOpenAI(systemPrompt, userMessage, options);
@@ -215,6 +248,12 @@ async function call(systemPrompt, userMessage, options = {}) {
 async function* stream(systemPrompt, userMessage, options = {}) {
   systemPrompt = withLanguage(systemPrompt, options);
   const provider = options.provider || getSettings().provider;
+
+  if (PERSONAL_PROVIDERS.has(provider)) {
+    yield* personalFor(provider).stream(provider, systemPrompt, userMessage,
+      { ...options, model: personalModel(provider, options, getSettings()) });
+    return;
+  }
 
   if (provider === 'claude') {
     const { anthropicKey } = getSettings();
@@ -337,6 +376,11 @@ async function callWithHistory(systemPrompt, messages, options = {}) {
   const cfg = getSettings();
   const provider = options.provider || cfg.provider;
 
+  if (PERSONAL_PROVIDERS.has(provider)) {
+    return personalFor(provider).callWithHistory(provider, systemPrompt, messages,
+      { ...options, model: personalModel(provider, options, cfg) });
+  }
+
   if (provider === 'claude') {
     const Anthropic = require('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: options.apiKey || cfg.anthropicKey });
@@ -433,6 +477,14 @@ async function callWithHistoryAndTools(systemPrompt, messages, options = {}) {
 
   const cfg = getSettings();
   const provider = options.provider || cfg.provider;
+
+  // Subscription providers: Liminal's tools are exposed to the CLI as MCP
+  // tools that call executeToolCall, with every built-in tool switched off.
+  if (PERSONAL_PROVIDERS.has(provider)) {
+    return personalFor(provider).callWithHistoryAndTools(provider, systemPrompt, messages,
+      { ...options, model: personalModel(provider, options, cfg) },
+      { tools: [WEB_SEARCH_TOOL], executeToolCall });
+  }
 
   // Claude/OpenAI: use native tool calling (works reliably)
   if (provider === 'claude') {
@@ -624,4 +676,22 @@ async function callOllamaWithTools(systemPrompt, messages, cfg, options) {
   return followUpData.message.content || '';
 }
 
-module.exports = { call, stream, callWithHistory, callWithHistoryAndTools, testConnection };
+// ── Personal provider introspection (Settings UI) ────────────────────────────
+function personalProvidersAvailable() {
+  return !!personalModule();
+}
+async function personalProviderStatus(provider) {
+  if (!PERSONAL_PROVIDERS.has(provider) || !personalModule()) {
+    return { signedIn: false, detail: 'Not available in this build.' };
+  }
+  return personalModule().status(provider);
+}
+function personalProviderModels(provider) {
+  if (!PERSONAL_PROVIDERS.has(provider) || !personalModule()) return [];
+  return personalModule().models(provider);
+}
+
+module.exports = {
+  call, stream, callWithHistory, callWithHistoryAndTools, testConnection,
+  personalProvidersAvailable, personalProviderStatus, personalProviderModels,
+};

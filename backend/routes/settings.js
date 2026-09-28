@@ -31,6 +31,7 @@ router.get('/', (req, res) => {
   all.has_anthropic_key = s.hasSecret('anthropic_api_key');
   all.has_openai_key    = s.hasSecret('openai_api_key');
   all.has_tavily_key    = s.hasSecret('tavily_api_key');
+  all.personal_providers_available = llm.personalProvidersAvailable();
   res.json(all);
 });
 
@@ -67,6 +68,7 @@ router.put('/', (req, res) => {
   result.has_anthropic_key = s.hasSecret('anthropic_api_key');
   result.has_openai_key    = s.hasSecret('openai_api_key');
   result.has_tavily_key    = s.hasSecret('tavily_api_key');
+  result.personal_providers_available = llm.personalProvidersAvailable();
   res.json(result);
 });
 
@@ -91,6 +93,19 @@ router.post('/test-llm', async (req, res) => {
 // ── GET /api/settings/gpus ────────────────────────────────────────────────────
 // Returns list of GPUs available on this machine.
 // Windows/Linux: nvidia-smi (CUDA). macOS: ask the running TTS server about MPS.
+// Sign-in status and model list for the personal subscription providers.
+// Status checks don't send a prompt, so they cost no plan usage.
+router.get('/subscription-status', async (req, res) => {
+  const provider = String(req.query.provider || '');
+  if (!llm.personalProvidersAvailable()) return res.json({ available: false });
+  try {
+    const status = await llm.personalProviderStatus(provider);
+    res.json({ available: true, ...status, models: llm.personalProviderModels(provider) });
+  } catch (err) {
+    res.json({ available: true, signedIn: false, detail: err.message, models: llm.personalProviderModels(provider) });
+  }
+});
+
 router.get('/gpus', async (req, res) => {
   // macOS: there's no nvidia-smi. Apple Silicon GPU is exposed via PyTorch MPS,
   // which only the Python tts_server can detect. Ask it directly.

@@ -65,3 +65,8 @@ backend/default-voices/For_Savva_Only/
 
 # Personal data exports
 notion_import_data.json
+
+# Personal-only subscription LLM providers (Claude/ChatGPT via own login).
+# Never committed: the repo is public and vendors do not allow offering this
+# to other users. Kept locally; see scripts/dist-win.js for the release guard.
+backend/personal/

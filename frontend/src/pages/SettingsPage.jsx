@@ -546,6 +546,74 @@ function OllamaInstallGuide({ onRecheck }) {
   );
 }
 
+// ── Personal subscription providers ──────────────────────────────────────────
+// Only rendered when the backend reports them (personal builds). English-only
+// by design — no distributed user ever sees these strings rendered.
+const PERSONAL_PROVIDERS = [
+  {
+    id: 'claude_subscription',
+    label: 'Claude (my subscription)',
+    modelKey: 'claude_subscription_model',
+    vendor: 'Anthropic',
+    signIn: 'Install Claude Code and sign in (run `claude` once).',
+  },
+  {
+    id: 'chatgpt_subscription',
+    label: 'ChatGPT (my subscription)',
+    modelKey: 'chatgpt_subscription_model',
+    vendor: 'OpenAI',
+    signIn: 'Install Codex and sign in with ChatGPT (run `codex login`).',
+  },
+];
+
+function SubscriptionProviderPanel({ provider, cfg, set, save }) {
+  const [status, setStatus] = useState(null); // { signedIn, detail, models }
+  const [checking, setChecking] = useState(false);
+
+  async function refresh() {
+    setChecking(true);
+    try {
+      const r = await apiFetch(`/api/settings/subscription-status?provider=${provider.id}`);
+      setStatus(await r.json());
+    } catch {
+      setStatus({ signedIn: false, detail: provider.signIn, models: [] });
+    } finally {
+      setChecking(false);
+    }
+  }
+  useEffect(() => { setStatus(null); refresh(); }, [provider.id]);
+
+  const models = status?.models?.length ? status.models : [{ id: 'default', label: 'Default' }];
+  const current = cfg[provider.modelKey] || 'default';
+
+  return (
+    <>
+      <Field label="Sign-in">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {checking && !status
+            ? <span style={s.sublabel}>Checking…</span>
+            : <StatusIndicator ok={!!status?.signedIn} message={status?.signedIn ? status.detail : (status?.detail || provider.signIn)} />}
+          <Btn onClick={refresh} disabled={checking}>{checking ? 'Checking…' : 'Recheck'}</Btn>
+        </div>
+      </Field>
+      <Field label="Model">
+        <select
+          style={s.select}
+          value={models.some((m) => m.id === current) ? current : 'default'}
+          onChange={(e) => { set(provider.modelKey, e.target.value); save({ [provider.modelKey]: e.target.value }); }}
+        >
+          {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+      </Field>
+      <div style={{ ...s.sublabel, marginBottom: '14px', lineHeight: 1.5 }}>
+        Uses your own {provider.vendor} subscription login — no API key. As with the API option,
+        journal text is sent to {provider.vendor} when this provider is used. For your personal use
+        only: this option never appears in the builds you distribute.
+      </div>
+    </>
+  );
+}
+
 // ── LLM Section ───────────────────────────────────────────────────────────────
 function LLMSection({ cfg, set, save, saving, showToast }) {
   const { t } = useLanguage();
@@ -594,6 +662,8 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
         body.ollama_url = cfg.ollama_url;
         body.model = cfg.ollama_model;
       }
+      if (provider === 'claude_subscription') body.model = cfg.claude_subscription_model || 'default';
+      if (provider === 'chatgpt_subscription') body.model = cfg.chatgpt_subscription_model || 'default';
 
       const res = await apiFetch('/api/settings/test-llm', {
         method: 'POST',
@@ -634,6 +704,39 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
           ))}
         </div>
       </Field>
+
+      {/* Personal-only providers. The backend reports them only when
+          backend/personal/ is present, which it never is in a distributed
+          build — so this row can't appear for anyone else. English-only on
+          purpose: it's never shown to users. */}
+      {cfg.personal_providers_available && (
+        <Field label="Personal — your own subscription (only in your builds)">
+          <div style={s.segmented}>
+            {PERSONAL_PROVIDERS.map((p, i, arr) => (
+              <button
+                key={p.id}
+                style={{
+                  ...s.segBtn,
+                  ...(i === arr.length - 1 ? s.segBtnLast : {}),
+                  ...(provider === p.id ? s.segBtnActive : {}),
+                }}
+                onClick={() => { set('llm_provider', p.id); save({ llm_provider: p.id }); setTestStatus(null); }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+
+      {PERSONAL_PROVIDERS.some((p) => p.id === provider) && (
+        <SubscriptionProviderPanel
+          provider={PERSONAL_PROVIDERS.find((p) => p.id === provider)}
+          cfg={cfg}
+          set={set}
+          save={save}
+        />
+      )}
 
       {provider === 'claude' && (
         <>
