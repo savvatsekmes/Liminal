@@ -8,6 +8,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import SkyPage from './SkyPage';
 import AILabel from '../components/AILabel';
 import { useFirstTourTrigger } from '../components/TutorialContext';
+import { CardDetailPopup } from '../extensions/CardReading';
 
 const s = {
   root: {
@@ -183,6 +184,17 @@ const TAROT_DESCRIPTIONS = {
   'The World':          'Completion, integration, the end of a cycle, wholeness',
 };
 
+// Stored card values look like "The Hermit" or "The Hermit IX" (onboarding
+// saves the bare name, this page appends the numeral). Resolve either to the
+// deck art, which is filed by arcana number: /cards/Tarot_Deck/major_<n>.png.
+function majorArcanaCard(value) {
+  if (!value) return null;
+  const name = value.replace(/\s+[IVXLCDM0]+$/, '').trim();
+  const index = MAJOR_ARCANA.findIndex((c) => c.name === name);
+  if (index === -1) return null;
+  return { name, numeral: MAJOR_ARCANA[index].number, image: `/cards/Tarot_Deck/major_${index}.png` };
+}
+
 function calculateLifePath(birthDate) {
   if (!birthDate) return null;
   const digits = birthDate.replace(/-/g, '').split('').map(Number);
@@ -250,6 +262,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
   const [astroCalcing, setAstroCalcing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [editingPortrait, setEditingPortrait] = useState(false);
+  const [openCard, setOpenCard] = useState(null); // tarot card shown in CardDetailPopup
   const astroTimer = useRef(null);
   // Auto-save: any change to `portrait` after the initial fetch debounces a
   // PUT. Replaces the manual "Save portrait" button. The skip-flag suppresses
@@ -510,16 +523,58 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
             <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '12px' }}>
               {t('portrait.calculated')}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px 24px' }}>
-              <AstroField label={t('portrait.sunSign')} value={portrait.sun_sign} />
-              <AstroField label={t('portrait.moonSign')} value={portrait.moon_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : null} />
-              <AstroField label={t('portrait.risingSign')} value={portrait.rising_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : !portrait.birth_location ? t('portrait.enterBirthLocation') : null} />
-              <AstroField label={t('portrait.chineseZodiac')} value={portrait.chinese_zodiac && portrait.chinese_element ? `${portrait.chinese_element} ${portrait.chinese_zodiac}` : portrait.chinese_zodiac} />
-              <AstroField label={t('portrait.lifePathNumber')} value={portrait.life_path_number != null ? String(portrait.life_path_number) : null} />
-              <AstroField label={t('portrait.soulCard')} value={portrait.soul_card} missing={!portrait.sun_sign ? t('portrait.needsSunSign') : null} />
-              <AstroField label={t('portrait.lifePathCard')} value={portrait.life_path_card ? `${portrait.life_path_card}  (Life Path ${portrait.life_path_number})` : null} />
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '18px' : '24px', alignItems: isMobile ? 'stretch' : 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '10px 24px' }}>
+                <AstroField label={t('portrait.sunSign')} value={portrait.sun_sign} />
+                <AstroField label={t('portrait.moonSign')} value={portrait.moon_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : null} />
+                <AstroField label={t('portrait.risingSign')} value={portrait.rising_sign} missing={!portrait.birth_time ? t('portrait.enterBirthTime') : !portrait.birth_location ? t('portrait.enterBirthLocation') : null} />
+                <AstroField label={t('portrait.chineseZodiac')} value={portrait.chinese_zodiac && portrait.chinese_element ? `${portrait.chinese_element} ${portrait.chinese_zodiac}` : portrait.chinese_zodiac} />
+                <AstroField label={t('portrait.lifePathNumber')} value={portrait.life_path_number != null ? String(portrait.life_path_number) : null} />
+                <AstroField label={t('portrait.soulCard')} value={portrait.soul_card} missing={!portrait.sun_sign ? t('portrait.needsSunSign') : null} />
+                <AstroField label={t('portrait.lifePathCard')} value={portrait.life_path_card ? `${portrait.life_path_card}  (Life Path ${portrait.life_path_number})` : null} />
+              </div>
+
+              {/* The calculated tarot cards as actual cards. Click for meaning. */}
+              {(() => {
+                const cards = [
+                  { label: t('portrait.soulCard'), card: majorArcanaCard(portrait.soul_card) },
+                  { label: t('portrait.lifePathCard'), card: majorArcanaCard(portrait.life_path_card) },
+                ].filter((c) => c.card);
+                if (!cards.length) return null;
+                return (
+                  <div style={{ display: 'flex', gap: '14px', flexShrink: 0, justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
+                    {cards.map(({ label, card }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setOpenCard({
+                          name: card.name,
+                          image: card.image,
+                          position: label,
+                          meaning: TAROT_DESCRIPTIONS[card.name],
+                        })}
+                        title={`${card.name} — ${TAROT_DESCRIPTIONS[card.name] || ''}`}
+                        style={{ width: 84, padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'center', fontFamily: 'var(--font)' }}
+                      >
+                        <div style={{ width: 84, height: 144, borderRadius: '6px', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.15)', marginBottom: '8px' }}>
+                          <img src={card.image} alt={card.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        </div>
+                        <div style={{ fontSize: '9px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '2px' }}>
+                          {label}
+                        </div>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--strong)', lineHeight: '1.3' }}>
+                          {card.name}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
+        )}
+        {openCard && (
+          <CardDetailPopup card={openCard} deckType="tarot" onClose={() => setOpenCard(null)} />
         )}
 
         {/* Manual overrides */}
