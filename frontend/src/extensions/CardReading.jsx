@@ -1,6 +1,6 @@
 import { Node } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
@@ -198,6 +198,41 @@ const st = {
     width: '100%',
     fontFamily: 'var(--font)',
   },
+  // Single-card layout: card on the left, reading beside it.
+  singleRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: '20px',
+    padding: '16px 20px 28px', // clears the read-aloud button in the corner
+  },
+  singleText: {
+    flex: '1 1 240px',
+    minWidth: 0,
+  },
+  singleReading: {
+    fontSize: '13px',
+    color: 'var(--strong)',
+    lineHeight: '1.85',
+    overflow: 'hidden',
+  },
+  singleToggle: {
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    marginTop: '6px',
+    cursor: 'pointer',
+    fontSize: '10px',
+    fontWeight: '600',
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    color: 'var(--muted)',
+    fontFamily: 'var(--font)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    transition: 'color 0.12s',
+  },
   readingBody: {
     fontSize: '13px',
     color: 'var(--strong)',
@@ -387,6 +422,56 @@ function CardReadingView({ node, deleteNode, editor, getPos }) {
 
   const deckLabel = deckType === 'tarot' ? 'Tarot' : 'Oracle';
 
+  // A single card (daily card, one-card pull) sits beside its reading instead
+  // of above it. Collapsed, the reading shows as much as fits next to the card
+  // and fades out; "Read more" only appears if there's actually more.
+  const single = cards.length === 1;
+  const SINGLE_PREVIEW_HEIGHT = 190; // ≈ card + its label/name
+  const singleTextRef = useRef(null);
+  const [singleOverflows, setSingleOverflows] = useState(false);
+  useLayoutEffect(() => {
+    const el = singleTextRef.current;
+    if (!single || !el) return;
+    const measure = () => setSingleOverflows(el.scrollHeight > SINGLE_PREVIEW_HEIGHT + 4);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [single, reading]);
+
+  const renderCard = (card, i) => (
+    <div
+      key={i}
+      style={{ ...st.cardSlot, ...(single ? { flexShrink: 0 } : {}) }}
+      onClick={() => setSelectedCard(card)}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+    >
+      <div style={st.cardImgWrap}>
+        {card.image ? (
+          <img
+            src={card.image}
+            alt={card.name}
+            style={{
+              ...st.cardImg,
+              transform: card.reversed ? 'rotate(180deg)' : 'none',
+            }}
+          />
+        ) : (
+          <div style={st.oracleCard}>
+            <div style={{ width: 10, height: 10, background: '#d4af37', transform: 'rotate(45deg)', marginBottom: 6 }} />
+            <div style={{ fontSize: '9px', fontWeight: 700, lineHeight: 1.3 }}>{card.name}</div>
+          </div>
+        )}
+      </div>
+      <div style={st.cardLabel}>{card.position}</div>
+      <div style={st.cardName}>{card.name}</div>
+      {card.reversed && <div style={st.reversed}>Reversed</div>}
+    </div>
+  );
+
+  const collapsed = !readingExpanded && singleOverflows;
+
   return (
     <NodeViewWrapper
       data-card-reading=""
@@ -428,42 +513,46 @@ function CardReadingView({ node, deleteNode, editor, getPos }) {
           </button>
         </div>
 
-        {/* Card images row */}
-        <div style={st.cardRow}>
-          {cards.map((card, i) => (
-            <div
-              key={i}
-              style={st.cardSlot}
-              onClick={() => setSelectedCard(card)}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
-            >
-              <div style={st.cardImgWrap}>
-                {card.image ? (
-                  <img
-                    src={card.image}
-                    alt={card.name}
-                    style={{
-                      ...st.cardImg,
-                      transform: card.reversed ? 'rotate(180deg)' : 'none',
-                    }}
-                  />
-                ) : (
-                  <div style={st.oracleCard}>
-                    <div style={{ width: 10, height: 10, background: '#d4af37', transform: 'rotate(45deg)', marginBottom: 6 }} />
-                    <div style={{ fontSize: '9px', fontWeight: 700, lineHeight: 1.3 }}>{card.name}</div>
-                  </div>
+        {single ? (
+          <div style={st.singleRow}>
+            {renderCard(cards[0], 0)}
+            {reading && (
+              <div style={st.singleText}>
+                <div
+                  ref={singleTextRef}
+                  style={{
+                    ...st.singleReading,
+                    maxHeight: collapsed ? `${SINGLE_PREVIEW_HEIGHT}px` : 'none',
+                    ...(collapsed ? {
+                      WebkitMaskImage: 'linear-gradient(to bottom, #000 70%, transparent)',
+                      maskImage: 'linear-gradient(to bottom, #000 70%, transparent)',
+                    } : {}),
+                  }}
+                  dangerouslySetInnerHTML={{ __html: reading }}
+                />
+                {singleOverflows && (
+                  <button
+                    style={st.singleToggle}
+                    onClick={() => setReadingExpanded(prev => !prev)}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--strong)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--muted)'; }}
+                  >
+                    <ChevronIcon expanded={readingExpanded} />
+                    {readingExpanded ? 'Show less' : 'Read more'}
+                  </button>
                 )}
               </div>
-              <div style={st.cardLabel}>{card.position}</div>
-              <div style={st.cardName}>{card.name}</div>
-              {card.reversed && <div style={st.reversed}>Reversed</div>}
-            </div>
-          ))}
-        </div>
+            )}
+          </div>
+        ) : (
+          /* Card images row */
+          <div style={st.cardRow}>
+            {cards.map(renderCard)}
+          </div>
+        )}
 
-        {/* Collapsible reading section */}
-        {reading && (
+        {/* Collapsible reading section (spreads only — a single card shows its reading beside it) */}
+        {reading && !single && (
           <>
             <button
               style={st.readingToggle}
