@@ -470,12 +470,14 @@ router.post('/dedup', async (req, res) => {
         return;
       }
 
-      // Embed every memory. ~5-15ms each on CPU.
+      // Embed every memory. ~5-15ms each on CPU (MiniLM; ~10x that for
+      // EmbeddingGemma). One model for the whole job so vectors are comparable.
+      const dedupModel = embedding.currentModelId();
       const withVectors = [];
       for (let i = 0; i < decoded.length; i++) {
         const m = decoded[i];
         try {
-          m.vector = await embedding.embed(m.content);
+          m.vector = await embedding.embed(m.content, dedupModel);
           withVectors.push(m);
         } catch (err) {
           console.warn(`[dedup] failed to embed memory ${m.id}: ${err.message}`);
@@ -484,7 +486,9 @@ router.post('/dedup', async (req, res) => {
       }
 
       // Greedy clustering — same as dedupMemories.js.
-      const cosine = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+      // Calibrated to MiniLM's scale, so the 0.88 default threshold keeps its
+      // meaning (raw EmbeddingGemma scores for near-duplicates sit ~0.92–0.99).
+      const cosine = (a, b) => embedding.similarity(a, b, dedupModel);
       const clusters = [];
       for (const m of withVectors) {
         let joined = false;

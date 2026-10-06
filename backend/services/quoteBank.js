@@ -19,7 +19,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { embed } = require('./embeddingService');
+const { embed, embedMany, similarity, currentModelId } = require('./embeddingService');
 
 const QUOTES_DIR = path.join(__dirname, '..', 'data', 'quotes');
 const SUPPORTED_LANGS = ['en','es','fr','de','it','pt','nl','sv','pl','el','ru','tr','ar','ja','ko','zh'];
@@ -57,35 +57,40 @@ function loadPool(lang) {
   }
 }
 
-async function ensureEmbedded(lang) {
-  if (cache.has(lang)) return cache.get(lang);
+// Vectors from different librarian models can't be compared, so the cache is
+// keyed by model as well as language.
+async function ensureEmbedded(lang, modelId = currentModelId()) {
+  const key = `${modelId}:${lang}`;
+  if (cache.has(key)) return cache.get(key);
   const promise = (async () => {
     const pool = loadPool(lang);
     if (!pool.length) return [];
     const t0 = Date.now();
-    const out = [];
-    for (const q of pool) {
-      try {
-        const vec = await embed(q.text);
-        out.push({ text: q.text, author: q.author, vec });
-      } catch (err) {
-        // Embedding failure on a single quote — skip it, don't poison the bank.
-        console.warn(`[quoteBank] embed failed for ${lang}: ${err.message}`);
+    let out = [];
+    try {
+      const vecs = await embedMany(pool.map((q) => q.text), modelId, 'document');
+      out = pool.map((q, i) => ({ text: q.text, author: q.author, vec: vecs[i] }));
+    } catch (err) {
+      // A batch failed — fall back to one at a time so a single bad quote
+      // can't poison the whole bank.
+      console.warn(`[quoteBank] batch embed failed for ${lang} (${err.message}); retrying one by one`);
+      for (const q of pool) {
+        try {
+          out.push({ text: q.text, author: q.author, vec: await embed(q.text, modelId, 'document') });
+        } catch (e) {
+          console.warn(`[quoteBank] embed failed for ${lang}: ${e.message}`);
+        }
       }
     }
-    console.log(`[quoteBank] ${lang}: embedded ${out.length} attributable quotes in ${Date.now() - t0}ms`);
+    console.log(`[quoteBank] ${lang} (${modelId}): embedded ${out.length} attributable quotes in ${Date.now() - t0}ms`);
     return out;
   })();
-  cache.set(lang, promise);
+  cache.set(key, promise);
+  // Don't cache a failure forever.
+  promise.catch(() => cache.delete(key));
   return promise;
 }
 
-function dot(a, b) {
-  let s = 0;
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) s += a[i] * b[i];
-  return s;
-}
 
 /**
  * Find the most thematically relevant quote from the curated bank for a given
@@ -108,12 +113,15 @@ async function findBestQuote(text, lang = 'en', opts = {}) {
 
   if (!text || typeof text !== 'string' || text.trim().length < 20) return null;
   const code = SUPPORTED_LANGS.includes(lang) ? lang : 'en';
-  const pool = await ensureEmbedded(code);
+  // Pin one model for the whole match so pool and query vectors agree even
+  // if the librarian is switched mid-reflection.
+  const modelId = currentModelId();
+  const pool = await ensureEmbedded(code, modelId);
   if (!pool.length) return null;
 
   let queryVec;
   try {
-    queryVec = await embed(text);
+    queryVec = await embed(text, modelId, 'query');
   } catch {
     return null;
   }
@@ -122,7 +130,9 @@ async function findBestQuote(text, lang = 'en', opts = {}) {
   let bestQuote = null;
   for (const q of pool) {
     if (excludeTexts && excludeTexts.has(q.text)) continue;
-    const sim = dot(queryVec, q.vec);
+    // Calibrated to MiniLM's scale, so QUOTE_MIN_SIMILARITY means the same
+    // thing whichever librarian is active.
+    const sim = similarity(queryVec, q.vec, modelId, 'quote');
     if (sim > bestSim) {
       bestSim = sim;
       bestQuote = q;

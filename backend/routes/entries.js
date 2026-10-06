@@ -134,7 +134,7 @@ router.post('/', (req, res) => {
   // Index in background — don't block the response. Pass the plaintext so the
   // embedding captures semantics, not ciphertext.
   if (body_text) {
-    indexEntry(entry.id, body_text).catch(() => {});
+    indexEntry(entry.id, body_text, { debounce: true }).catch(() => {});
   }
 
   res.status(201).json(entry);
@@ -181,7 +181,7 @@ router.put('/:id', (req, res) => {
 
   // Re-index in background if text changed
   if (body_text !== undefined && body_text) {
-    indexEntry(updated.id, body_text).catch(() => {});
+    indexEntry(updated.id, body_text, { debounce: true }).catch(() => {});
   }
 
   res.json(updated);

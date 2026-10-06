@@ -93,6 +93,113 @@ router.post('/test-llm', async (req, res) => {
 // ── GET /api/settings/gpus ────────────────────────────────────────────────────
 // Returns list of GPUs available on this machine.
 // Windows/Linux: nvidia-smi (CUDA). macOS: ask the running TTS server about MPS.
+// ── Librarian (embedding model) ──────────────────────────────────────────────
+// Build an EmbeddingGemma 2 index alongside MiniLM's, switch between them, and
+// compare what each finds for a real entry. These decrypt the user's entries,
+// so they require a real session (requireAuth), not this router's soft-auth
+// fallback.
+const { requireAuth } = require('../middleware/auth');
+const librarianJobs = new Map(); // userId → build job
+
+router.get('/librarian', requireAuth, async (req, res) => {
+  const embedding = require('../services/embeddingService');
+  res.json({ ...(await embedding.status()), job: librarianJobs.get(req.userId) || null });
+});
+
+router.post('/librarian/build', requireAuth, (req, res) => {
+  const embedding = require('../services/embeddingService');
+  const modelId = String(req.body?.model || 'egemma2');
+  if (!embedding.MODELS[modelId]) return res.status(400).json({ error: 'Unknown model' });
+  const existing = librarianJobs.get(req.userId);
+  if (existing?.running) return res.json({ started: false, job: existing });
+
+  const userId = req.userId;
+  const entries = db.prepare('SELECT id, body_text FROM entries WHERE user_id = ? ORDER BY id').all(userId);
+  const memories = db.prepare('SELECT id, content FROM memories WHERE user_id = ? ORDER BY id').all(userId);
+  const job = {
+    model: modelId, running: true, phase: 'entries',
+    done: 0, total: entries.length + memories.length, indexed: 0, skipped: 0, failed: 0,
+    startedAt: new Date().toISOString(), finishedAt: null, error: null,
+  };
+  librarianJobs.set(userId, job);
+  res.json({ started: true, job });
+
+  setImmediate(async () => {
+    const t0 = Date.now();
+    try {
+      for (const row of entries) {
+        const text = (safeDecrypt(userId, row.body_text) || '').trim();
+        if (!text) job.skipped += 1;
+        else if (await embedding.indexEntryInto(modelId, row.id, text).then(() => true, () => false)) job.indexed += 1;
+        else job.failed += 1;
+        job.done += 1;
+      }
+      job.phase = 'memories';
+      for (const row of memories) {
+        const text = (safeDecrypt(userId, row.content) || '').trim();
+        if (!text) job.skipped += 1;
+        else if (await embedding.indexMemoryInto(modelId, row.id, text).then(() => true, () => false)) job.indexed += 1;
+        else job.failed += 1;
+        job.done += 1;
+      }
+      console.log(`[librarian] ${modelId} built for user ${userId}: ${job.indexed} indexed, ${job.skipped} empty, ${job.failed} failed in ${Math.round((Date.now() - t0) / 1000)}s`);
+    } catch (err) {
+      job.error = err.message;
+      console.error('[librarian] build failed:', err.message);
+    } finally {
+      job.running = false;
+      job.phase = 'done';
+      job.finishedAt = new Date().toISOString();
+    }
+  });
+});
+
+router.post('/librarian/use', requireAuth, async (req, res) => {
+  const embedding = require('../services/embeddingService');
+  const modelId = String(req.body?.model || '');
+  if (!embedding.MODELS[modelId]) return res.status(400).json({ error: 'Unknown model' });
+  const st = await embedding.status();
+  const m = st.models.find((x) => x.id === modelId);
+  if (!m?.built) return res.status(400).json({ error: 'Build this librarian\'s index first.' });
+  if (librarianJobs.get(req.userId)?.running) return res.status(409).json({ error: 'Wait for the index build to finish.' });
+  embedding.setCurrentModel(modelId);
+  embedding.warmup();
+  res.json(await embedding.status());
+});
+
+// Side by side: the entries each librarian considers most related to one of
+// your entries. Indexes are shared app-wide, so results are filtered to the
+// requesting user's own entries.
+router.get('/librarian/compare', requireAuth, async (req, res) => {
+  const embedding = require('../services/embeddingService');
+  const entryId = Number(req.query.entryId);
+  const userId = req.userId;
+  const entry = db.prepare('SELECT id, title, body_text FROM entries WHERE id = ? AND user_id = ?').get(entryId, userId);
+  if (!entry) return res.status(404).json({ error: 'Entry not found' });
+  const text = (safeDecrypt(userId, entry.body_text) || '').trim();
+  if (!text) return res.json({ entry: { id: entry.id, title: safeDecrypt(userId, entry.title) }, results: {} });
+
+  const st = await embedding.status();
+  const results = {};
+  for (const m of st.models.filter((x) => x.built)) {
+    const t0 = Date.now();
+    const hits = await embedding.querySimilar(text, 15, [entryId], m.id);
+    const rows = hits.length
+      ? db.prepare(`SELECT id, title, date FROM entries WHERE user_id = ? AND id IN (${hits.map(() => '?').join(',')})`).all(userId, ...hits.map((h) => h.entryId))
+      : [];
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    results[m.id] = {
+      label: m.label,
+      ms: Date.now() - t0,
+      hits: hits.filter((h) => byId.has(h.entryId)).slice(0, 5).map((h) => {
+        const r = byId.get(h.entryId);
+        return { id: r.id, title: safeDecrypt(userId, r.title) || 'Untitled', date: r.date, score: Number(h.score.toFixed(3)) };
+      }),
+    };
+  }
+  res.json({ entry: { id: entry.id, title: safeDecrypt(userId, entry.title) || 'Untitled' }, results });
+});
+
 // Sign-in status and model list for the personal subscription providers.
 // Status checks don't send a prompt, so they cost no plan usage.
 router.get('/subscription-status', async (req, res) => {

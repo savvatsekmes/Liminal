@@ -358,7 +358,10 @@ export default function SettingsPage({ username, onLogout, avatarUrl, onAvatarCh
 
       {/* Tab content */}
       <div style={{ ...s.tabContent, ...(isMobile ? { padding: '24px 16px 80px', maxWidth: '100%' } : {}) }}>
-        {activeTab === 'llm'     && <LLMSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />}
+        {activeTab === 'llm'     && (<>
+          <LLMSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />
+          <LibrarianSection showToast={showToast} />
+        </>)}
         {activeTab === 'tts'     && (<>
           <TTSSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} onNavigate={onNavigate} />
           <DictateSection cfg={cfg} set={set} save={save} saving={saving} showToast={showToast} />
@@ -543,6 +546,159 @@ function OllamaInstallGuide({ onRecheck }) {
         {t('settings.ollamaRecheck')}
       </button>
     </div>
+  );
+}
+
+// ── Librarian (embedding model) ──────────────────────────────────────────────
+// Test panel for EmbeddingGemma 2 vs MiniLM: build the new index alongside the
+// old one, switch between them instantly, and compare what each finds for a
+// real entry. English-only while it's a test.
+function LibrarianSection({ showToast }) {
+  const [st, setSt] = useState(null);       // { current, models[], job }
+  const [entries, setEntries] = useState([]);
+  const [entryId, setEntryId] = useState('');
+  const [cmp, setCmp] = useState(null);
+  const [comparing, setComparing] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try { setSt(await (await apiFetch('/api/settings/librarian')).json()); } catch {}
+  }
+  useEffect(() => {
+    load();
+    apiFetch('/api/entries?limit=60')
+      .then((r) => r.json())
+      .then((rows) => setEntries(Array.isArray(rows) ? rows : (rows.entries || [])))
+      .catch(() => {});
+  }, []);
+  // Poll while an index build is running.
+  useEffect(() => {
+    if (!st?.job?.running) return undefined;
+    const id = setInterval(load, 1500);
+    return () => clearInterval(id);
+  }, [st?.job?.running]);
+
+  async function build() {
+    setBusy(true);
+    try {
+      await apiFetch('/api/settings/librarian/build', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'egemma2' }),
+      });
+      await load();
+    } finally { setBusy(false); }
+  }
+  async function use(model) {
+    setBusy(true);
+    try {
+      const r = await apiFetch('/api/settings/librarian/use', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }),
+      });
+      const data = await r.json();
+      if (!r.ok) showToast?.(data.error || 'Could not switch');
+      else { setSt((p) => ({ ...p, ...data })); showToast?.(`Librarian: ${data.models.find((m) => m.active)?.label}`); }
+    } finally { setBusy(false); }
+  }
+  async function compare() {
+    if (!entryId) return;
+    setComparing(true);
+    setCmp(null);
+    try { setCmp(await (await apiFetch(`/api/settings/librarian/compare?entryId=${entryId}`)).json()); }
+    finally { setComparing(false); }
+  }
+
+  const job = st?.job;
+  const building = !!job?.running;
+  const eg = st?.models?.find((m) => m.id === 'egemma2');
+
+  return (
+    <Section title="Librarian (memory search)">
+      <div style={{ ...s.sublabel, marginBottom: '14px', lineHeight: 1.6 }}>
+        The librarian finds related past entries, relevant memories and fitting quotes for your reflections
+        and chats. It runs on this computer, separately from the writing model above.
+        EmbeddingGemma 2 reads whole entries in 100+ languages; MiniLM only reads the first part, in English.
+      </div>
+
+      {(st?.models || []).map((m) => (
+        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: 'var(--border-style)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--strong)' }}>
+              {m.label} {m.active && <span style={{ color: '#2ecc71', fontWeight: 600 }}>· active</span>}
+            </div>
+            <div style={s.sublabel}>
+              {m.built ? `Index: ${m.entries} entries · ${m.memories} memories` : 'Not built yet'}
+            </div>
+          </div>
+          {m.id === 'egemma2' && (
+            <Btn onClick={build} disabled={busy || building}>
+              {building ? 'Building…' : m.built ? 'Rebuild index' : 'Build index'}
+            </Btn>
+          )}
+          {!m.active && (
+            <Btn primary onClick={() => use(m.id)} disabled={busy || building || !m.built}>Use</Btn>
+          )}
+        </div>
+      ))}
+
+      {job && (building || job.finishedAt) && (
+        <div style={{ margin: '12px 0', fontSize: '12px', color: 'var(--body)' }}>
+          {building ? (
+            <>
+              <div style={{ marginBottom: '6px' }}>
+                Building {job.model === 'egemma2' ? 'EmbeddingGemma 2' : job.model} index — {job.phase}: {job.done} / {job.total}
+                {job.done === 0 && ' (first run downloads the model, ~170 MB)'}
+              </div>
+              <div style={{ height: '6px', background: 'var(--near-white)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ width: `${job.total ? Math.round((job.done / job.total) * 100) : 0}%`, height: '100%', background: 'var(--strong)', transition: 'width 0.4s' }} />
+              </div>
+            </>
+          ) : (
+            <StatusIndicator
+              ok={!job.error && !job.failed}
+              message={job.error ? `Build failed: ${job.error}` : `Index built: ${job.indexed} items${job.failed ? `, ${job.failed} failed` : ''}${job.skipped ? `, ${job.skipped} empty skipped` : ''}`}
+            />
+          )}
+        </div>
+      )}
+
+      {eg?.built && !building && (
+        <Field label="Compare on one of your entries" hint="What each librarian thinks is most related — this is what your reflections draw on.">
+          <div style={s.row}>
+            <select style={s.select} value={entryId} onChange={(e) => { setEntryId(e.target.value); setCmp(null); }}>
+              <option value="">— Choose an entry —</option>
+              {entries.map((e) => (
+                <option key={e.id} value={e.id}>{e.date ? `${e.date} — ` : ''}{e.title || 'Untitled'}</option>
+              ))}
+            </select>
+            <Btn onClick={compare} disabled={!entryId || comparing}>{comparing ? 'Comparing…' : 'Compare'}</Btn>
+          </div>
+        </Field>
+      )}
+
+      {cmp?.results && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginTop: '4px' }}>
+          {['minilm', 'egemma2'].filter((k) => cmp.results[k]).map((k) => (
+            <div key={k} style={{ background: 'var(--near-white)', borderRadius: '12px', padding: '12px 14px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '8px' }}>
+                {cmp.results[k].label} · {cmp.results[k].ms}ms
+              </div>
+              {cmp.results[k].hits.length === 0 && <div style={s.sublabel}>No related entries found.</div>}
+              {cmp.results[k].hits.map((h, i) => (
+                <div key={h.id} style={{ display: 'flex', gap: '8px', fontSize: '12px', padding: '4px 0', color: 'var(--strong)' }}>
+                  <span style={{ color: 'var(--muted)', width: '14px', flexShrink: 0 }}>{i + 1}.</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    {h.title}
+                    <span style={{ color: 'var(--muted)' }}>{h.date ? ` · ${h.date}` : ''}</span>
+                  </span>
+                  <span style={{ color: h.score >= 0.30 ? 'var(--strong)' : 'var(--muted)', flexShrink: 0 }} title="Match strength (MiniLM scale; 0.30+ is strong enough to echo in a reflection)">
+                    {h.score.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
   );
 }
 
