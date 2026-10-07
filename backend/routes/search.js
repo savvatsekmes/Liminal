@@ -83,4 +83,28 @@ router.get('/', (req, res) => {
   res.json({ entries, notes, oracle });
 });
 
+// ── GET /api/search/related?q=… ──────────────────────────────────────────────
+// Entries related by meaning, not wording — "mum" finds "my mother", "felt
+// stuck" finds the week you wrote about going round in circles. Uses the
+// librarian (embeddings), so it's slower than the word search above and is
+// fetched separately; the caller drops entries the word search already shows.
+// Each result carries its most relevant passage, not the entry's opening.
+// MiniLM-scale. On a real 370-entry journal, topics people search for score
+// 0.22–0.47 on their related entries; nonsense ("xylophone repair",
+// "zzz qwerty") stays under 0.21.
+const RELATED_MIN_SCORE = 0.22;
+router.get('/related', async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 500);
+  const limit = Math.min(parseInt(req.query.limit, 10) || 8, 20);
+  if (q.length < 3) return res.json({ entries: [] });
+  try {
+    const hits = await require('../services/journalRecall')
+      .recallEntries(req.userId, q, { k: limit, maxChars: 260, minScore: RELATED_MIN_SCORE });
+    res.json({ entries: hits.map(({ id, title, date, excerpt, score }) => ({ id, title, date, excerpt, score })) });
+  } catch (err) {
+    console.error('[search/related] failed:', err.message);
+    res.json({ entries: [] });
+  }
+});
+
 module.exports = router;
