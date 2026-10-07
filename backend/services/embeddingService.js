@@ -310,7 +310,9 @@ async function querySimilar(text, k = 5, excludeIds = [], modelId) {
   try {
     const m = model(modelId);
     const [vector, index] = await Promise.all([embed(text, m.id, 'query'), _getIndexAt(m.entriesDir, `${m.id} entries`)]);
-    const results = await index.queryItems(vector, k + excludeIds.length);
+    // vectra 0.12: queryItems(vector, bm25QueryText, topK). Passing the count
+    // second (the old signature) left topK undefined = every item returned.
+    const results = await index.queryItems(vector, '', k + excludeIds.length);
     return results
       .filter((r) => !excludeIds.includes(r.item.metadata.entryId))
       .slice(0, k)
@@ -390,7 +392,11 @@ async function queryMemoriesSimilar(contextText, k = 30, modelId) {
   try {
     const m = model(modelId);
     const [vector, index] = await Promise.all([embed(contextText, m.id, 'query'), getMemoryIndex(m.id)]);
-    const results = await index.queryItems(vector, k);
+    // topK is the THIRD argument in vectra 0.12 (see querySimilar). With it in
+    // the second slot every memory came back — memory extraction then put all
+    // 1,656 of a user's memories into its prompt (~335k chars), far past a
+    // local model's context, and silently extracted nothing.
+    const results = await index.queryItems(vector, '', k);
     return results.map((r) => ({ memoryId: r.item.metadata.memoryId, score: m.calibrate(r.score, 'search') }));
   } catch (err) {
     console.error('[embedding] Memory query failed:', err.message);

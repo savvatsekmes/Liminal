@@ -227,7 +227,10 @@ Extract any genuinely new facts. Return only the JSON.`;
     }).filter(Boolean);
 
     if (!items.length) {
-      console.log(`[memory] No new memories from entry ${entryId}`);
+      // Shape only, never content: how big the prompt and reply were, and
+      // whether the model returned items in a form we couldn't use.
+      const keys = rawItems[0] && typeof rawItems[0] === 'object' ? Object.keys(rawItems[0]).join(',') : typeof rawItems[0];
+      console.log(`[memory] No new memories from entry ${entryId} (prompt ${systemPrompt.length + userMessage.length} chars, reply ${String(raw || '').length} chars, ${rawItems.length} raw item(s)${rawItems.length ? `, first item keys: ${keys}` : ''})`);
       return [];
     }
 
