@@ -71,8 +71,11 @@ function stripModelMeta(text) {
 function getSettings() {
   // Lazy-require to avoid circular deps at startup
   const s = require('./settingsService');
+  const saved = s.get('llm_provider') || 'ollama';
   return {
-    provider:         s.get('llm_provider') || 'ollama',
+    // A personal provider that isn't available (switched off, or not in this
+    // build) falls back to the local model rather than failing every call.
+    provider:         PERSONAL_PROVIDERS.has(saved) && !personalModule() ? 'ollama' : saved,
     anthropicKey:     s.get('anthropic_api_key'),
     claudeModel:      s.get('claude_model') || 'claude-opus-4-6',
     openaiKey:        s.get('openai_api_key'),
@@ -90,9 +93,17 @@ function getSettings() {
 // backend/personal/, which is excluded from every distributed build (vendors
 // don't allow apps to offer their consumer login to other people), so in a
 // shipped build the folder is absent and these providers don't exist.
+//
+// SWITCHED OFF (2026-10-07), on every machine including the developer's: the
+// vendors' terms don't allow a consumer subscription login to be driven by
+// another app, personal use included. With this false the folder is never
+// loaded, Settings doesn't offer these providers, and a saved choice of one
+// falls back to Ollama (see getSettings).
+const PERSONAL_PROVIDERS_ENABLED = false;
 const PERSONAL_PROVIDERS = new Set(['claude_subscription', 'chatgpt_subscription']);
 let _personal;
 function personalModule() {
+  if (!PERSONAL_PROVIDERS_ENABLED) return null;
   if (_personal === undefined) {
     const path = require('path');
     const dir = path.join(__dirname, '..', 'personal');
