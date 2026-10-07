@@ -14,8 +14,8 @@
 // language pool. If similarity is below QUOTE_MIN_SIMILARITY we set null —
 // better no quote than a forced one.
 //
-// Embeddings use the same all-MiniLM-L6-v2 pipeline as embeddingService —
-// normalised, so dot product == cosine.
+// Embeddings come from the librarian (embeddingService) — normalised, and
+// compared with its calibrated similarity().
 
 const fs = require('node:fs');
 const path = require('node:path');

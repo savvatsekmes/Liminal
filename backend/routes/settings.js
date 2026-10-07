@@ -94,110 +94,21 @@ router.post('/test-llm', async (req, res) => {
 // Returns list of GPUs available on this machine.
 // Windows/Linux: nvidia-smi (CUDA). macOS: ask the running TTS server about MPS.
 // ── Librarian (embedding model) ──────────────────────────────────────────────
-// Build an EmbeddingGemma 2 index alongside MiniLM's, switch between them, and
-// compare what each finds for a real entry. These decrypt the user's entries,
-// so they require a real session (requireAuth), not this router's soft-auth
-// fallback.
+// Status of the librarian's index and a manual rebuild. The index normally
+// keeps itself complete (librarianService checks it at every login); rebuild
+// re-embeds all of this user's entries and memories. Decrypting entries needs
+// a real session (requireAuth), not this router's soft-auth fallback.
 const { requireAuth } = require('../middleware/auth');
-const librarianJobs = new Map(); // userId → build job
 
 router.get('/librarian', requireAuth, async (req, res) => {
   const embedding = require('../services/embeddingService');
-  res.json({ ...(await embedding.status()), job: librarianJobs.get(req.userId) || null });
+  const librarian = require('../services/librarianService');
+  res.json({ ...(await embedding.status()), job: librarian.job(req.userId) });
 });
 
 router.post('/librarian/build', requireAuth, (req, res) => {
-  const embedding = require('../services/embeddingService');
-  const modelId = String(req.body?.model || 'egemma2');
-  if (!embedding.MODELS[modelId]) return res.status(400).json({ error: 'Unknown model' });
-  const existing = librarianJobs.get(req.userId);
-  if (existing?.running) return res.json({ started: false, job: existing });
-
-  const userId = req.userId;
-  const entries = db.prepare('SELECT id, body_text FROM entries WHERE user_id = ? ORDER BY id').all(userId);
-  const memories = db.prepare('SELECT id, content FROM memories WHERE user_id = ? ORDER BY id').all(userId);
-  const job = {
-    model: modelId, running: true, phase: 'entries',
-    done: 0, total: entries.length + memories.length, indexed: 0, skipped: 0, failed: 0,
-    startedAt: new Date().toISOString(), finishedAt: null, error: null,
-  };
-  librarianJobs.set(userId, job);
-  res.json({ started: true, job });
-
-  setImmediate(async () => {
-    const t0 = Date.now();
-    try {
-      for (const row of entries) {
-        const text = (safeDecrypt(userId, row.body_text) || '').trim();
-        if (!text) job.skipped += 1;
-        else if (await embedding.indexEntryInto(modelId, row.id, text).then(() => true, () => false)) job.indexed += 1;
-        else job.failed += 1;
-        job.done += 1;
-      }
-      job.phase = 'memories';
-      for (const row of memories) {
-        const text = (safeDecrypt(userId, row.content) || '').trim();
-        if (!text) job.skipped += 1;
-        else if (await embedding.indexMemoryInto(modelId, row.id, text).then(() => true, () => false)) job.indexed += 1;
-        else job.failed += 1;
-        job.done += 1;
-      }
-      console.log(`[librarian] ${modelId} built for user ${userId}: ${job.indexed} indexed, ${job.skipped} empty, ${job.failed} failed in ${Math.round((Date.now() - t0) / 1000)}s`);
-    } catch (err) {
-      job.error = err.message;
-      console.error('[librarian] build failed:', err.message);
-    } finally {
-      job.running = false;
-      job.phase = 'done';
-      job.finishedAt = new Date().toISOString();
-    }
-  });
-});
-
-router.post('/librarian/use', requireAuth, async (req, res) => {
-  const embedding = require('../services/embeddingService');
-  const modelId = String(req.body?.model || '');
-  if (!embedding.MODELS[modelId]) return res.status(400).json({ error: 'Unknown model' });
-  const st = await embedding.status();
-  const m = st.models.find((x) => x.id === modelId);
-  if (!m?.built) return res.status(400).json({ error: 'Build this librarian\'s index first.' });
-  if (librarianJobs.get(req.userId)?.running) return res.status(409).json({ error: 'Wait for the index build to finish.' });
-  embedding.setCurrentModel(modelId);
-  embedding.warmup();
-  res.json(await embedding.status());
-});
-
-// Side by side: the entries each librarian considers most related to one of
-// your entries. Indexes are shared app-wide, so results are filtered to the
-// requesting user's own entries.
-router.get('/librarian/compare', requireAuth, async (req, res) => {
-  const embedding = require('../services/embeddingService');
-  const entryId = Number(req.query.entryId);
-  const userId = req.userId;
-  const entry = db.prepare('SELECT id, title, body_text FROM entries WHERE id = ? AND user_id = ?').get(entryId, userId);
-  if (!entry) return res.status(404).json({ error: 'Entry not found' });
-  const text = (safeDecrypt(userId, entry.body_text) || '').trim();
-  if (!text) return res.json({ entry: { id: entry.id, title: safeDecrypt(userId, entry.title) }, results: {} });
-
-  const st = await embedding.status();
-  const results = {};
-  for (const m of st.models.filter((x) => x.built)) {
-    const t0 = Date.now();
-    const hits = await embedding.querySimilar(text, 15, [entryId], m.id);
-    const rows = hits.length
-      ? db.prepare(`SELECT id, title, date FROM entries WHERE user_id = ? AND id IN (${hits.map(() => '?').join(',')})`).all(userId, ...hits.map((h) => h.entryId))
-      : [];
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    results[m.id] = {
-      label: m.label,
-      ms: Date.now() - t0,
-      hits: hits.filter((h) => byId.has(h.entryId)).slice(0, 5).map((h) => {
-        const r = byId.get(h.entryId);
-        return { id: r.id, title: safeDecrypt(userId, r.title) || 'Untitled', date: r.date, score: Number(h.score.toFixed(3)) };
-      }),
-    };
-  }
-  res.json({ entry: { id: entry.id, title: safeDecrypt(userId, entry.title) || 'Untitled' }, results });
+  const librarian = require('../services/librarianService');
+  res.json({ started: true, job: librarian.rebuild(req.userId) });
 });
 
 // Sign-in status and model list for the personal subscription providers.
@@ -306,40 +217,12 @@ router.delete('/memory', (req, res) => {
 
 // ── POST /api/settings/reindex ────────────────────────────────────────────────
 // Trigger background re-embedding of all entries
-router.post('/reindex', (req, res) => {
-  res.json({ started: true, message: 'Re-indexing started in background.' });
-
-  setImmediate(async () => {
-    const { embedAllEntries } = require('../services/notionImport');
-    try {
-      // First clear existing embeddings so everything gets re-indexed.
-      // - entry_embeddings table: tracks which entries we've indexed
-      // - vectra/index.json: the actual vector store
-      // Both need wiping or the rebuild merges into whatever's there
-      // (including ciphertext-embedded garbage from older runs of the
-      // buggy notionImport.embedAllEntries that pre-dates row-encryption
-      // awareness).
-      db.prepare('DELETE FROM entry_embeddings').run();
-      const vectraDir = path.join(DATA_DIR, 'vectra');
-      if (fs.existsSync(vectraDir)) {
-        try { fs.rmSync(vectraDir, { recursive: true, force: true }); } catch {}
-      }
-      // Drop the cached LocalIndex instance — it's bound to the (now
-      // deleted) on-disk files. Without this, the next indexEntry call
-      // would write through the stale handle and either resurrect ghost
-      // entries or fail outright.
-      const embeddingSvc = require('../services/embeddingService');
-      embeddingSvc.invalidateIndexCache(embeddingSvc.VECTRA_DIR);
-      await embedAllEntries((done, total) => {
-        if (done % 20 === 0 || done === total) {
-          console.log(`[reindex] ${done}/${total}`);
-        }
-      });
-      console.log('[reindex] Complete.');
-    } catch (err) {
-      console.error('[reindex] Failed:', err.message);
-    }
-  });
+router.post('/reindex', requireAuth, (req, res) => {
+  // Re-embeds this user's entries and memories into the librarian's index.
+  // (It used to delete the shared index folder and re-embed every account's
+  // entries; the index is shared, so it now only refreshes this user's items.)
+  const librarian = require('../services/librarianService');
+  res.json({ started: true, message: 'Re-indexing started in background.', job: librarian.rebuild(req.userId) });
 });
 
 // NOTE: the old unauthenticated GET /api/settings/export route was removed — it
@@ -419,17 +302,10 @@ router.delete('/data', async (req, res) => {
   // sweeps the nodes too. Was missing from the original wipe.
   db.prepare('DELETE FROM threads WHERE user_id = ?').run(uid);
 
-  // Wipe vectra index
-  const vectraDir = path.join(DATA_DIR, 'vectra');
-  if (fs.existsSync(vectraDir)) {
-    fs.rmSync(vectraDir, { recursive: true, force: true });
-  }
-  // Wipe vectra-memories index too — keeps the memory retrieval layer in
-  // sync if the user later re-imports or restarts a clean corpus.
-  const vectraMemoriesDir = path.join(DATA_DIR, 'vectra-memories');
-  if (fs.existsSync(vectraMemoriesDir)) {
-    fs.rmSync(vectraMemoriesDir, { recursive: true, force: true });
-  }
+  // The librarian's index is shared by every account on this machine, so
+  // remove just the items whose entries/memories were deleted above.
+  require('../services/librarianService').pruneDeleted()
+    .catch((err) => console.warn('[settings] index cleanup after wipe failed:', err.message));
 
   res.json({ success: true, message: 'All data deleted.' });
 });
@@ -1089,6 +965,8 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
   db.prepare('DELETE FROM oracle_sessions WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM memories WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM memories_audit WHERE user_id = ?').run(userId);
+  // Drop this user's items from the shared librarian index once the deletes above are done.
+  setImmediate(() => require('../services/librarianService').pruneDeleted().catch(() => {}));
   db.prepare('DELETE FROM notes WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(userId);

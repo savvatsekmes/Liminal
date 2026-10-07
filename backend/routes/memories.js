@@ -284,7 +284,7 @@ router.post('/extract-all', (req, res) => {
 
 // ── POST /api/memories/embed-all ─────────────────────────────────────────────
 // Backfill the memory embedding index. Walks all memories, embeds each via
-// the local MiniLM pipeline, stores in the `vectra-memories/` Vectra index.
+// the librarian (embeddingService), into its memory index.
 // Idempotent — already-indexed memories skip unless { force: true } is sent.
 // New memories are indexed live by extractAndStoreMemories so this is only
 // needed once after upgrading to the relevance-retrieval architecture (or
@@ -311,15 +311,7 @@ router.post('/embed-all', async (req, res) => {
   let alreadyIndexed = new Set();
   if (!force) {
     try {
-      const { LocalIndex } = await import('vectra');
-      const path = require('path');
-      const { DATA_DIR } = require('../paths');
-      const indexDir = path.join(DATA_DIR, 'vectra-memories');
-      const index = new LocalIndex(indexDir);
-      if (await index.isIndexCreated()) {
-        const items = await index.listItems();
-        alreadyIndexed = new Set(items.map((i) => i.metadata?.memoryId).filter((id) => id != null));
-      }
+      alreadyIndexed = await require('../services/embeddingService').indexedMemoryIds();
     } catch (err) {
       console.warn('[memories/embed-all] could not enumerate existing index:', err.message);
     }
@@ -479,8 +471,8 @@ router.post('/dedup', async (req, res) => {
         return;
       }
 
-      // Embed every memory. ~5-15ms each on CPU (MiniLM; ~10x that for
-      // EmbeddingGemma). One model for the whole job so vectors are comparable.
+      // Embed every memory, ~35ms each on CPU. One model for the whole job so
+      // vectors are comparable.
       const dedupModel = embedding.currentModelId();
       const withVectors = [];
       for (let i = 0; i < decoded.length; i++) {

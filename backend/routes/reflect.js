@@ -1062,8 +1062,9 @@ No explanation. No other text.`;
 // ── Echo callout ─────────────────────────────────────────────────────────────
 // After the LLM generates blocks, find one relevant snippet from a past entry
 // and staple it onto the block whose body is closest to that snippet. Mutates
-// `blocks` in place. All embeddings are normalised by Xenova/all-MiniLM-L6-v2,
-// so dot product == cosine similarity.
+// `blocks` in place. The librarian's embeddings are normalised, so dot
+// product == cosine similarity; the raw dot products below only pick the best
+// sentence/block relative to each other (the 0.30 floor uses calibrated scores).
 
 const ECHO_MIN_SIMILARITY = 0.30; // raise if echoes feel forced
 const ECHO_SNIPPET_MAX_CHARS = 140;

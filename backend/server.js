@@ -105,6 +105,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// The librarian's index checks itself at every login and fills any gaps (a
+// fresh install builds it entirely), so it registers before anyone can log in.
+require('./services/librarianService');
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   lap(`backend listening on :${PORT}`);

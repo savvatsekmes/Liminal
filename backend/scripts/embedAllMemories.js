@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * One-shot backfill: walk every memory in the database and add its embedding
- * to the Vectra `vectra-memories/` index. Idempotent — already-indexed memories
- * are skipped on re-runs.
+ * to the librarian's memory index. Idempotent — already-indexed memories are
+ * skipped on re-runs. (The app now does this itself at login — see
+ * services/librarianService.js — so this is only for manual use.)
  *
  * Run after deploying the relevance-retrieval changes; from then on, new
  * memories are indexed live by extractAndStoreMemories so backfill isn't
@@ -27,14 +28,7 @@ function parseArgs(argv) {
 
 async function getIndexedIds() {
   try {
-    const { LocalIndex } = await import('vectra');
-    const path = require('path');
-    const { DATA_DIR } = require('../paths');
-    const indexDir = path.join(DATA_DIR, 'vectra-memories');
-    const index = new LocalIndex(indexDir);
-    if (!(await index.isIndexCreated())) return new Set();
-    const items = await index.listItems();
-    return new Set(items.map((i) => i.metadata?.memoryId).filter((id) => id != null));
+    return await embedding.indexedMemoryIds();
   } catch (err) {
     console.warn('[embed] Could not enumerate existing index, will re-embed everything:', err.message);
     return new Set();

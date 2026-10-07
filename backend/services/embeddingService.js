@@ -3,41 +3,28 @@
  * Liminal can find related entries, relevant memories and fitting quotes.
  * Runs in-process on the CPU via Transformers.js — no API key, no Ollama.
  *
- * Two models, side by side:
- *   minilm   — all-MiniLM-L6-v2 (~23 MB). The original. English-only, and only
- *              reads the first few hundred tokens of a text.
- *   egemma2  — EmbeddingGemma 2, text-only (q4, ~166 MB). 100+ languages,
- *              8K-token context, so whole long entries count.
+ * The model is EmbeddingGemma 2, text-only (q4, ~166 MB, downloaded on first
+ * use): 100+ languages and an 8K-token context, so whole long entries count.
+ * It replaced all-MiniLM-L6-v2 (English-only, read only an entry's opening)
+ * in October 2026. The index builds itself — see librarianService.
  *
- * Each model keeps its OWN Vectra indexes (vectors from different models
- * can't be mixed). Writes go to every model whose index exists, so both stay
- * current and switching between them (Settings → Librarian) is instant.
- *
- * Score calibration: EmbeddingGemma's cosine similarities live in a much
- * narrower, higher band (unrelated ≈ 0.71–0.77, related ≈ 0.78–0.83,
- * near-duplicate ≈ 0.92–0.99) than MiniLM's. Every threshold in the app
- * (echo 0.30, quote 0.45, dedup 0.88, memory band widths) was tuned on
- * MiniLM's scale, so EmbeddingGemma scores are mapped onto it with linear
- * fits measured on the same sentence pairs scored by both models (one per
- * prefix mode — see MODELS.egemma2). Callers always see MiniLM-scale scores
- * and need no per-model thresholds.
+ * Score calibration: EmbeddingGemma's cosine similarities live in a narrow,
+ * high band (unrelated ≈ 0.71–0.77, related ≈ 0.78–0.83, near-duplicate
+ * ≈ 0.92–0.99). Every threshold in the app (echo 0.30, quote 0.45, dedup
+ * 0.88, related-search 0.22, memory band widths) was tuned on MiniLM's wider
+ * scale, so scores are mapped onto that scale with linear fits measured on the
+ * same sentence pairs scored by both models (one per prefix mode, below).
+ * Callers always see those calibrated scores.
  */
 
 const path = require('path');
 const fs = require('fs');
 const { DATA_DIR } = require('../paths');
 
+// One model. Kept as a table (and functions keep their modelId parameter) so
+// a future model can be added the same way EmbeddingGemma was: vectors from
+// different models can't be mixed, so each model has its own index folders.
 const MODELS = {
-  minilm: {
-    id: 'minilm',
-    label: 'MiniLM (classic)',
-    hfId: 'Xenova/all-MiniLM-L6-v2',
-    dtype: 'q8', // = model_quantized.onnx, the file @xenova/transformers used — identical vectors
-    entriesDir: path.join(DATA_DIR, 'vectra'),
-    memoriesDir: path.join(DATA_DIR, 'vectra-memories'),
-    prepare: (t) => t,           // MiniLM has no task prefixes
-    calibrate: (s) => s,
-  },
   egemma2: {
     id: 'egemma2',
     label: 'EmbeddingGemma 2',
@@ -55,56 +42,36 @@ const MODELS = {
     prepare: (t, kind) => kind === 'query' ? `task: search result | query: ${t}`
       : kind === 'document' ? `title: none | text: ${t}`
       : `task: sentence similarity | query: ${t}`,
-    // Each mode has its own score distribution, each mapped onto MiniLM's
-    // scale from the same sentence pairs scored by both models:
+    // Each mode has its own score distribution, mapped onto MiniLM's scale
+    // from the same sentence pairs scored by both models:
     //   search      minilm ≈ 2.530·egemma − 1.534  (r = 0.944)
     //   similarity  minilm ≈ 3.451·egemma − 2.494  (r = 0.966)
     //   quote       reflection prose vs short aphorisms is its own pair type:
     //               search mode, offset so the quote bank's 0.45 cut-off
-    //               accepts the same share as MiniLM (6/16 test reflections,
-    //               raw 0.764 ↔ 0.45).
+    //               accepts the same share as MiniLM did (6/16 test
+    //               reflections, raw 0.764 ↔ 0.45).
     calibrate: (s, mode) => Math.max(-1, Math.min(1,
       mode === 'search' ? 2.530 * s - 1.534
         : mode === 'quote' ? 2.530 * s - 1.483
           : 3.451 * s - 2.494)),
   },
 };
-const DEFAULT_MODEL = 'minilm';
+const DEFAULT_MODEL = 'egemma2';
 
-// Kept for older callers (settings /reindex, memories /embed-all): the
-// MiniLM directories, which is where the classic index has always lived.
-const VECTRA_DIR = MODELS.minilm.entriesDir;
-const VECTRA_MEMORIES_DIR = MODELS.minilm.memoriesDir;
+const VECTRA_DIR = MODELS[DEFAULT_MODEL].entriesDir;
+const VECTRA_MEMORIES_DIR = MODELS[DEFAULT_MODEL].memoriesDir;
 for (const d of [VECTRA_DIR, VECTRA_MEMORIES_DIR]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
-// ── Which model is active ─────────────────────────────────────────────────────
-// App-wide (the indexes are app-wide), stored as a global setting.
 function currentModelId() {
-  try {
-    const db = require('../database');
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'embedding_model'").get();
-    return row && MODELS[row.value] ? row.value : DEFAULT_MODEL;
-  } catch {
-    return DEFAULT_MODEL;
-  }
-}
-function setCurrentModel(id) {
-  if (!MODELS[id]) throw new Error(`Unknown embedding model: ${id}`);
-  require('./settingsService').setGlobal('embedding_model', id);
+  return DEFAULT_MODEL;
 }
 function model(id) {
-  return MODELS[id || currentModelId()];
-}
-
-// An index "exists" for a model once its entries index has been created —
-// MiniLM always, EmbeddingGemma once a build has started.
-function indexExists(m) {
-  return fs.existsSync(path.join(m.entriesDir, 'index.json'));
+  return MODELS[id] || MODELS[DEFAULT_MODEL];
 }
 function liveModels() {
-  return Object.values(MODELS).filter((m) => m.id === DEFAULT_MODEL || indexExists(m));
+  return [MODELS[DEFAULT_MODEL]];
 }
 
 // ── Pipelines (one per model, loaded lazily) ─────────────────────────────────
@@ -145,7 +112,7 @@ function getPipeline(modelId) {
  * Vectors are normalised, so a dot product is the cosine similarity.
  * @param {'query'|'document'|'similarity'} [kind] — EmbeddingGemma task mode;
  *   compare a 'query' only against 'document's, and 'similarity' only
- *   against 'similarity'. Ignored by MiniLM.
+ *   against 'similarity'.
  */
 async function embed(text, modelId, kind = 'similarity') {
   const m = model(modelId);
@@ -404,25 +371,65 @@ async function queryMemoriesSimilar(contextText, k = 30, modelId) {
   }
 }
 
-// ── Introspection (Settings → Librarian) ─────────────────────────────────────
-async function indexCounts(m) {
-  const count = async (dir) => {
-    try {
-      if (!fs.existsSync(path.join(dir, 'index.json'))) return 0;
-      const idx = await _getIndexAt(dir, m.id);
-      return (await idx.listItems()).length;
-    } catch { return 0; }
-  };
-  return { entries: await count(m.entriesDir), memories: await count(m.memoriesDir) };
+// ── Introspection (Settings → Librarian, the index self-check) ───────────────
+async function indexedIds(dir, label, key) {
+  try {
+    if (!fs.existsSync(path.join(dir, 'index.json'))) return new Set();
+    const idx = await _getIndexAt(dir, label);
+    return new Set((await idx.listItems()).map((it) => it.metadata?.[key]).filter((id) => id != null));
+  } catch { return new Set(); }
+}
+/** Ids already in the active model's entry / memory index. */
+async function indexedEntryIds(modelId) {
+  const m = model(modelId);
+  return indexedIds(m.entriesDir, `${m.id} entries`, 'entryId');
+}
+async function indexedMemoryIds(modelId) {
+  const m = model(modelId);
+  return indexedIds(m.memoriesDir, `${m.id} memory`, 'memoryId');
+}
+
+/**
+ * Remove index items whose entry / memory no longer exists (deleted entries,
+ * wiped accounts). The index is shared by every account on the machine, so
+ * cleanup is by existence, never by wiping folders. One file write per index.
+ * @param {(id: number) => boolean} entryExists
+ * @param {(id: number) => boolean} memoryExists
+ */
+async function pruneIndex(entryExists, memoryExists, modelId) {
+  const m = model(modelId);
+  let removed = 0;
+  for (const [dir, label, key, exists] of [
+    [m.entriesDir, `${m.id} entries`, 'entryId', entryExists],
+    [m.memoriesDir, `${m.id} memory`, 'memoryId', memoryExists],
+  ]) {
+    if (!fs.existsSync(path.join(dir, 'index.json'))) continue;
+    const index = await _getIndexAt(dir, label);
+    await _enqueueWrite(dir, async () => {
+      const gone = (await index.listItems()).filter((it) => it.metadata?.[key] != null && !exists(it.metadata[key]));
+      if (!gone.length) return;
+      await index.beginUpdate();
+      try {
+        for (const it of gone) await index.deleteItem(it.id);
+        await index.endUpdate();
+        removed += gone.length;
+      } catch (err) {
+        index.cancelUpdate();
+        throw err;
+      }
+    });
+  }
+  return removed;
 }
 
 async function status() {
-  const current = currentModelId();
-  const models = [];
-  for (const m of Object.values(MODELS)) {
-    models.push({ id: m.id, label: m.label, active: m.id === current, built: m.id === DEFAULT_MODEL || indexExists(m), ...(await indexCounts(m)) });
-  }
-  return { current, models };
+  const m = model();
+  return {
+    model: m.id,
+    label: m.label,
+    entries: (await indexedEntryIds()).size,
+    memories: (await indexedMemoryIds()).size,
+  };
 }
 
 /**
@@ -434,7 +441,7 @@ function warmup() {
 }
 
 module.exports = {
-  MODELS, currentModelId, setCurrentModel, status,
+  MODELS, currentModelId, status, indexedEntryIds, indexedMemoryIds, pruneIndex,
   embed, embedMany, similarity,
   indexEntry, indexEntryInto, querySimilar, entryVectors,
   indexMemory, indexMemoryInto, unindexMemory, queryMemoriesSimilar, getMemoryIndex,

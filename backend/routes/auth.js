@@ -573,6 +573,8 @@ function wipeUserData(uid) {
   db.prepare('DELETE FROM oracle_sessions WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM memories WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM memories_audit WHERE user_id = ?').run(uid);
+  // Drop this user's items from the shared librarian index once the deletes above are done.
+  setImmediate(() => require('../services/librarianService').pruneDeleted().catch(() => {}));
   db.prepare('DELETE FROM memory WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM portrait WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(uid);
@@ -592,12 +594,8 @@ function wipeUserData(uid) {
       console.warn('[delete-account] avatar unlink failed:', err.message);
     }
   }
-
-  // Clean vectra index (single-user app — index belongs to the deleted user)
-  const vectraDir = path.join(DATA_DIR, 'vectra');
-  if (fs.existsSync(vectraDir)) {
-    fs.rmSync(vectraDir, { recursive: true, force: true });
-  }
+  // The librarian's index is shared by every account on this machine; the
+  // deleted user's items are pruned above (librarianService.pruneDeleted).
 }
 
 // ── DELETE /api/auth/account ─────────────────────────────────────────────────
