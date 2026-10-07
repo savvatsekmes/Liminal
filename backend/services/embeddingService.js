@@ -321,6 +321,30 @@ async function querySimilar(text, k = 5, excludeIds = [], modelId) {
   }
 }
 
+/**
+ * Stored vectors of the given entries in the active (or `modelId`) index —
+ * for whole-journal work like grouping entries into themes, where re-embedding
+ * every entry would take minutes. Entries not yet indexed are simply absent.
+ * Vectors are 'document' mode; compare them with each other or with 'query'
+ * vectors from embed().
+ * @returns {Promise<Map<number, number[]>>}
+ */
+async function entryVectors(entryIds, modelId) {
+  const out = new Map();
+  try {
+    const m = model(modelId);
+    const index = await _getIndexAt(m.entriesDir, `${m.id} entries`);
+    const want = new Set(entryIds.map(Number));
+    for (const it of await index.listItems()) {
+      const id = it.metadata?.entryId;
+      if (want.has(id)) out.set(id, it.vector);
+    }
+  } catch (err) {
+    console.error('[embedding] entryVectors failed:', err.message);
+  }
+  return out;
+}
+
 // ── Memories ─────────────────────────────────────────────────────────────────
 
 /** Get the active model's memory index (separate ID space from entries). */
@@ -406,7 +430,7 @@ function warmup() {
 module.exports = {
   MODELS, currentModelId, setCurrentModel, status,
   embed, embedMany, similarity,
-  indexEntry, indexEntryInto, querySimilar,
+  indexEntry, indexEntryInto, querySimilar, entryVectors,
   indexMemory, indexMemoryInto, unindexMemory, queryMemoriesSimilar, getMemoryIndex,
   warmup, invalidateIndexCache, VECTRA_DIR, VECTRA_MEMORIES_DIR,
 };

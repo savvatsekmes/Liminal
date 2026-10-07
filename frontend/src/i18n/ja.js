@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "スレッドを再検出",
   "threads.detecting": "テーマを検出中…",
   "threads.matching": "項目を照合中",
+  "threads.placing": "エントリーをテーマに振り分け中",
   "threads.slowWarning": "完全な再構築 — 少し時間がかかります。通常、スレッドはリフレクト、対話、メモ保存の後にバックグラウンドで静かに更新されます。",
   "threads.generatingInsights": "インサイトを生成中",
   "threads.emptyEarly": "ジャーナルが育つにつれてスレッドが現れます。もう少しエントリーを書いてから戻ってきてください。",

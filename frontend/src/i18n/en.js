@@ -992,6 +992,7 @@ export default {
   "threads.reDetect": "Re-thread the Needle",
   "threads.detecting": "Detecting themes…",
   "threads.matching": "Matching items",
+  "threads.placing": "Finding themes for entries",
   "threads.slowWarning": "Full rebuild — this can take a while. Normally threads update quietly in the background after you Reflect, chat, or save a note.",
   "threads.generatingInsights": "Generating insights",
   "threads.emptyEarly": "Threads appear as your journal grows. Write a few more entries and come back.",

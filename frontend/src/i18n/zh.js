@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "重新穿针引线",
   "threads.detecting": "正在检测主题…",
   "threads.matching": "匹配项目",
+  "threads.placing": "正在为条目匹配主题",
   "threads.slowWarning": "完整重建 — 这可能需要一段时间。通常在你反思、对话或保存笔记后，脉络会在后台悄然更新。",
   "threads.generatingInsights": "生成洞察中",
   "threads.emptyEarly": "随着你的日记增长，脉络会逐渐显现。再写几篇日记后回来查看。",

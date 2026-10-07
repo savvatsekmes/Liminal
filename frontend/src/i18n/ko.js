@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "실타래 다시 엮기",
   "threads.detecting": "테마 감지 중…",
   "threads.matching": "항목 매칭 중",
+  "threads.placing": "항목을 테마에 배치하는 중",
   "threads.slowWarning": "전체 재구성 — 시간이 걸릴 수 있습니다. 보통 실타래는 성찰, 대화, 노트 저장 후 백그라운드에서 조용히 업데이트됩니다.",
   "threads.generatingInsights": "통찰 생성 중",
   "threads.emptyEarly": "일기가 쌓일수록 실타래가 나타납니다. 몇 개의 일기를 더 쓰고 다시 와보세요.",

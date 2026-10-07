@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "أعد نسج الخيط",
   "threads.detecting": "جارٍ اكتشاف المواضيع…",
   "threads.matching": "جارٍ مطابقة العناصر",
+  "threads.placing": "إيجاد مواضيع للمدخلات",
   "threads.slowWarning": "إعادة بناء كاملة — قد يستغرق هذا بعض الوقت. عادةً تُحدَّث الخيوط بهدوء في الخلفية بعد أن تتأمّل أو تتحاور أو تحفظ ملاحظة.",
   "threads.generatingInsights": "جارٍ توليد البصائر",
   "threads.emptyEarly": "تظهر الخيوط مع نمو يوميّاتك. اكتب بضع تدوينات أخرى ثم عُد.",

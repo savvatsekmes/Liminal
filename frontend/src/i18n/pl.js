@@ -872,6 +872,7 @@ export default {
   "threads.reDetect": "Przenić igłę na nowo",
   "threads.detecting": "Wykrywanie tematów…",
   "threads.matching": "Dopasowywanie elementów",
+  "threads.placing": "Przypisywanie wpisów do motywów",
   "threads.slowWarning": "Pełna przebudowa — może to chwilę potrwać. Zwykle wątki są cicho aktualizowane w tle po Refleksji, rozmowie lub zapisaniu notatki.",
   "threads.generatingInsights": "Generowanie wglądów",
   "threads.emptyEarly": "Wątki pojawią się wraz z rozwojem Twojego dziennika. Napisz jeszcze kilka wpisów i wróć.",

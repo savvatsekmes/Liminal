@@ -872,6 +872,7 @@ export default {
   "threads.reDetect": "Tråda nålen igen",
   "threads.detecting": "Upptäcker teman…",
   "threads.matching": "Matchar objekt",
+  "threads.placing": "Placerar inlägg i teman",
   "threads.slowWarning": "Full ombyggnad — detta kan ta en stund. Normalt uppdateras trådar tyst i bakgrunden efter att du reflekterar, chattar eller sparar en not.",
   "threads.generatingInsights": "Genererar insikter",
   "threads.emptyEarly": "Trådar dyker upp när din dagbok växer. Skriv några fler anteckningar och kom tillbaka.",

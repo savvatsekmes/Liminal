@@ -5,7 +5,9 @@
  * A thread is an LLM-detected through-line (a work transition, a
  * relationship, a creative project) that stitches together content of
  * multiple types into a single timeline. Detection runs on demand and
- * wipes-and-regenerates the whole set for the user.
+ * regenerates the whole set for the user (a theme that comes back under the
+ * same name keeps items the LLM didn't re-judge). With the librarian's index,
+ * discovery and matching reach the whole journal, not just recent items.
  */
 
 const db = require('../database');
@@ -77,6 +79,29 @@ function parseTags(...rawArrays) {
   return out;
 }
 
+function entryItem(userId, r) {
+  return {
+    type: 'entry',
+    id: r.id,
+    title: r.title || 'Untitled',
+    excerpt: excerpt(safeDecrypt(userId, r.body_text), 200),
+    date: r.item_date,
+    tags: parseTags(r.tags, r.auto_tags),
+    breakthrough: Number.isInteger(r.breakthrough_level) && r.breakthrough_level > 0,
+  };
+}
+
+/** Every entry of the user as a corpus item, newest first. */
+function collectAllEntries(userId) {
+  return db.prepare(`
+    SELECT id, title, body_text, tags, auto_tags, breakthrough_level,
+           COALESCE(date, created_at) AS item_date
+      FROM entries
+     WHERE user_id = ?
+     ORDER BY COALESCE(date, created_at) DESC
+  `).all(userId).map((r) => entryItem(userId, r));
+}
+
 function collectCorpus(userId) {
   const entries = db.prepare(`
     SELECT id, title, body_text, tags, auto_tags, breakthrough_level,
@@ -85,15 +110,7 @@ function collectCorpus(userId) {
      WHERE user_id = ?
      ORDER BY COALESCE(date, created_at) DESC
      LIMIT ?
-  `).all(userId, CORPUS_LIMIT).map((r) => ({
-    type: 'entry',
-    id: r.id,
-    title: r.title || 'Untitled',
-    excerpt: excerpt(safeDecrypt(userId, r.body_text), 200),
-    date: r.item_date,
-    tags: parseTags(r.tags, r.auto_tags),
-    breakthrough: Number.isInteger(r.breakthrough_level) && r.breakthrough_level > 0,
-  }));
+  `).all(userId, CORPUS_LIMIT).map((r) => entryItem(userId, r));
 
   const notes = db.prepare(`
     SELECT id, type, title, body, tags, auto_tags, created_at
@@ -346,6 +363,165 @@ async function matchItemsToTheme(theme, corpus) {
   return nodes;
 }
 
+// ─── Whole-journal reach (the librarian) ───────────────────────────────────
+//
+// The LLM reads ~120 short items per call, so detection used to look at the
+// newest items only: themes were discovered from recent writing, and matching
+// never saw older entries (on a 370-entry journal, none of a theme's pre-2025
+// entries were ever put in front of it). The librarian's entry vectors now
+// choose WHAT the LLM reads:
+//   discovery — a sample spread over every kind of thing the journal holds
+//               (groups of similar entries), plus the newest items;
+//   matching  — per theme, the newest items plus the older entries closest to
+//               the theme (its description and the entries it already has).
+// The LLM still makes every judgement. Measured on a real journal, vectors
+// alone separate a theme's entries from the rest only weakly (AUC ≈ 0.7), so
+// they pick candidates and never assign anything themselves. Picking the 70
+// closest older entries put 44% of a theme's older entries in front of the
+// LLM, against 3% for "newest 120".
+
+const REACH_RECENT_ENTRIES = 20;   // newest entries, always judged
+const REACH_RECENT_OTHER = 30;     // newest notes + conversations (not in the vector index)
+const REACH_CLOSEST_ENTRIES = 70;  // older entries closest to the theme
+const DISCOVERY_RECENT = 50;       // newest items of any type in the discovery sample
+const DISCOVERY_SPREAD = 90;       // entries sampled across the whole journal
+
+function dot(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+function meanDirection(vecs) {
+  const sum = vecs[0].map((_, d) => vecs.reduce((s, v) => s + v[d], 0));
+  const n = Math.hypot(...sum) || 1;
+  return sum.map((x) => x / n);
+}
+const itemKey = (it) => `${it.type}:${it.id}`;
+const itemTime = (it) => (it.date ? new Date(String(it.date).replace(' ', 'T')).getTime() || 0 : 0);
+const newestFirst = (items) => [...items].sort((a, b) => itemTime(b) - itemTime(a));
+
+// Cosine k-means with deterministic k-means++ seeding (same journal → same groups).
+function kmeans(vecs, k, iters = 20) {
+  const n = vecs.length;
+  k = Math.min(k, n);
+  let seed = 42;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const centroids = [vecs[Math.floor(rand() * n)]];
+  const dist = new Array(n).fill(Infinity);
+  while (centroids.length < k) {
+    const last = centroids[centroids.length - 1];
+    let total = 0;
+    for (let i = 0; i < n; i++) { dist[i] = Math.min(dist[i], Math.max(0, 1 - dot(vecs[i], last))); total += dist[i]; }
+    let r = rand() * total, pick = 0;
+    for (; pick < n - 1; pick++) { r -= dist[pick]; if (r <= 0) break; }
+    centroids.push(vecs[pick]);
+  }
+  const assign = new Array(n).fill(-1);
+  for (let it = 0; it < iters; it++) {
+    let moved = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestScore = -Infinity;
+      for (let c = 0; c < k; c++) { const s = dot(vecs[i], centroids[c]); if (s > bestScore) { bestScore = s; best = c; } }
+      if (assign[i] !== best) { assign[i] = best; moved = true; }
+    }
+    if (!moved) break;
+    for (let c = 0; c < k; c++) {
+      const members = vecs.filter((_, i) => assign[i] === c);
+      if (members.length) centroids[c] = meanDirection(members);
+    }
+  }
+  return { assign, centroids };
+}
+
+/**
+ * Everything the whole-journal passes need, or null when the librarian's index
+ * isn't there (then detection falls back to the newest items, as before).
+ */
+async function buildReach(userId, corpus) {
+  const allEntries = collectAllEntries(userId);
+  const vectors = await require('./embeddingService').entryVectors(allEntries.map((e) => e.id));
+  if (vectors.size < 10) return null;
+  return {
+    allEntries,
+    vectors,
+    recent: [
+      ...allEntries.slice(0, REACH_RECENT_ENTRIES),
+      ...corpus.filter((c) => c.type !== 'entry').slice(0, REACH_RECENT_OTHER),
+    ],
+    corpus,
+  };
+}
+
+/** Items for theme discovery: the newest, plus entries from every group of similar entries. */
+function discoverySample(reach) {
+  const picked = reach.corpus.slice(0, DISCOVERY_RECENT);
+  const have = new Set(picked.map(itemKey));
+  const pool = reach.allEntries.filter((e) => !have.has(itemKey(e)) && reach.vectors.has(e.id));
+  if (pool.length) {
+    const vecs = pool.map((e) => reach.vectors.get(e.id));
+    // ~12 entries per group, at most 30 groups: coarser grouping folded a
+    // small distinct topic (ten entries over a year) into everyday entries.
+    const k = Math.max(2, Math.min(30, Math.round(pool.length / 12)));
+    const { assign, centroids } = kmeans(vecs, k);
+    // Each group's most typical entries first; take one per group per round
+    // so every group is represented before any gets a second.
+    const groups = centroids.map((c, g) => pool.map((e, i) => i).filter((i) => assign[i] === g)
+      .sort((a, b) => dot(vecs[b], c) - dot(vecs[a], c)).map((i) => pool[i]));
+    const target = DISCOVERY_RECENT + DISCOVERY_SPREAD;
+    for (let round = 0; picked.length < target; round++) {
+      const before = picked.length;
+      for (const g of groups) if (g[round] && picked.length < target) picked.push(g[round]);
+      if (picked.length === before) break;
+    }
+    console.log(`[threads] discovery sample: ${picked.length} items (${pool.length} older entries in ${groups.length} groups)`);
+  }
+  return newestFirst(picked);
+}
+
+/** What the LLM judges for one theme: the newest items + the older entries closest to it. */
+async function candidatesForTheme(theme, reach, seedEntryIds = []) {
+  const have = new Set(reach.recent.map(itemKey));
+  const pool = reach.allEntries.filter((e) => !have.has(itemKey(e)) && reach.vectors.has(e.id));
+  if (!pool.length) return newestFirst(reach.recent);
+  const q = await require('./embeddingService').embed(`${theme.name}: ${theme.description || ''}`, undefined, 'query');
+  const rankBy = (score) => new Map(pool.map((e) => [e.id, score(reach.vectors.get(e.id))])
+    .sort((a, b) => b[1] - a[1]).map(([id], i) => [id, i]));
+  const ranks = [rankBy((v) => dot(v, q))];
+  const seeds = seedEntryIds.map((id) => reach.vectors.get(Number(id))).filter(Boolean);
+  if (seeds.length >= 2) {
+    const centre = meanDirection(seeds);
+    ranks.push(rankBy((v) => dot(v, centre)));
+  }
+  // Reciprocal-rank fusion: close to what the theme says, and/or to the entries it already has.
+  const fused = (e) => ranks.reduce((s, r) => s + 1 / (20 + r.get(e.id)), 0);
+  const closest = [...pool].sort((a, b) => fused(b) - fused(a)).slice(0, REACH_CLOSEST_ENTRIES);
+  return newestFirst([...reach.recent, ...closest]);
+}
+
+/** A theme's matches plus its earlier items the LLM wasn't shown this time (not rejected — unseen). */
+function keepUnjudged(matched, earlier, judged) {
+  const judgedKeys = new Set(judged.map(itemKey));
+  const out = [...matched];
+  const have = new Set(out.map(itemKey));
+  for (const n of earlier) {
+    const k = itemKey(n);
+    if (!judgedKeys.has(k) && !have.has(k)) { out.push(n); have.add(k); }
+  }
+  return out;
+}
+
+/** The user's current themes' items, by normalised theme name (read before a re-detect wipes them). */
+function priorThemeNodes(userId) {
+  const out = new Map();
+  for (const t of db.prepare('SELECT id, name FROM threads WHERE user_id = ?').all(userId)) {
+    const key = normaliseThemeKey(safeDecrypt(userId, t.name) || '');
+    if (!key) continue;
+    const nodes = db.prepare('SELECT content_type AS type, content_id AS id FROM thread_nodes WHERE thread_id = ?').all(t.id);
+    out.set(key, [...(out.get(key) || []), ...nodes]);
+  }
+  return out;
+}
+
 /**
  * Two-stage detection:
  *   1. Ask the LLM for a list of themes (name/description/status/weight).
@@ -391,10 +567,16 @@ function themesAreNearDuplicates(a, b) {
   return false;
 }
 
-async function detectThreadsFromCorpus(corpus, onMatchProgress) {
+async function detectThreadsFromCorpus(corpus, onMatchProgress, { userId } = {}) {
   if (!corpus.length) return [];
 
-  const novelThemes = await detectThemes(corpus);
+  // With the user and a built librarian index, discovery and matching reach
+  // the whole journal (see "Whole-journal reach"); and a theme that comes back
+  // under the same name keeps the items it had that weren't re-judged.
+  const reach = userId ? await buildReach(userId, corpus) : null;
+  const prior = reach ? priorThemeNodes(userId) : new Map();
+
+  const novelThemes = await detectThemes(reach ? discoverySample(reach) : corpus);
   console.log(`[threads] theme stage returned ${novelThemes.length} novel themes`);
 
   // Merge canonical seeds + LLM-discovered themes. Canonical runs first so
@@ -418,9 +600,9 @@ async function detectThreadsFromCorpus(corpus, onMatchProgress) {
   const themes = [...canonical, ...filteredNovel];
   console.log(`[threads] matching ${themes.length} themes (${canonical.length} canonical + ${filteredNovel.length} novel)`);
 
-  // Match against the most recent 120 items — keeps 12+ LLM calls from
-  // ballooning past 10 minutes on a local model. If a theme only lives in
-  // very old entries, it'll surface next re-detect as recent items accrue.
+  // Each match pass reads 120 items — keeps 12+ LLM calls from ballooning
+  // past 10 minutes on a local model. Without the librarian index those are
+  // simply the most recent 120; with it, chosen per theme (candidatesForTheme).
   const matchCorpus = corpus.slice(0, 120);
 
   const results = [];
@@ -431,13 +613,19 @@ async function detectThreadsFromCorpus(corpus, onMatchProgress) {
       // while it is being worked on, not after it finishes.
       onMatchProgress(i, themes.length, theme.name);
     }
+    const earlier = prior.get(normaliseThemeKey(theme.name)) || [];
     let nodes = [];
     try {
-      nodes = await matchItemsToTheme(theme, matchCorpus);
+      const candidates = reach
+        ? await candidatesForTheme(theme, reach, earlier.filter((n) => n.type === 'entry').map((n) => n.id))
+        : matchCorpus;
+      nodes = await matchItemsToTheme(theme, candidates);
+      if (reach) nodes = keepUnjudged(nodes, earlier, candidates);
     } catch (err) {
       console.error(`[threads] match failed for "${theme.name}":`, err.message);
+      nodes = earlier; // a failed pass shouldn't erase what the theme had
     }
-    console.log(`[threads] "${theme.name}" matched ${nodes.length} items`);
+    console.log(`[threads] "${theme.name}" matched ${nodes.length} items${earlier.length ? ` (had ${earlier.length})` : ''}`);
     // Canonical seeds are the user's expected core arcs — surface them even
     // if sparse. Novel/custom use the same 2-bead threshold (matches the UI
     // visibility filter).
@@ -522,8 +710,15 @@ async function rematchThread(threadId, userId) {
   const corpus = collectCorpus(userId);
   if (!corpus.length) return { nodeCount: 0 };
 
-  const matchCorpus = corpus.slice(0, 120);
-  const nodes = await matchItemsToTheme({ name: thread.name, description: thread.description }, matchCorpus);
+  // Judge the newest items plus the older entries closest to this theme (when
+  // the librarian index exists); items it has that weren't shown are kept.
+  const earlier = db.prepare('SELECT content_type AS type, content_id AS id FROM thread_nodes WHERE thread_id = ?').all(threadId);
+  const reach = await buildReach(userId, corpus);
+  const theme = { name: thread.name, description: thread.description };
+  const matchCorpus = reach
+    ? await candidatesForTheme(theme, reach, earlier.filter((n) => n.type === 'entry').map((n) => n.id))
+    : corpus.slice(0, 120);
+  const nodes = keepUnjudged(await matchItemsToTheme(theme, matchCorpus), earlier, matchCorpus);
 
   const insertNode = db.prepare(`INSERT INTO thread_nodes (thread_id, content_type, content_id) VALUES (?, ?, ?)`);
   const tx = db.transaction(() => {
@@ -691,16 +886,7 @@ function hydrateItem(type, id, userId) {
         FROM entries
        WHERE id = ? AND user_id = ?
     `).get(id, userId);
-    if (!r) return null;
-    return {
-      type: 'entry',
-      id: r.id,
-      title: r.title || 'Untitled',
-      excerpt: excerpt(safeDecrypt(userId, r.body_text), 200),
-      date: r.item_date,
-      tags: parseTags(r.tags, r.auto_tags),
-      breakthrough: Number.isInteger(r.breakthrough_level) && r.breakthrough_level > 0,
-    };
+    return r ? entryItem(userId, r) : null;
   }
   if (type === 'note') {
     const r = db.prepare(`
@@ -848,6 +1034,40 @@ async function threadSingleItem(type, id, userId) {
   tx();
 
   return { matched: matchedIds };
+}
+
+/**
+ * After a re-detect, give every entry that ended up in no theme one look
+ * against all themes (the same single-item match new entries get). A re-detect
+ * replaces discovered themes wholesale, so entries that had built up in old
+ * themes over months would otherwise sit unthemed; on a 372-entry journal that
+ * was 177 entries. One short LLM call each, newest first.
+ * onProgress(done, total) reports progress to the detect job.
+ */
+async function placeUnthemedEntries(userId, onProgress, limit = 500) {
+  const ids = db.prepare(`
+    SELECT e.id FROM entries e
+     WHERE e.user_id = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM thread_nodes n JOIN threads t ON t.id = n.thread_id
+          WHERE n.content_type = 'entry' AND n.content_id = e.id AND t.user_id = ?
+       )
+     ORDER BY COALESCE(e.date, e.created_at) DESC
+     LIMIT ?
+  `).all(userId, userId, limit).map((r) => r.id);
+  let placed = 0;
+  for (let i = 0; i < ids.length; i++) {
+    if (typeof onProgress === 'function') onProgress(i, ids.length);
+    try {
+      const { matched } = await threadSingleItem('entry', ids[i], userId);
+      if (matched.length) placed++;
+    } catch (err) {
+      console.error(`[threads] placing entry ${ids[i]} failed:`, err.message);
+    }
+  }
+  if (typeof onProgress === 'function') onProgress(ids.length, ids.length);
+  console.log(`[threads] placed ${placed} of ${ids.length} unthemed entries`);
+  return { checked: ids.length, placed };
 }
 
 // Collect orphan items: threaded_at IS NOT NULL, but no thread_nodes row.
@@ -1070,8 +1290,11 @@ module.exports = {
   rematchThread,
   createCustomThread,
   threadSingleItem,
+  placeUnthemedEntries,
   ensureCanonicalThreadsExist,
   sweepOrphans,
   sweepUnthreaded,
   stampAllThreaded,
+  // Internals of the whole-journal reach, for tests.
+  _reach: { buildReach, discoverySample, candidatesForTheme, keepUnjudged, kmeans },
 };

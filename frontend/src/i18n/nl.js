@@ -872,6 +872,7 @@ export default {
   "threads.reDetect": "De draad opnieuw rijgen",
   "threads.detecting": "Thema’s detecteren…",
   "threads.matching": "Items matchen",
+  "threads.placing": "Items aan thema's koppelen",
   "threads.slowWarning": "Volledige herbouw — dit kan even duren. Normaal worden draden stilletjes op de achtergrond bijgewerkt nadat je reflecteert, chat of een aantekening opslaat.",
   "threads.generatingInsights": "Inzichten genereren",
   "threads.emptyEarly": "Draden verschijnen naarmate je dagboek groeit. Schrijf nog een paar notities en kom terug.",

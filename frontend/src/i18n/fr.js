@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "Retisser le fil",
   "threads.detecting": "Détection des thèmes…",
   "threads.matching": "Appariement des éléments",
+  "threads.placing": "Attribution des thèmes aux entrées",
   "threads.slowWarning": "Reconstruction complète — cela peut prendre un moment. Normalement, les fils se mettent à jour discrètement en arrière-plan après une Réflexion, une conversation ou l’enregistrement d’une note.",
   "threads.generatingInsights": "Génération des aperçus",
   "threads.emptyEarly": "Les fils apparaissent à mesure que votre journal grandit. Écrivez encore quelques entrées puis revenez.",

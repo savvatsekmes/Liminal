@@ -761,6 +761,9 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
     if (detectJob.phase === 'matching') {
       return `${t('threads.matching') || 'Matching items'} ${detectJob.done}/${detectJob.total}`;
     }
+    if (detectJob.phase === 'placing') {
+      return `${t('threads.placing')} ${detectJob.done}/${detectJob.total}`;
+    }
     if (detectJob.phase === 'generating-insights') {
       return `${t('threads.generatingInsights') || 'Generating insights'} ${detectJob.done}/${detectJob.total}`;
     }

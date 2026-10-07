@@ -92,7 +92,7 @@ router.post('/detect', (req, res) => {
         job.done = done;
         job.total = total;
         job.currentTheme = themeName || '';
-      });
+      }, { userId });
 
       threadService.wipeThreadsForUser(userId);
       const threadIds = threadService.persistThreads(userId, detected);
@@ -101,6 +101,14 @@ router.post('/detect', (req, res) => {
       // LLM didn't match ≥2 items to one, it still lives on as an empty
       // thread that future beads can join.
       threadService.ensureCanonicalThreadsExist(userId);
+
+      // Entries left in no theme get one look against all of them — before
+      // the insights, so those are written with the placed entries included.
+      job.phase = 'placing';
+      await threadService.placeUnthemedEntries(userId, (done, total) => {
+        job.done = done;
+        job.total = total;
+      });
 
       job.phase = 'generating-insights';
       job.total = threadIds.length;

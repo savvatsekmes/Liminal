@@ -872,6 +872,7 @@ export default {
   "threads.reDetect": "Re-tecer a agulha",
   "threads.detecting": "Detectando temas…",
   "threads.matching": "Combinando itens",
+  "threads.placing": "Atribuindo temas às entradas",
   "threads.slowWarning": "Reconstrução completa — isso pode levar um tempo. Normalmente os fios são atualizados silenciosamente em segundo plano após você Refletir, conversar ou salvar uma nota.",
   "threads.generatingInsights": "Gerando insights",
   "threads.emptyEarly": "Os fios aparecem conforme seu diário cresce. Escreva mais algumas entradas e volte.",

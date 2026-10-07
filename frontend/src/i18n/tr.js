@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "İpliği yeniden geçir",
   "threads.detecting": "Temalar tespit ediliyor…",
   "threads.matching": "Öğeler eşleştiriliyor",
+  "threads.placing": "Girdiler temalara yerleştiriliyor",
   "threads.slowWarning": "Tam yeniden oluşturma — bu biraz zaman alabilir. Normalde iplikler, Yansıttıktan, sohbet ettikten veya bir not kaydettikten sonra arka planda sessizce güncellenir.",
   "threads.generatingInsights": "İçgörüler oluşturuluyor",
   "threads.emptyEarly": "İplikler, günlüğün büyüdükçe görünür. Birkaç kayıt daha yaz ve geri dön.",

@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "Volver a enhebrar la aguja",
   "threads.detecting": "Detectando temas…",
   "threads.matching": "Emparejando elementos",
+  "threads.placing": "Asignando temas a las entradas",
   "threads.slowWarning": "Reconstrucción completa — esto puede tardar un rato. Normalmente los hilos se actualizan en silencio en segundo plano después de que Reflejes, conversaciones o guardes una nota.",
   "threads.generatingInsights": "Generando perspectivas",
   "threads.emptyEarly": "Los hilos aparecen a medida que crece tu diario. Escribe unas cuantas entradas más y vuelve.",

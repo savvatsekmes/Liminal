@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "Den Faden neu ziehen",
   "threads.detecting": "Themen werden erkannt…",
   "threads.matching": "Einträge werden zugeordnet",
+  "threads.placing": "Einträge Themen zuordnen",
   "threads.slowWarning": "Vollständiger Neuaufbau — das kann eine Weile dauern. Normalerweise werden Fäden still im Hintergrund aktualisiert, nachdem du reflektierst, chattest oder eine Notiz speicherst.",
   "threads.generatingInsights": "Einsichten werden erzeugt",
   "threads.emptyEarly": "Fäden erscheinen, wenn dein Tagebuch wächst. Schreibe noch ein paar Einträge und komm zurück.",

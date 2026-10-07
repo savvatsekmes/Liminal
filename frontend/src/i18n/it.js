@@ -779,6 +779,7 @@ export default {
   "threads.reDetect": "Ritessi l’ago",
   "threads.detecting": "Rilevamento dei temi…",
   "threads.matching": "Abbinamento elementi",
+  "threads.placing": "Assegnazione dei temi alle voci",
   "threads.slowWarning": "Ricostruzione completa — potrebbe richiedere del tempo. Normalmente i fili si aggiornano in silenzio in background dopo una Riflessione, una chat o il salvataggio di una nota.",
   "threads.generatingInsights": "Generazione delle intuizioni",
   "threads.emptyEarly": "I fili appaiono man mano che il tuo diario cresce. Scrivi qualche voce in più e torna a vedere.",
