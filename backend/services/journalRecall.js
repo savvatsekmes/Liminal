@@ -17,6 +17,7 @@
  * ever returns that user's own entries (the vector index is shared app-wide).
  */
 
+const crypto = require('crypto');
 const db = require('../database');
 const { safeDecrypt } = require('./rowCrypto');
 const embedding = require('./embeddingService');
@@ -46,13 +47,31 @@ function splitPassages(text) {
   return out;
 }
 
+// Passage vectors, remembered between calls: embedding a passage costs ~35 ms
+// with EmbeddingGemma, and search-as-you-type and the chat keep revisiting the
+// same entries. Keyed by model + a hash of the passage (no text is kept);
+// in memory only, oldest dropped first.
+const PASSAGE_CACHE_MAX = 4000;
+const passageCache = new Map();
+async function passageVectors(passages) {
+  const modelId = embedding.currentModelId();
+  const keys = passages.map((p) => `${modelId}:${crypto.createHash('sha1').update(p).digest('base64')}`);
+  const missing = [...new Set(keys.map((k, i) => (passageCache.has(k) ? -1 : i)).filter((i) => i >= 0))];
+  if (missing.length) {
+    const vecs = await embedding.embedMany(missing.map((i) => passages[i]), modelId, 'document');
+    missing.forEach((i, n) => passageCache.set(keys[i], vecs[n]));
+    while (passageCache.size > PASSAGE_CACHE_MAX) passageCache.delete(passageCache.keys().next().value);
+  }
+  return keys.map((k) => passageCache.get(k));
+}
+
 // The passages of `text` most relevant to `queryVec`, kept in document order.
 async function bestExcerpt(text, queryVec, maxChars) {
   const t = clean(text);
   if (t.length <= maxChars) return t;
   const passages = splitPassages(t);
   if (passages.length <= 1) return `${t.slice(0, maxChars)}…`;
-  const vecs = await embedding.embedMany(passages, undefined, 'document');
+  const vecs = await passageVectors(passages);
   const byScore = vecs
     .map((v, i) => ({ i, s: embedding.similarity(queryVec, v, undefined, 'search') }))
     .sort((a, b) => b.s - a.s);
@@ -123,12 +142,12 @@ async function recallEntries(userId, queryText, opts = {}) {
       excerpt: await bestExcerpt(body, queryVec, maxChars),
     });
   }
-  noteShown(userId, out.map((e) => e.id));
   return out;
 }
 
-// Entries the chat has actually been shown (recall and search_journal), per
-// user. Markers for any other entry number are the model guessing — gemma4
+// Entries the chat has been shown through the search_journal tool, per user
+// (entries recalled into the prompt are passed to the linker as `known`).
+// Markers for any other entry number are the model guessing — gemma4
 // wrote [[entry:14, entry:81]] for entries it was never given — and in a real
 // journal those numbers would point at unrelated entries, so they aren't linked.
 // Kept in memory (not the request) because tool calls from the personal
@@ -283,6 +302,38 @@ function formatRecalledEntries(recalled) {
     lines.join('\n\n');
 }
 
+/**
+ * The user's most recent entries, newest first. Recall finds entries by
+ * topic, so "what's the latest in my life?" (no topic) used to get whatever
+ * older entries sounded closest; this gives the chat a sense of "now".
+ */
+function latestEntries(userId, { n = 4, maxChars = 500, excludeIds = [] } = {}) {
+  const skip = new Set(excludeIds.map(Number));
+  return db.prepare(
+    'SELECT id, title, date, body_text FROM entries WHERE user_id = ? ORDER BY COALESCE(date, created_at) DESC, id DESC LIMIT ?',
+  ).all(userId, n + skip.size)
+    .filter((r) => !skip.has(r.id))
+    .map((r) => {
+      const text = clean(safeDecrypt(userId, r.body_text));
+      return {
+        id: r.id, date: r.date, title: safeDecrypt(userId, r.title) || 'Untitled',
+        excerpt: text.length > maxChars ? `${text.slice(0, maxChars)}…` : text,
+      };
+    })
+    .filter((e) => e.excerpt)
+    .slice(0, n);
+}
+
+/** Prompt section for the latest entries (empty string when none). */
+function formatLatestEntries(latest) {
+  if (!latest.length) return '';
+  const lines = latest.map((e) => `### ${e.date || 'undated'} — "${e.title}" (entry #${e.id})\n${e.excerpt}`);
+  return `## THEIR LATEST ENTRIES — NEWEST FIRST\n` +
+    `What they've written most recently: this is "now" in their life. When they ask what's new, what's been going on lately or how they've been, ` +
+    `answer from these (the topic-matched entries above may be older). ${CITE_INSTRUCTION}\n\n` +
+    lines.join('\n\n');
+}
+
 /** The user's recurring themes across the whole journal, strongest first. */
 function themesDigest(userId, limit = 10) {
   let rows;
@@ -367,6 +418,6 @@ const SEARCH_JOURNAL_TOOL = {
 };
 
 module.exports = {
-  recallEntries, formatRecalledEntries, themesDigest, searchJournal, SEARCH_JOURNAL_TOOL, splitPassages,
+  recallEntries, formatRecalledEntries, latestEntries, formatLatestEntries, themesDigest, searchJournal, SEARCH_JOURNAL_TOOL, splitPassages,
   linkEntryCitations, stripEntryCitations, citedIds,
 };

@@ -61,7 +61,51 @@ function isCrisisMemory(text) {
   return MEMORY_CRISIS_PATTERNS.some((re) => re.test(text));
 }
 
-async function extractAndStoreMemories(currentEntry, portrait, userId = 1, entryId = null) {
+// YYYY-MM-DD in local time (entries are dated in the user's local calendar).
+function localDate(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Memories must stay true as time passes, so time is stored as dates, not as
+// "for 5 years" / "next month" (which go stale the day after they're written).
+const TIME_ANCHOR_RULES = (refDate) => `- Anchor time to dates. This was written on ${refDate}. Never store relative time that goes stale — "for 5 years", "is 34", "next month", "recently", "this year", "3 months pregnant". Convert it using that date: "has trained kung fu since about 2021", "born around 1992", "baby due around March 2027". Anything expected or planned carries its expected month or year.
+- Don't invent precision: "last week" is "around late February 2026", not an exact day; an age is "born around 1996".
+- When something that was expected or planned has now happened (a birth, a move, a wedding, a launch), use "supersedes" on the memory that anticipated it.`;
+
+// A memory that expects something by a month that has now passed ("due around
+// March 2026", "planned to move around July 2025") gets a marker for the LLMs
+// reading it. Left to themselves, small models keep calling a past due date
+// "upcoming" even when told today's date.
+const MONTH_NUM = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const EXPECTATION_RE = /\b(?:expect|due\b|plann|will\b|going to|upcoming|scheduled|hop(?:e|es|ing) to|intend)/i;
+const MONTH_YEAR_RE = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{4})\b|\b((?:19|20)\d{2})\b/gi;
+function pastDueMarker(text, now = new Date()) {
+  if (!text || !EXPECTATION_RE.test(text)) return '';
+  const nowKey = now.getFullYear() * 12 + now.getMonth(); // months since year 0, zero-based month
+  let latest = -1;
+  for (const m of String(text).matchAll(MONTH_YEAR_RE)) {
+    // Month + year → that month; a bare year → its December (only past once the year is over).
+    const key = m[1] ? Number(m[2]) * 12 + MONTH_NUM[m[1].toLowerCase().slice(0, 3)] - 1 : Number(m[3]) * 12 + 11;
+    latest = Math.max(latest, key);
+  }
+  return latest >= 0 && latest < nowKey ? 'expected date has passed — outcome not recorded' : '';
+}
+
+/**
+ * Extract facts from a journal entry (or, with opts.source = 'conversation',
+ * from what the user said in a chat) and merge them into their memories:
+ * new facts are added, updates rewrite the memory they update, contradictions
+ * retire the old one. Every change is audited with the previous text.
+ * @param {{source?: 'entry'|'conversation', context?: string, date?: string}} [opts]
+ *   context — for conversations, what Liminal said just before (helps read
+ *   "yes, she arrived!"); never a source of facts. date — when it was said.
+ */
+async function extractAndStoreMemories(currentEntry, portrait, userId = 1, entryId = null, opts = {}) {
+  scheduleTimeAnchoring(userId);
+  const isConversation = opts.source === 'conversation';
+  const refDate = opts.date
+    || (entryId && db.prepare('SELECT date FROM entries WHERE id = ? AND user_id = ?').get(entryId, userId)?.date)
+    || localDate();
   // Pull the *most relevant* existing memories instead of an arbitrary slice
   // of the most-recent 50. Top-25 by cosine similarity to this entry; pad with
   // recents if the index is sparse so the LLM always has ~30 reference points.
@@ -116,6 +160,8 @@ Rules:
 - Each memory is ONE fact, ONE sentence, specific (names, details, context)
 - Default to "new" if uncertain
 - Only use ref_id from the EXISTING list — never invent ids
+${TIME_ANCHOR_RULES(refDate)}${isConversation ? `
+- This is from a CONVERSATION, not a journal entry. Only facts the person states about their own life count — never anything Liminal said, never questions, hypotheticals, or what they might do. Most messages contain no new facts: return an empty array.` : ''}
 - If nothing genuinely new emerges, return an empty array
 - Return ONLY valid JSON: { "memories": [{ "text": "...", "action": "new" }, { "text": "...", "action": "supersedes", "ref_id": 137 }] }
 
@@ -127,13 +173,19 @@ EXISTING contains "98: Aysha is Savva's girlfriend".
 Entry mentions "Aysha and I got engaged" → { "text": "Savva and Aysha are engaged", "action": "supersedes", "ref_id": 98 }
 
 EXISTING contains "137: Dennis is a friend of Savva's".
-Entry mentions "my brother Dennis came over" → { "text": "Dennis is Savva's brother", "action": "contradicts", "ref_id": 137 }`;
+Entry mentions "my brother Dennis came over" → { "text": "Dennis is Savva's brother", "action": "contradicts", "ref_id": 137 }
+
+Written on 2026-10-07: "five years of kung fu now and still a beginner" → { "text": "Savva has trained kung fu since about 2021", "action": "new" }
+
+EXISTING contains "205: Savva and Aysha are expecting a baby, due around December 2026".
+Written on 2026-12-14: "our daughter Mia was born last night" → { "text": "Savva and Aysha's daughter Mia was born in December 2026", "action": "supersedes", "ref_id": 205 }`;
 
   const userMessage = `EXISTING MEMORIES (id: text):
 ${existingList}
 
-NEW JOURNAL ENTRY:
-${currentEntry}
+${isConversation
+    ? `WHAT THEY SAID IN A CONVERSATION (${refDate}):\n${currentEntry}${opts.context ? `\n\n(For context only — what Liminal had just said, not facts about them: ${opts.context})` : ''}`
+    : `NEW JOURNAL ENTRY (written ${refDate}):\n${currentEntry}`}
 
 ${portrait ? `USER PORTRAIT:\n${portrait}` : ''}
 
@@ -142,15 +194,20 @@ Extract any genuinely new facts. Return only the JSON.`;
   try {
     const raw = await llm.call(systemPrompt, userMessage, { maxTokens: 700 });
     let rawItems = [];
+    let parsedOk = false;
     try {
       const parsed = JSON.parse(raw.trim());
       rawItems = parsed.memories || [];
+      parsedOk = true;
     } catch {
-      const match = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
+      // Fenced JSON, or JSON after some prose.
+      const match = raw.match(/```(?:json)?\s*([\s\S]+?)\s*```/) || raw.match(/(\{[\s\S]*"memories"[\s\S]*\})/);
       if (match) {
-        try { rawItems = JSON.parse(match[1]).memories || []; } catch {}
+        try { rawItems = JSON.parse(match[1]).memories || []; parsedOk = true; } catch {}
       }
     }
+    // Content stays out of the log (it's the user's private facts); the shape doesn't.
+    if (!parsedOk) console.warn(`[memory] Extraction reply for entry ${entryId} wasn't readable JSON (${String(raw || '').length} chars)`);
 
     // Normalize each item to { text, action, ref_id }. Tolerate the legacy
     // bare-string format in case the LLM regresses to it.
@@ -293,8 +350,17 @@ async function synthesizeMemory(userId = 1) {
   const cached = cachedRow ? { ...cachedRow, summary: safeDecrypt(userId, cachedRow.summary) } : null;
   const cacheFlag = db.prepare("SELECT value FROM settings WHERE key = ?").get(`memory_dirty_${userId}`);
 
-  // If cache exists and isn't dirty, return it
-  if (cached?.summary && (!cacheFlag || cacheFlag.value !== '1')) {
+  // Existing memories written before time was stored as dates get converted
+  // once, in the background (see anchorExistingMemories).
+  scheduleTimeAnchoring(userId);
+
+  // If cache exists and isn't dirty, return it. The narrative is written
+  // relative to the day it was made ("expecting a baby in December"), so it is
+  // also redone after a week even when no memory changed.
+  const cacheAgeDays = cachedRow?.updated_at
+    ? (Date.now() - new Date(String(cachedRow.updated_at).replace(' ', 'T') + 'Z').getTime()) / 86400000
+    : Infinity;
+  if (cached?.summary && (!cacheFlag || cacheFlag.value !== '1') && cacheAgeDays < 7) {
     return cached.summary;
   }
 
@@ -342,6 +408,8 @@ async function synthesizeMemory(userId = 1) {
     if (m.pinned) markers.push('pinned');
     if (m.isCore) markers.push('core'); else markers.push(ageLabel(m.ageDays));
     if (m.status === 'resolved') markers.push('resolved');
+    const pastDue = pastDueMarker(m.content);
+    if (pastDue) markers.push(pastDue);
     return `- ${m.content}  [${markers.join(', ')}]`;
   }).join('\n');
 
@@ -360,13 +428,15 @@ Rules:
 - Group related facts naturally — don't just list them
 - Weight memories by their annotation: pinned and core memories are load-bearing; recent memories describe the person's current life; older non-core memories are background that should only appear if they still matter
 - If an old non-core memory contradicts a more recent one, trust the recent one — people change
+- Time: today's date is given above the items. Memories state time as dates ("since about 2021", "due around December 2026"); describe it relative to today ("about five years of kung fu")
+- [expected date has passed — outcome not recorded] means that date is in the PAST. Never describe it as upcoming, anticipated or "this year's" plan. Write it as something that was expected around then, whose outcome isn't known yet (e.g. "they were expecting their first child around March 2026; whether the baby has arrived isn't recorded")
 - Be factual, warm, and specific
 - Capture the person's full picture: identity, relationships, patterns, growth edges
 - Keep under 800 tokens
 - Return only the narrative text, nothing else`;
 
   try {
-    const narrative = await llm.call(systemPrompt, `MEMORY ITEMS:\n${itemList}`, { maxTokens: 900 });
+    const narrative = await llm.call(systemPrompt, `TODAY: ${localDate()}\n\nMEMORY ITEMS:\n${itemList}`, { maxTokens: 900 });
     const trimmed = narrative.trim();
 
     // Cache in old memory table
@@ -391,6 +461,94 @@ Rules:
 
 function invalidateSynthesisCache(userId = 1) {
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')").run(`memory_dirty_${userId}`);
+}
+
+// ── Anchoring existing memories to dates (one-time) ─────────────────────────
+// Memories extracted before TIME_ANCHOR_RULES say things like "has trained
+// kung fu for 5 years" or "is expecting a baby" — true the day they were
+// written, stale after. This rewrites those, once per user, using the date of
+// the entry each came from. Runs in the background the first time the
+// memories are synthesized after the update; retried until it completes.
+// Every rewrite is in memories_audit (action 'time_anchor') with the old text.
+
+// Only memories that mention relative or expected time go to the LLM.
+const RELATIVE_TIME_RE = new RegExp([
+  String.raw`\b(?:for|over)\s+(?:the\s+)?(?:past\s+|last\s+)?(?:\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|several|a few|many)\s+(?:years?|months?|weeks?|days?)\b`,
+  String.raw`\b\d+\s*(?:years?|yrs?)\s*old\b`,
+  String.raw`\b(?:is|am|turned|turning|aged?)\s+\d{1,3}\b`,
+  String.raw`\b(?:\d+|a|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:years?|months?|weeks?)\s+(?:ago|pregnant|in|into|sober|clean)\b`,
+  String.raw`\bexpect(?:ing|s|ed)?\b`, String.raw`\bpregnan`, String.raw`\bdue\b`, String.raw`\bupcoming\b`,
+  String.raw`\b(?:next|this|last)\s+(?:week|month|year|spring|summer|autumn|fall|winter)\b`,
+  String.raw`\brecently\b`, String.raw`\bsoon\b`, String.raw`\bplann?(?:ing|s|ed)\s+to\b`, String.raw`\bgoing to\b`, String.raw`\bwill\b`,
+].join('|'), 'i');
+const ANCHOR_BATCH = 15;
+const anchoringNow = new Set();
+
+function timeAnchoringDone(userId) {
+  return db.prepare('SELECT value FROM settings WHERE key = ?').get(`memories_time_anchored_v1_${userId}`)?.value === '1';
+}
+
+function scheduleTimeAnchoring(userId) {
+  if (!userId || anchoringNow.has(userId) || timeAnchoringDone(userId)) return;
+  anchoringNow.add(userId);
+  setImmediate(() => {
+    anchorExistingMemories(userId)
+      .catch((err) => console.warn('[memory] time anchoring failed (will retry later):', err.message))
+      .finally(() => anchoringNow.delete(userId));
+  });
+}
+
+async function anchorExistingMemories(userId) {
+  const rows = db.prepare(`
+    SELECT m.id, m.content, COALESCE(e.date, substr(m.created_at, 1, 10)) AS ref_date
+      FROM memories m LEFT JOIN entries e ON e.id = m.source_entry_id
+     WHERE m.user_id = ?
+  `).all(userId).map((r) => ({ ...r, content: safeDecrypt(userId, r.content) || '' }))
+    .filter((r) => r.content && RELATIVE_TIME_RE.test(r.content));
+  console.log(`[memory] time anchoring: ${rows.length} memories mention relative time`);
+
+  const systemPrompt = `You maintain the memories of a personal journaling app. Each memory below was written on the date shown, and some state time relatively ("for 5 years", "is 34", "is expecting a baby", "next month"), which goes stale.
+
+Rewrite ONLY those memories so their time is anchored to dates, using the date each was written:
+- "Savva has trained kung fu for 5 years" (written 2026-03-02) → "Savva has trained kung fu since about 2021"
+- "Savva is 34" (written 2025-06-10) → "Savva was born around 1991"
+- "Savva and Aysha are expecting a baby in December" (written 2026-08-01) → "Savva and Aysha are expecting a baby, due around December 2026"
+- "Savva is moving to Lisbon next month" (written 2026-02-11) → "Savva planned to move to Lisbon around March 2026"
+Keep everything else in the memory exactly as it is. Don't invent precision: "about", "around" are fine. Leave memories without stale relative time out of your answer.
+
+Return ONLY JSON: { "memories": [{ "id": 12, "text": "rewritten memory" }] } — an empty array if none need it.`;
+
+  const updateContent = db.prepare('UPDATE memories SET content = ? WHERE id = ? AND user_id = ?');
+  const insertAudit = db.prepare(
+    `INSERT INTO memories_audit (user_id, memory_id, prev_content, new_content, action, source_entry_id)
+     VALUES (?, ?, ?, ?, 'time_anchor', NULL)`
+  );
+  let rewritten = 0;
+  for (let i = 0; i < rows.length; i += ANCHOR_BATCH) {
+    const batch = rows.slice(i, i + ANCHOR_BATCH);
+    const byId = new Map(batch.map((r) => [r.id, r]));
+    const list = batch.map((r) => `- id ${r.id} (written ${r.ref_date}): ${r.content}`).join('\n');
+    const raw = await llm.call(systemPrompt, `MEMORIES:\n${list}\n\nReturn the JSON.`, { maxTokens: 1200 });
+    let items = [];
+    try { items = JSON.parse(String(raw).trim()).memories || []; } catch {
+      const m = String(raw).match(/```(?:json)?\s*([\s\S]+?)\s*```/) || String(raw).match(/(\{[\s\S]*\})/);
+      if (m) { try { items = JSON.parse(m[1]).memories || []; } catch {} }
+    }
+    for (const it of Array.isArray(items) ? items : []) {
+      const target = byId.get(Number(it?.id));
+      const text = String(it?.text || '').trim();
+      // Sanity: a real rewrite of THIS memory — not empty, not unchanged, not a different fact.
+      if (!target || !text || text === target.content || text.length > target.content.length * 2 + 40) continue;
+      updateContent.run(encryptField(userId, text), target.id, userId);
+      insertAudit.run(userId, target.id, target.content, text);
+      embedding.indexMemory(target.id, text).catch(() => {});
+      rewritten++;
+    }
+  }
+  if (rewritten) invalidateSynthesisCache(userId);
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')").run(`memories_time_anchored_v1_${userId}`);
+  console.log(`[memory] time anchoring done: ${rewritten} of ${rows.length} rewritten`);
+  return { checked: rows.length, rewritten };
 }
 
 /**
@@ -530,6 +688,8 @@ function formatRetrievedMemoriesForPrompt(memories) {
     if (m.is_core) markers.push('core');
     if (m.status === 'resolved') markers.push('resolved');
     markers.push(ageLabelShort(m.ageDays));
+    const pastDue = pastDueMarker(m.content);
+    if (pastDue) markers.push(pastDue);
     return `- ${m.content}  [${markers.join(', ')}]`;
   });
   return `## RELEVANT MEMORIES\nMemories that map to what the user is currently navigating. Use them to inform your reply but don't list them back at the user.\n\n${lines.join('\n')}`;
@@ -1256,6 +1416,7 @@ Rules:
 // ── Ask / Oracle prompts ──────────────────────────────────────────────────────
 
 async function buildAskSystemPrompt(userId, archetype = 'Direct Friend', askContextText = '') {
+  scheduleTimeAnchoring(userId); // one-time date fix-up of old memories, in the background
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
@@ -1378,13 +1539,17 @@ function buildTimeContext() {
     h < 21 ? 'evening'    :
              'night';
   const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const date    = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const clock   = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return `## CURRENT TIME\nIt is ${dayName} ${timeOfDay}, ${clock} the user's local time. Reference this only if it's directly relevant — do NOT assume the user is awake at an unusual hour, struggling to sleep, journaling at 4am, etc. unless they explicitly say so right now.`;
+  // The date lets dated memories read right: "since 2021" is about five years;
+  // a baby "due December 2026" is no longer on the way in 2027.
+  return `## CURRENT TIME\nIt is ${dayName} ${timeOfDay}, ${date}, ${clock} the user's local time. Reference this only if it's directly relevant — do NOT assume the user is awake at an unusual hour, struggling to sleep, journaling at 4am, etc. unless they explicitly say so right now. When something in their memories was expected by a date that has now passed and nothing says it happened, don't treat it as still upcoming — if it matters to the conversation, ask.`;
 }
 
 // `meta` (optional, out-param): receives `recalled` — the journal entries given
 // to the chat this turn — so the route can link the entries it mentions.
 async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null, oracleContextText = '', meta = null) {
+  scheduleTimeAnchoring(userId); // one-time date fix-up of old memories, in the background
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
@@ -1459,15 +1624,22 @@ Speak to them as someone you know through this lens — not generically. Generic
   // not answer "look through my entries" or "what keeps coming up for me?".
   try {
     const recall = require('./journalRecall');
+    const sourceIds = session?.source_entry_id ? [Number(session.source_entry_id)] : [];
+    // The newest few entries always come along ("what's new with me?" has no
+    // topic to search by); topic recall then skips them so nothing is shown twice.
+    const latest = recall.latestEntries(userId, { n: 4, excludeIds: sourceIds });
+    let recalled = [];
     if (oracleContextText && oracleContextText.trim()) {
-      const recalled = await recall.recallEntries(userId, oracleContextText, {
+      recalled = await recall.recallEntries(userId, oracleContextText, {
         k: 5,
-        excludeIds: session?.source_entry_id ? [Number(session.source_entry_id)] : [],
+        excludeIds: [...sourceIds, ...latest.map((e) => e.id)],
       });
-      if (meta) meta.recalled = recalled;
       const recallSection = recall.formatRecalledEntries(recalled);
       if (recallSection) sections.push(recallSection);
     }
+    const latestSection = recall.formatLatestEntries(latest);
+    if (latestSection) sections.push(latestSection);
+    if (meta) meta.recalled = [...recalled, ...latest];
     const themes = recall.themesDigest(userId, 10);
     if (themes) sections.push(themes);
   } catch (err) {
@@ -1755,6 +1927,8 @@ module.exports = {
   getMemories,
   getSummary,
   extractAndStoreMemories,
+  anchorExistingMemories,
+  pastDueMarker,
   synthesizeMemory,
   invalidateSynthesisCache,
   buildMemorySection,

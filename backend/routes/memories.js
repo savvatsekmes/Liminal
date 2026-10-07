@@ -253,7 +253,10 @@ router.post('/extract-all', (req, res) => {
 
       for (const e of entries) {
         try {
-          await extractAndStoreMemories(e.body_text || '', portraitStr, userId, e.id);
+          // body_text is encrypted at rest — the extractor needs the words.
+          const text = safeDecrypt(userId, e.body_text) || '';
+          if (!text.trim()) { job.done += 1; continue; }
+          await extractAndStoreMemories(text, portraitStr, userId, e.id);
         } catch (err) {
           console.error(`[memories/extract-all] entry ${e.id} failed:`, err.message);
         }

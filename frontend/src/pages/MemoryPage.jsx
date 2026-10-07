@@ -251,14 +251,13 @@ const s = {
     alignItems: 'flex-start',
     gap: '12px',
     padding: '12px 14px',
-    border: 'var(--border-style)',
+    border: 'none',
     borderRadius: '16px',
     background: 'var(--panel-bg)',
   },
+  // Core memories: gold tint, no outline (memories are told apart by their fill).
   memoryItemCore: {
-    border: '1px solid #d4a843',
-    background: 'rgba(212, 168, 67, 0.08)',
-    boxShadow: '0 0 0 1px rgba(212, 168, 67, 0.25) inset',
+    background: 'rgba(212, 168, 67, 0.12)',
   },
   coreBtn: {
     fontSize: '14px',
@@ -1385,7 +1384,6 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               const sat = 65 - tt * 55;
               const light = 48 + tt * 32;
               return {
-                border: `1px solid hsl(${hue}, ${sat}%, ${light}%)`,
                 background: `hsla(${hue}, ${sat}%, ${light}%, 0.09)`,
               };
             }

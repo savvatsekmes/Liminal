@@ -363,6 +363,21 @@ router.post('/sessions/:id/messages', async (req, res) => {
         });
       });
     }
+
+    // Life updates told to the chat ("she was born last night!") update the
+    // memories the same way journal entries do. Liminal's previous line goes
+    // along as context so a bare "yes, she's here" can be read.
+    const said = content.trim();
+    if (said.length >= 25) {
+      const userId = req.userId;
+      const prev = history[history.length - 2];
+      const context = prev?.role === 'assistant' ? recall.stripEntryCitations(prev.content).slice(-600) : '';
+      setImmediate(() => {
+        memory.extractAndStoreMemories(said, '', userId, null, { source: 'conversation', context }).catch((err) => {
+          console.error('[oracle] memory update from chat failed:', err.message);
+        });
+      });
+    }
   } catch (err) {
     // Roll back the user message on failure
     db.prepare('DELETE FROM oracle_messages WHERE id = ?').run(userMsgResult.lastInsertRowid);
