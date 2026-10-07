@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const db = require('../database');
 const llm = require('../services/llmService');
 const memory = require('../services/memoryService');
+const recall = require('../services/journalRecall');
 const threadService = require('../services/threadService');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
@@ -208,6 +209,22 @@ router.get('/linked-session', (req, res) => {
   res.json({ session: sessionRow(session) });
 });
 
+// Chat replies: short by default (the prompt asks for 1–2 sentences), but a
+// journal lookup or big reflective question now gets a full answer, so the
+// token cap is an upper bound rather than the target. num_ctx 16K leaves room
+// for recalled journal excerpts and themes without Ollama trimming the
+// system prompt.
+const CHAT_LLM_OPTIONS = { maxTokens: 1200, numCtx: 16384 };
+
+// What the journal recall searches with: the last few things the user said,
+// not just the latest line — "can you look through my entries?" carries no
+// topic on its own; the topic is in the message before it.
+function recallContext(history) {
+  const recent = history.filter((m) => m.role === 'user').slice(-3).map((m) => m.content.trim());
+  const text = recent.join('\n');
+  return text.length > 1500 ? text.slice(-1500) : text;
+}
+
 // ── POST /api/oracle/sessions/:id/seed ────────────────────────────────────
 // Seed a linked session from a reflection's closing question, so "talk about
 // this" lands the user in a conversation already in progress rather than a
@@ -248,8 +265,10 @@ router.post('/sessions/:id/seed', async (req, res) => {
       { role: 'assistant', content: question.trim() },
       { role: 'user', content: answer.trim() },
     ];
-    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session, answer.trim());
-    const reply = (await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 400 })).trim();
+    const meta = {};
+    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session, recallContext(history), meta);
+    const reply = recall.linkEntryCitations(req.userId,
+      (await llm.callWithHistoryAndTools(systemPrompt, history, CHAT_LLM_OPTIONS)).trim(), meta.recalled);
     if (reply) {
       db.prepare(
         'INSERT INTO oracle_messages (session_id, role, content, archetype) VALUES (?, ?, ?, ?)'
@@ -306,12 +325,15 @@ router.post('/sessions/:id/messages', async (req, res) => {
   ).all(session.id).map((m) => ({ ...m, content: safeDecrypt(req.userId, m.content) }));
 
   try {
-    // Pass the user's most recent message as the retrieval context so memory
-    // injection pulls topically relevant memories instead of a static blob.
-    const lastUserMessage = [...history].reverse().find((m) => m.role === 'user')?.content || '';
-    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session, lastUserMessage);
-    const answer = await llm.callWithHistoryAndTools(systemPrompt, history, { maxTokens: 400 });
-    const trimmed = answer.trim();
+    // Pass the user's recent messages as the retrieval context so memory and
+    // journal recall pull what's topically relevant, not a static blob.
+    const meta = {};
+    const systemPrompt = await memory.buildOracleSystemPrompt(req.userId, activeArchetype, session, recallContext(history), meta);
+    const answer = await llm.callWithHistoryAndTools(systemPrompt, history, CHAT_LLM_OPTIONS);
+    // Turn entry references into links (only this user's entries the chat was
+    // shown, now or earlier in this conversation; see journalRecall).
+    const trimmed = recall.linkEntryCitations(req.userId, answer.trim(), meta.recalled,
+      history.flatMap((m) => recall.citedIds(m.content)));
 
     if (!trimmed) {
       return res.status(502).json({ error: 'Model returned an empty response. Try again or switch models in Settings.' });

@@ -459,11 +459,15 @@ const WEB_SEARCH_TOOL = {
   },
 };
 
-async function executeToolCall(toolName, args) {
+async function executeToolCall(toolName, args, ctx = {}) {
   if (toolName === 'web_search') {
     const searchService = require('./searchService');
     const result = await searchService.search(args.query);
     return searchService.formatResults(result);
+  }
+  if (toolName === 'search_journal') {
+    const userId = ctx.userId ?? require('./settingsService').getCurrentUserId();
+    return require('./journalRecall').searchJournal(userId, args || {});
   }
   return 'Unknown tool';
 }
@@ -471,27 +475,40 @@ async function executeToolCall(toolName, args) {
 async function callWithHistoryAndTools(systemPrompt, messages, options = {}) {
   systemPrompt = withLanguage(systemPrompt, options);
   const searchService = require('./searchService');
-  if (!searchService.isEnabled()) {
-    return callWithHistory(systemPrompt, messages, options);
-  }
+  const webOn = searchService.isEnabled();
 
   const cfg = getSettings();
   const provider = options.provider || cfg.provider;
+
+  // Liminal's tools: search_journal is always offered to tool-capable models;
+  // web_search only when the user has enabled it. The user is bound now —
+  // tool calls can arrive outside this request's async context (the Codex
+  // MCP bridge serves them from its own HTTP handler).
+  const userId = require('./settingsService').getCurrentUserId();
+  const tools = [require('./journalRecall').SEARCH_JOURNAL_TOOL, ...(webOn ? [WEB_SEARCH_TOOL] : [])];
+  const runTool = (name, args) => executeToolCall(name, args, { userId });
 
   // Subscription providers: Liminal's tools are exposed to the CLI as MCP
   // tools that call executeToolCall, with every built-in tool switched off.
   if (PERSONAL_PROVIDERS.has(provider)) {
     return personalFor(provider).callWithHistoryAndTools(provider, systemPrompt, messages,
       { ...options, model: personalModel(provider, options, cfg) },
-      { tools: [WEB_SEARCH_TOOL], executeToolCall });
+      { tools, executeToolCall: runTool });
   }
 
   // Claude/OpenAI: use native tool calling (works reliably)
   if (provider === 'claude') {
-    return callClaudeWithTools(systemPrompt, messages, cfg, options);
+    return callClaudeWithTools(systemPrompt, messages, cfg, options, tools, runTool);
   }
   if (provider === 'openai') {
-    return callOpenAIWithTools(systemPrompt, messages, cfg, options);
+    return callOpenAIWithTools(systemPrompt, messages, cfg, options, tools, runTool);
+  }
+
+  // Ollama: most local models call tools unreliably, so journal recall is
+  // injected into the system prompt instead (memoryService), and web search
+  // keeps its keyword-triggered injection below.
+  if (!webOn) {
+    return callWithHistory(systemPrompt, messages, options);
   }
 
   // Ollama (and any other): prompt injection fallback
@@ -506,9 +523,12 @@ async function callWithHistoryAndTools(systemPrompt, messages, options = {}) {
     if (results.results?.length > 0) {
       const searchBlock = '\n\nWeb search results:\n' + formatted +
         '\n\nUse these search results to inform your response where relevant.';
-      // If adding search would push past 20K, trim the system prompt to make room
-      // (keeps search quality intact for capable models, trims context for smaller ones)
-      const MAX_PROMPT = 20000;
+      // If adding search would push past the budget, trim the system prompt to
+      // make room (keeps search quality intact for capable models, trims
+      // context for smaller ones). The budget scales with the context window
+      // (~2.5 chars/token): chat now runs at 16K tokens with journal recall
+      // near the END of the prompt, which a fixed 20K-char cut would chop.
+      const MAX_PROMPT = Math.max(20000, Math.floor((options.numCtx || 8192) * 2.5));
       if (systemPrompt.length + searchBlock.length > MAX_PROMPT) {
         systemPrompt = systemPrompt.substring(0, MAX_PROMPT - searchBlock.length);
       }
@@ -518,15 +538,15 @@ async function callWithHistoryAndTools(systemPrompt, messages, options = {}) {
   return callWithHistory(systemPrompt, messages, options);
 }
 
-async function callClaudeWithTools(systemPrompt, messages, cfg, options) {
+async function callClaudeWithTools(systemPrompt, messages, cfg, options, tools = [WEB_SEARCH_TOOL], runTool = executeToolCall) {
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey: options.apiKey || cfg.anthropicKey });
 
-  const claudeTool = {
-    name: WEB_SEARCH_TOOL.name,
-    description: WEB_SEARCH_TOOL.description,
-    input_schema: WEB_SEARCH_TOOL.parameters,
-  };
+  const claudeTools = tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters,
+  }));
 
   const mapped = messages.map((m) => ({ role: m.role, content: m.content }));
 
@@ -534,7 +554,7 @@ async function callClaudeWithTools(systemPrompt, messages, cfg, options) {
     model: options.model || cfg.claudeModel,
     max_tokens: options.maxTokens || 2048,
     system: systemPrompt,
-    tools: [claudeTool],
+    tools: claudeTools,
     messages: mapped,
   });
 
@@ -546,7 +566,7 @@ async function callClaudeWithTools(systemPrompt, messages, cfg, options) {
   }
 
   // Execute tool and re-call
-  const toolResult = await executeToolCall(toolBlock.name, toolBlock.input);
+  const toolResult = await runTool(toolBlock.name, toolBlock.input);
 
   const followUp = await client.messages.create({
     model: options.model || cfg.claudeModel,
@@ -563,7 +583,7 @@ async function callClaudeWithTools(systemPrompt, messages, cfg, options) {
   return finalText ? finalText.text : '';
 }
 
-async function callOpenAIWithTools(systemPrompt, messages, cfg, options) {
+async function callOpenAIWithTools(systemPrompt, messages, cfg, options, tools = [WEB_SEARCH_TOOL], runTool = executeToolCall) {
   const OpenAI = require('openai');
   const client = new OpenAI({ apiKey: options.apiKey || cfg.openaiKey });
 
@@ -582,14 +602,10 @@ async function callOpenAIWithTools(systemPrompt, messages, cfg, options) {
     messages: mapped,
   };
   if (!isReasoning) {
-    reqParams.tools = [{
+    reqParams.tools = tools.map((t) => ({
       type: 'function',
-      function: {
-        name: WEB_SEARCH_TOOL.name,
-        description: WEB_SEARCH_TOOL.description,
-        parameters: WEB_SEARCH_TOOL.parameters,
-      },
-    }];
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
   }
 
   const response = await client.chat.completions.create(reqParams);
@@ -602,7 +618,7 @@ async function callOpenAIWithTools(systemPrompt, messages, cfg, options) {
   // Execute tool and re-call
   const tc = msg.tool_calls[0];
   const args = JSON.parse(tc.function.arguments);
-  const toolResult = await executeToolCall(tc.function.name, args);
+  const toolResult = await runTool(tc.function.name, args);
 
   const followUp = await client.chat.completions.create({
     model,

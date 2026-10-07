@@ -26,6 +26,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useSwipeNav } from '../hooks/useSwipeNav';
 import { useListArrowNav } from '../hooks/useListArrowNav';
 import { useFirstTourTrigger } from '../components/TutorialContext';
+import { parseEntryCitations, stripEntryCitations, formatChipDate } from '../utils/entryCitations';
 
 const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.map(a => a.value);
 const ALL_TAG = '__all__';
@@ -426,6 +427,37 @@ const s = {
     fontSize: '13px',
     border: 'var(--border-style)',
     whiteSpace: 'pre-wrap',
+  },
+  // A journal entry the reply refers to — opens that entry.
+  entryLink: {
+    display: 'inline',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    margin: 0,
+    font: 'inherit',
+    color: 'var(--strong)',
+    fontWeight: 600,
+    textDecoration: 'underline',
+    textDecorationStyle: 'dotted',
+    textUnderlineOffset: '3px',
+    cursor: 'pointer',
+  },
+  // Date chip after a mention of an entry — the date comes from the journal.
+  entryChip: {
+    display: 'inline-block',
+    background: 'none',
+    border: 'var(--border-style)',
+    borderRadius: '10px',
+    padding: '0 7px',
+    margin: '0 1px',
+    font: 'inherit',
+    fontSize: '0.8em',
+    lineHeight: 1.6,
+    color: 'var(--strong)',
+    whiteSpace: 'nowrap',
+    verticalAlign: 'baseline',
+    cursor: 'pointer',
   },
   msgActions: {
     display: 'flex',
@@ -948,7 +980,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
   // the joined transcript of every message in the current session — that way
   // tags reflect the whole exchange, not just the last user line.
   const conversationText = useMemo(
-    () => messages.map((m) => m?.content || '').join('\n\n').trim(),
+    () => messages.map((m) => stripEntryCitations(m?.content)).join('\n\n').trim(),
     [messages]
   );
   const { suggestions: oracleSuggestedTags, dismiss: dismissOracleSuggestion } = useTagSuggestions(
@@ -988,7 +1020,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
     // Current dropdown selection wins over the archetype the message was
     // generated with — switching the dropdown updates the voice immediately.
     const speakArch = (archetype && archetype !== 'Auto') ? archetype : msg.archetype;
-    await streamSpeak(msg.content, audioRef, cancelRef, {
+    await streamSpeak(stripEntryCitations(msg.content), audioRef, cancelRef, {
       archetype: speakArch && speakArch !== 'Auto' ? speakArch : undefined,
     });
     setPlayingMsgId(null);
@@ -996,8 +1028,9 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
 
   async function handleSaveMessage(msg) {
     const title = (messages.find((m, i) => m.role === 'user' && messages[i + 1]?.id === msg.id)?.content || t('oracle.oracleConversation')).slice(0, 70);
-    const body = `<p><em>${t('oracle.title')} — ${msg.archetype || archetype}</em></p><p>${msg.content.split('\n\n').join('</p><p>')}</p>`;
-    const body_text = msg.content;
+    const plain = stripEntryCitations(msg.content); // entry links → their wording
+    const body = `<p><em>${t('oracle.title')} — ${msg.archetype || archetype}</em></p><p>${plain.split('\n\n').join('</p><p>')}</p>`;
+    const body_text = plain;
     try {
       const res = await apiFetch('/api/entries', {
         method: 'POST',
@@ -1221,7 +1254,29 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
                   ...s.msgBubble,
                   ...(isUser ? s.msgBubbleUser : s.msgBubbleAssistant),
                 }}>
-                  {msg.content}
+                  {isUser ? msg.content : parseEntryCitations(msg.content).map((seg, i) => (
+                    seg.type === 'entry' ? (
+                      <button
+                        key={i}
+                        type="button"
+                        style={s.entryLink}
+                        onClick={() => onNavigateToEntry?.(seg.id)}
+                        title="Open this entry"
+                      >
+                        {seg.label}
+                      </button>
+                    ) : seg.type === 'entryChip' ? (
+                      <button
+                        key={i}
+                        type="button"
+                        style={s.entryChip}
+                        onClick={() => onNavigateToEntry?.(seg.id)}
+                        title="Open this entry"
+                      >
+                        ↗ {formatChipDate(seg.date)}
+                      </button>
+                    ) : <span key={i}>{seg.text}</span>
+                  ))}
                 </div>
                 {!isUser && (
                   <div style={s.msgActions}>

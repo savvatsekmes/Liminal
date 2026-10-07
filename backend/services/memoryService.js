@@ -1382,7 +1382,9 @@ function buildTimeContext() {
   return `## CURRENT TIME\nIt is ${dayName} ${timeOfDay}, ${clock} the user's local time. Reference this only if it's directly relevant — do NOT assume the user is awake at an unusual hour, struggling to sleep, journaling at 4am, etc. unless they explicitly say so right now.`;
 }
 
-async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null, oracleContextText = '') {
+// `meta` (optional, out-param): receives `recalled` — the journal entries given
+// to the chat this turn — so the route can link the entries it mentions.
+async function buildOracleSystemPrompt(userId, archetype = 'Zen', session = null, oracleContextText = '', meta = null) {
   const portrait = db.prepare('SELECT * FROM portrait WHERE user_id = ?').get(userId);
   const sections = [];
   const skyWeight = portrait?.slider_sky_weight ?? 50;
@@ -1450,6 +1452,27 @@ Speak to them as someone you know through this lens — not generically. Generic
   }
   const notesDigest = buildNotesDigest(userId);
   if (notesDigest) sections.push(notesDigest);
+
+  // Journal recall: the actual entries related to the conversation (best
+  // passages, dated) plus the recurring themes across the whole journal.
+  // Without these the chat only saw ~10 short extracted memories and could
+  // not answer "look through my entries" or "what keeps coming up for me?".
+  try {
+    const recall = require('./journalRecall');
+    if (oracleContextText && oracleContextText.trim()) {
+      const recalled = await recall.recallEntries(userId, oracleContextText, {
+        k: 5,
+        excludeIds: session?.source_entry_id ? [Number(session.source_entry_id)] : [],
+      });
+      if (meta) meta.recalled = recalled;
+      const recallSection = recall.formatRecalledEntries(recalled);
+      if (recallSection) sections.push(recallSection);
+    }
+    const themes = recall.themesDigest(userId, 10);
+    if (themes) sections.push(themes);
+  } catch (err) {
+    console.warn('[oracle] journal recall failed:', err.message);
+  }
 
   // Rich voice instructions from the response-style sliders. Without this
   // block Oracle only saw the terse "Response style: Lean Direct, Lean Action"
@@ -1609,6 +1632,10 @@ Speak to them as someone you know through this lens — not generically. Generic
     `You know them deeply through their journal — their patterns, struggles, growth, and what they're moving toward. ` +
     `Prose only — no bullet points, no lists, no headers. Be warm, direct, and personally resonant. ` +
     `Keep responses very short: 1–2 sentences only. Say one meaningful thing, not everything. Be concise — every word should count. ` +
+    `EXCEPTION — when they explicitly ask you to look through their journal or entries, to find, list or summarise things, or ask a big ` +
+    `reflective question about themselves (patterns, recurring themes, what to work on, what to bring to therapy, how they've changed), ` +
+    `give a full, specific answer instead: up to about 250 words, naming concrete themes and grounding each in specific, dated entries ` +
+    `from the journal material above. A short list is fine for that kind of answer. Never claim you can't see their journal — the excerpts and themes above ARE their journal. ` +
     `Vary your openings — don't start consecutive replies with the same word. Each response should feel freshly written, not pattern-matched to your prior turns. ` +
     `Speak to them as "you". Stay unmistakably in the ${archetype} voice throughout — your vocabulary, rhythm, and frame should make it obvious which voice is speaking.`
   );
@@ -1625,7 +1652,7 @@ Speak to them as someone you know through this lens — not generically. Generic
   // block is the last thing they see before the user turn.
   const toneOracle = buildTonePermissions(portrait);
   if (toneOracle) sections.push(toneOracle);
-  sections.push(`## NOW RESPOND\nReply to the user's most recent message as ${archetype}, in 1–2 sentences. Stay in voice.`);
+  sections.push(`## NOW RESPOND\nReply to the user's most recent message as ${archetype}, in 1–2 sentences — or, if they asked you to look through their journal or asked a big reflective question about themselves, a full answer grounded in specific dated entries (see EXCEPTION above). Stay in voice.`);
 
   return sections.join('\n\n');
 }

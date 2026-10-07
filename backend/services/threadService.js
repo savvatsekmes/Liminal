@@ -47,7 +47,8 @@ function stripHtml(html) {
 }
 
 function excerpt(text, n = 200) {
-  const s = stripHtml(text);
+  // Chat replies can carry entry links — keep their wording only.
+  const s = require('./journalRecall').stripEntryCitations(stripHtml(text));
   return s.length > n ? s.slice(0, n) : s;
 }
 

@@ -177,5 +177,5 @@ function setGlobal(key, value) {
 
 module.exports = {
   get, set, setMany, getAll, hasSecret, SECRET_KEYS,
-  getForUser, setForUser, runWithUserContext, setGlobal,
+  getForUser, setForUser, runWithUserContext, setGlobal, getCurrentUserId,
 };

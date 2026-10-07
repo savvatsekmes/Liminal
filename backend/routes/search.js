@@ -65,7 +65,8 @@ router.get('/', (req, res) => {
   const oracle = [];
   for (const r of oracleRows) {
     if (seen.has(r.session_id)) continue;
-    const content = safeDecrypt(userId, r.content) || '';
+    // Chat replies carry [[entry:ID|label]] links — search and show the label.
+    const content = require('../services/journalRecall').stripEntryCitations(safeDecrypt(userId, r.content) || '');
     if (!content.toLowerCase().includes(needle)) continue;
     seen.add(r.session_id);
     oracle.push({
