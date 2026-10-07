@@ -17,8 +17,21 @@ const TAG_BYTES = 16;
 
 const userKeys = new Map();
 
+// Work that needs a user's key as soon as it exists (e.g. encrypting rows
+// stored before a field was encrypted) registers here; it runs right after
+// login, outside the login request.
+const keyListeners = [];
+function onUserKeySet(fn) {
+  keyListeners.push(fn);
+}
+
 function setUserKey(userId, keyBuffer) {
   userKeys.set(Number(userId), keyBuffer);
+  for (const fn of keyListeners) {
+    setImmediate(() => {
+      try { fn(Number(userId)); } catch (err) { console.warn('[rowCrypto] key listener failed:', err.message); }
+    });
+  }
 }
 
 function clearUserKey(userId) {
@@ -99,6 +112,7 @@ function safeDecryptWithKey(rawKey, value) {
 
 module.exports = {
   setUserKey,
+  onUserKeySet,
   clearUserKey,
   hasUserKey,
   getUserKey,

@@ -7,6 +7,10 @@ const db = new Database(path.join(DATA_DIR, 'liminal.db'));
 // Enable WAL mode for better concurrent read performance
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// Overwrite deleted and replaced data with zeros instead of leaving it in the
+// file's free space — so deleted entries, memories, and text that was later
+// encrypted in place don't linger on disk. Costs a little extra writing.
+db.pragma('secure_delete = ON');
 
 // Checkpoint + close on shutdown.
 //

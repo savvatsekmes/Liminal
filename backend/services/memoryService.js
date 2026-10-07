@@ -71,7 +71,7 @@ function encryptedAudit(stmt) {
 }
 
 // Rows written before encryption: encrypted once per user, as soon as their
-// key is available (any chat, reflection or extraction).
+// key is available — at login, or failing that any chat, reflection or extraction.
 const auditEncryptedFor = new Set();
 function encryptAuditBacklog(userId) {
   if (!userId || auditEncryptedFor.has(userId)) return;
@@ -88,6 +88,8 @@ function encryptAuditBacklog(userId) {
     console.warn('[memory] change-log encryption pass failed (will retry):', err.message);
   }
 }
+
+require('./rowCrypto').onUserKeySet(encryptAuditBacklog);
 
 // YYYY-MM-DD in local time (entries are dated in the user's local calendar).
 function localDate(d = new Date()) {
