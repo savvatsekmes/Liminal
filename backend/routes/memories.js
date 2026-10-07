@@ -169,6 +169,8 @@ router.delete('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Memory not found' });
 
   db.prepare('DELETE FROM memories WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+  // The change log holds earlier wordings of this memory — it goes too.
+  db.prepare('DELETE FROM memories_audit WHERE memory_id = ? AND user_id = ?').run(req.params.id, req.userId);
   invalidateSynthesisCache(req.userId);
   res.json({ success: true });
 });
@@ -191,7 +193,11 @@ router.delete('/', async (req, res) => {
 
     db.prepare('DELETE FROM memories WHERE user_id = ?').run(req.userId);
     db.prepare('DELETE FROM memory WHERE user_id = ?').run(req.userId);
+    db.prepare('DELETE FROM memories_audit WHERE user_id = ?').run(req.userId);
   } else {
+    // Change-log rows of the memories being deleted go with them.
+    db.prepare(`DELETE FROM memories_audit WHERE user_id = ?
+                  AND memory_id IN (SELECT id FROM memories WHERE user_id = ? AND pinned = 0)`).run(req.userId, req.userId);
     db.prepare('DELETE FROM memories WHERE user_id = ? AND pinned = 0').run(req.userId);
   }
   invalidateSynthesisCache(req.userId);

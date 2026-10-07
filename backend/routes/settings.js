@@ -1088,6 +1088,7 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
   db.prepare('DELETE FROM oracle_messages WHERE session_id IN (SELECT id FROM oracle_sessions WHERE user_id = ?)').run(userId);
   db.prepare('DELETE FROM oracle_sessions WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM memories WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM memories_audit WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM notes WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM entries WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(userId);

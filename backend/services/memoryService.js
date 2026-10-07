@@ -61,6 +61,34 @@ function isCrisisMemory(text) {
   return MEMORY_CRISIS_PATTERNS.some((re) => re.test(text));
 }
 
+// ── Memory change log (memories_audit) ───────────────────────────────────────
+// Every rewrite/merge keeps the previous wording so a bad LLM call can be
+// undone. That text is as private as the memory itself, so it is encrypted
+// like every other private field (it used to be stored as plain text).
+function encryptedAudit(stmt) {
+  const enc = (userId, t) => (t == null ? null : encryptField(userId, t));
+  return { run: (userId, memoryId, prev, next, ...rest) => stmt.run(userId, memoryId, enc(userId, prev), enc(userId, next), ...rest) };
+}
+
+// Rows written before encryption: encrypted once per user, as soon as their
+// key is available (any chat, reflection or extraction).
+const auditEncryptedFor = new Set();
+function encryptAuditBacklog(userId) {
+  if (!userId || auditEncryptedFor.has(userId)) return;
+  try {
+    const rows = db.prepare(`SELECT id, prev_content, new_content FROM memories_audit
+                              WHERE user_id = ? AND ((prev_content IS NOT NULL AND prev_content NOT LIKE 'lenc:%')
+                                                  OR (new_content IS NOT NULL AND new_content NOT LIKE 'lenc:%'))`).all(userId);
+    const upd = db.prepare('UPDATE memories_audit SET prev_content = ?, new_content = ? WHERE id = ?');
+    const enc = (t) => (t == null || String(t).startsWith('lenc:') ? t : encryptField(userId, t));
+    db.transaction(() => { for (const r of rows) upd.run(enc(r.prev_content), enc(r.new_content), r.id); })();
+    if (rows.length) console.log(`[memory] encrypted ${rows.length} change-log row(s) stored before encryption`);
+    auditEncryptedFor.add(userId);
+  } catch (err) {
+    console.warn('[memory] change-log encryption pass failed (will retry):', err.message);
+  }
+}
+
 // YYYY-MM-DD in local time (entries are dated in the user's local calendar).
 function localDate(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -246,10 +274,10 @@ Extract any genuinely new facts. Return only the JSON.`;
     const ins = db.prepare('INSERT INTO memories (user_id, content, pinned, source_entry_id) VALUES (?, ?, 0, ?)');
     const updateContent = db.prepare('UPDATE memories SET content = ? WHERE id = ? AND user_id = ?');
     const markResolved = db.prepare("UPDATE memories SET status = 'resolved' WHERE id = ? AND user_id = ?");
-    const insertAudit = db.prepare(
+    const insertAudit = encryptedAudit(db.prepare(
       `INSERT INTO memories_audit (user_id, memory_id, prev_content, new_content, action, source_entry_id)
        VALUES (?, ?, ?, ?, ?, ?)`
-    );
+    ));
 
     const counts = { new: 0, duplicate: 0, supersedes: 0, contradicts: 0, dropped: 0 };
     const newIdsToIndex = [];
@@ -492,6 +520,7 @@ function timeAnchoringDone(userId) {
 }
 
 function scheduleTimeAnchoring(userId) {
+  encryptAuditBacklog(userId);
   if (!userId || anchoringNow.has(userId) || timeAnchoringDone(userId)) return;
   anchoringNow.add(userId);
   setImmediate(() => {
@@ -522,10 +551,10 @@ Keep everything else in the memory exactly as it is. Don't invent precision: "ab
 Return ONLY JSON: { "memories": [{ "id": 12, "text": "rewritten memory" }] } — an empty array if none need it.`;
 
   const updateContent = db.prepare('UPDATE memories SET content = ? WHERE id = ? AND user_id = ?');
-  const insertAudit = db.prepare(
+  const insertAudit = encryptedAudit(db.prepare(
     `INSERT INTO memories_audit (user_id, memory_id, prev_content, new_content, action, source_entry_id)
      VALUES (?, ?, ?, ?, 'time_anchor', NULL)`
-  );
+  ));
   let rewritten = 0;
   for (let i = 0; i < rows.length; i += ANCHOR_BATCH) {
     const batch = rows.slice(i, i + ANCHOR_BATCH);
