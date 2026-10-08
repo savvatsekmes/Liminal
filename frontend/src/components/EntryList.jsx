@@ -167,7 +167,7 @@ const s = {
     lineHeight: '1.6',
   },
   tagStrip: {
-    width: '76px',
+    width: '100px',
     flexShrink: 0,
     borderLeft: 'var(--border-style)',
     display: 'flex',
@@ -177,11 +177,11 @@ const s = {
     overflowY: 'auto',
     overflowX: 'hidden',
     padding: '16px 6px',
-    gap: '4px',
+    gap: '6px',
   },
   // Inside the editor card (desktop): the card's fill shows through, no rule.
   tagStripInCard: {
-    width: '76px',
+    width: '100px',
     flexShrink: 0,
     display: 'flex',
     flexDirection: 'column',
@@ -190,7 +190,7 @@ const s = {
     overflowY: 'auto',
     overflowX: 'hidden',
     padding: '16px 6px',
-    gap: '4px',
+    gap: '6px',
   },
 };
 
@@ -393,7 +393,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
             placeholder="tag…"
             maxLength={30}
             style={{
-              width: '62px',
+              width: '74px',
               padding: '4px 6px',
               fontSize: '11px',
               borderRadius: '20px',
@@ -408,7 +408,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
             onClick={() => setAddingTag(true)}
             title="New tag"
             style={{
-              width: '62px',
+              width: '74px',
               padding: '4px 0',
               fontSize: '14px',
               color: 'var(--muted)',
@@ -443,7 +443,7 @@ function TagPill({ label, active, onClick }) {
     <button
       onClick={onClick}
       style={{
-        width: '62px',
+        width: '74px',
         padding: '5px 4px',
         fontSize: '10px',
         fontWeight: active ? '600' : '400',
@@ -482,7 +482,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        width: '72px',
+        width: '88px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
