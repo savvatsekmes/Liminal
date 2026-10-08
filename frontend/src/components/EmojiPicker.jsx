@@ -457,9 +457,12 @@ const gridStyle = {
   gap: '2px',
 };
 
+// Shown in black and white, like every emoji in the app's UI, so what you
+// pick looks the way it will appear on the tag.
 function EmojiCell({ emoji, onClick }) {
   return (
     <button
+      className="mono-emoji"
       onClick={onClick}
       title={emoji}
       style={{

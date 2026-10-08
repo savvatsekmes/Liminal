@@ -112,7 +112,7 @@ export default function CapturedItems({ items }) {
         return (
           <div key={cat} style={s.group}>
             <div style={s.groupLabel}>
-              <span style={{ marginRight: '6px' }}>{meta.emoji}</span>
+              <span className="mono-emoji" style={{ marginRight: '6px' }}>{meta.emoji}</span>
               {t(meta.labelKey) || cat}
             </div>
             {items[cat].map((text, idx) => {

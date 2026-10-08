@@ -1165,6 +1165,7 @@ function TypeSelector({ note, customTags, suggestedTags = [], onDismissSuggestio
         return (
           <button
             key={typ}
+            className="mono-emoji"
             style={{ ...pillBase, ...(active ? pillActive : {}) }}
             onClick={() => toggleTag(typ)}
           >
