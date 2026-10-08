@@ -1,22 +1,19 @@
 /**
- * Thin vertical drag handle between two panels.
- *
- * Props:
- *   onMouseDown  — startDrag from useResizable
- *   inverted     — true for right-side panels (drag left = wider)
- */
-/**
  * A thin vertical drag handle between two panels.
- * It acts as the sole visual border — remove borderRight/borderLeft from adjacent panels.
+ *
+ * Between plain panels it is the sole visual border (a 1px centre line) —
+ * remove borderRight/borderLeft from adjacent panels.
+ * Between rounded cards (`hideLine`) the gap already separates them, so it
+ * shows a small grip pill in the middle of the gap instead, darker on hover.
  *
  * Props:
  *   onMouseDown  — startDrag from useResizable
  *   inverted     — true for right-side panels (drag left = wider)
+ *   hideLine     — card mode: grip pill instead of a full-height line
  */
-// hideLine: between rounded cards the gap itself separates the panels, so the
-// 1px line only appears while hovering (to show it can be dragged).
 export default function ResizeDivider({ onMouseDown, inverted = false, hideLine = false }) {
-  const restColor = hideLine ? 'transparent' : 'var(--border-color, rgba(0,0,0,0.1))';
+  const rest = hideLine ? 'var(--border)' : 'var(--border-color, rgba(0,0,0,0.1))';
+  const hover = hideLine ? 'var(--muted)' : 'rgba(0,0,0,0.18)';
   return (
     <div
       onMouseDown={(e) => onMouseDown(e, inverted)}
@@ -27,22 +24,19 @@ export default function ResizeDivider({ onMouseDown, inverted = false, hideLine 
         position: 'relative',
         zIndex: 10,
         display: 'flex',
-        alignItems: 'stretch',
+        alignItems: hideLine ? 'center' : 'stretch',
         justifyContent: 'center',
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.querySelector('.rd-line').style.background = 'rgba(0,0,0,0.18)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.querySelector('.rd-line').style.background = restColor;
-      }}
+      onMouseEnter={(e) => { e.currentTarget.querySelector('.rd-line').style.background = hover; }}
+      onMouseLeave={(e) => { e.currentTarget.querySelector('.rd-line').style.background = rest; }}
     >
-      {/* Visible 1px centre line */}
       <div
         className="rd-line"
         style={{
-          width: '1px',
-          background: restColor,
+          width: hideLine ? '4px' : '1px',
+          height: hideLine ? '36px' : undefined,
+          borderRadius: hideLine ? '2px' : undefined,
+          background: rest,
           transition: 'background 0.15s',
           pointerEvents: 'none',
         }}
