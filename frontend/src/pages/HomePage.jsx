@@ -1143,13 +1143,16 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
         }
         // Pull user-authored quotes (notes of type "quote") into the daily
         // quote pool — strip HTML, drop empties, use attribution as author.
+        // Only ones that read as a quote: no links (imported notes filed as
+        // "quote" include practice instructions with YouTube links) and short
+        // enough to sit on the home screen.
         const quotes = data
           .filter((n) => n.type === 'quote')
           .map((n) => ({
             text: (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
             author: (n.attribution || '').trim(),
           }))
-          .filter((q) => q.text);
+          .filter((q) => q.text && q.text.length <= 300 && !/https?:\/\/|www\.|youtu\.?be/i.test(q.text));
         setUserQuotes(quotes);
       }
     }).catch(() => {});
