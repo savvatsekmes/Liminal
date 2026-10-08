@@ -31,6 +31,7 @@ import { useSwipeNav } from '../hooks/useSwipeNav';
 import { useListArrowNav } from '../hooks/useListArrowNav';
 import { useFirstTourTrigger } from '../components/TutorialContext';
 import { parseEntryCitations, stripEntryCitations, formatChipDate } from '../utils/entryCitations';
+import { ArrowUpRight } from '../components/ArrowIcons';
 
 const BUILT_IN_ARCHETYPES = BUILT_IN_ARCH_OBJECTS.map(a => a.value);
 const ALL_TAG = '__all__';
@@ -1224,7 +1225,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
                         onClick={() => onNavigateToEntry?.(seg.id)}
                         title="Open this entry"
                       >
-                        ↗ {formatChipDate(seg.date)}
+                        <ArrowUpRight size={9} style={{ marginRight: '4px' }} />{formatChipDate(seg.date)}
                       </button>
                     ) : <span key={i}>{seg.text}</span>
                   ))}

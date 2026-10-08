@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { ArrowReturn } from './ArrowIcons';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 
 const s = {
@@ -382,7 +383,7 @@ function EchoCallout({ echo, onNavigate }) {
             e.currentTarget.style.background = 'var(--near-white)';
           }}
         >
-          <span style={{ fontSize: '11px', lineHeight: 1 }}>↩</span>
+          <ArrowReturn />
           <span>{echo.source_title || 'Source'}</span>
         </button>
       </div>

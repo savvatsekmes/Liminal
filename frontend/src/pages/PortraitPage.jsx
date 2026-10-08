@@ -10,6 +10,7 @@ import AILabel from '../components/AILabel';
 import { useFirstTourTrigger } from '../components/TutorialContext';
 import { CardDetailPopup } from '../extensions/CardReading';
 import PageHero from '../components/PageHero';
+import { ArrowUpRight } from '../components/ArrowIcons';
 
 const s = {
   root: {
@@ -475,7 +476,10 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
             <label style={s.label}>
               {t('portrait.mbti')}{' '}
               <a style={s.link} href="https://www.16personalities.com" target="_blank" rel="noreferrer">
-                {t('portrait.takeTest')}
+                {/* The translations carry a ↗ (an emoji on Windows) — draw it as an icon */}
+                {t('portrait.takeTest').split('↗').map((part, i) => (
+                  <span key={i}>{i > 0 && <ArrowUpRight size={9} style={{ margin: '0 1px' }} />}{part}</span>
+                ))}
               </a>
             </label>
             <input style={s.input} value={portrait.mbti || ''} onChange={(e) => set('mbti', e.target.value)} placeholder={t('portrait.mbtiPlaceholder')} />
