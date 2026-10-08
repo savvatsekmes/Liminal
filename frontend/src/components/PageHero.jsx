@@ -122,7 +122,8 @@ export default function PageHero({ icon, title, subtitle, page = false, iconScal
     <div className={page ? 'page-hero page-hero--page' : 'page-hero'} style={page ? s.heroPage : s.hero} {...rest}>
       <div style={s.box}>
         <img src={icon} alt="" aria-hidden="true" className="page-icon" draggable={false} style={iconStyle} />
-        <FittedTitle text={title} style={s.title} />
+        {/* Titles end in a full stop, like the "Liminal." wordmark. */}
+        <FittedTitle text={/[.!?。．]$/.test(title) ? title : `${title}.`} style={s.title} />
         {subtitle && <div style={s.subtitle}>{subtitle}</div>}
       </div>
     </div>
