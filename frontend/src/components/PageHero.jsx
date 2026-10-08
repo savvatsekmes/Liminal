@@ -48,9 +48,9 @@ const s = {
   },
   title: {
     fontFamily: 'var(--font-display)',
-    // Matches the "Liminal." wordmark: its ink coverage sits between
-    // Cormorant Garamond 650 and 700 (variable font, so any weight works).
-    fontWeight: 660,
+    // The font's heaviest weight (Cormorant Garamond is 400–700) — a touch
+    // heavier than the "Liminal." wordmark (~660 by ink coverage), by choice.
+    fontWeight: 700,
     color: 'var(--strong)',
     lineHeight: 1,
   },
