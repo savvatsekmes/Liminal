@@ -658,8 +658,14 @@ async function createWindow() {
   // hidden → start countdown to release, bumped by remote browser activity.
   mainWindow.on('hide', () => scheduleTtsHiddenIdleCheck());
   mainWindow.on('minimize', () => scheduleTtsHiddenIdleCheck());
-  mainWindow.on('show', () => cancelTtsHiddenIdleCheck());
-  mainWindow.on('restore', () => cancelTtsHiddenIdleCheck());
+  // Coming back into view also reloads Chatterbox if the tray idle released
+  // it, so Read aloud never waits.
+  const warmTtsOnShow = () => {
+    cancelTtsHiddenIdleCheck();
+    ensureTtsRunning().catch(err => console.warn('[tts] show warmup failed:', err.message));
+  };
+  mainWindow.on('show', warmTtsOnShow);
+  mainWindow.on('restore', warmTtsOnShow);
 
   // External links open in the user's default browser, not a new Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -796,7 +802,12 @@ try {
 app.whenReady().then(async () => {
   await Promise.all([killOrphanBackend(), killOrphanTts()]);
   backendProc = spawnBackend();
-  // TTS is NOT started on boot — spawned on-demand to save VRAM
+  // Load Chatterbox alongside the backend so Read aloud is ready by the time
+  // you need it. A tray-only launch (--hidden) waits until the window is
+  // first shown (see the window's 'show' handler).
+  if (!launchedHidden) {
+    ensureTtsRunning().catch(err => console.warn('[tts] startup warmup failed:', err.message));
+  }
 
   try {
     await waitForBackend();

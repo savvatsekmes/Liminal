@@ -1,7 +1,8 @@
 /**
  * TTS status — on-demand startup via Electron IPC, with polling fallback.
  * Components use useTtsOnline() hook or call waitForChatterbox() before speaking.
- * TTS server is NOT started on boot — it's spawned on first use and killed after idle.
+ * The TTS server loads when the app window opens (Electron main) and is
+ * released after the window has sat hidden in the tray for a while.
  */
 import { useState, useEffect } from 'react';
 
