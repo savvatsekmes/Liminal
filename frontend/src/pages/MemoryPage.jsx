@@ -303,7 +303,7 @@ const s = {
   memoryPin: {
     fontSize: '10px',
     color: 'var(--muted)',
-    background: 'var(--near-white)',
+    background: 'var(--white)',
     border: 'var(--border-style)',
     borderRadius: '2px',
     padding: '1px 5px',
@@ -330,12 +330,12 @@ const s = {
     accentColor: 'var(--strong)',
     cursor: 'pointer',
   },
+  // Tabs as small bevelled boxes (Home-card fill), the selected one dark —
+  // the same as the Oracle page.
   tabBar: {
     display: 'flex',
-    gap: '4px',
-    marginBottom: '28px',
-    borderBottom: 'var(--border-style)',
-    paddingBottom: '0',
+    gap: '8px',
+    marginBottom: '16px',
   },
   tab: {
     padding: '8px 16px',
@@ -344,17 +344,22 @@ const s = {
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
     color: 'var(--muted)',
-    background: 'none',
+    background: 'var(--near-white)',
     border: 'none',
-    borderBottom: '2px solid transparent',
+    borderRadius: '12px',
     cursor: 'pointer',
     fontFamily: 'var(--font)',
-    transition: 'color 0.12s, border-color 0.12s',
-    marginBottom: '-1px',
+    transition: 'color 0.12s, background 0.12s',
   },
   tabActive: {
-    color: 'var(--strong)',
-    borderBottomColor: 'var(--strong)',
+    color: 'var(--white)',
+    background: 'var(--strong)',
+  },
+  // Each tab's content sits in one Home-style card.
+  tabCard: {
+    background: 'var(--near-white)',
+    borderRadius: '16px',
+    padding: '24px 28px',
   },
   // Archetype styles
   archCard: {
@@ -967,7 +972,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
       {/* Response Style tab */}
       {tab === 'style' && (
-        <div data-tour-id="context-sliders">
+        <div data-tour-id="context-sliders" style={s.tabCard}>
           {SLIDER_AXES.map(({ key, lowKey, highKey, hintKey, tieredHint }) => {
             const val = sliders[key] ?? 50;
             const tieredText = tieredHint ? tieredHint(val) : null;
@@ -1142,7 +1147,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
       {/* Archetypes tab */}
       {tab === 'archetypes' && (
-        <div data-tour-id="context-archetypes">
+        <div data-tour-id="context-archetypes" style={s.tabCard}>
           {/* Built-in archetypes */}
           <div style={s.sectionTitle}>Built-in</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '32px' }}>
@@ -1221,7 +1226,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
           {/* Create / Edit form */}
           {editingArch ? (
-            <div style={{ padding: '18px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--near-white)' }}>
+            <div style={{ padding: '18px', border: 'var(--border-style)', borderRadius: '16px', background: 'var(--white)' }}>
               <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--strong)', marginBottom: '14px' }}>
                 {editingArch.isNew ? 'New Archetype' : `Editing: ${editingArch.originalName}`}
               </div>
@@ -1309,7 +1314,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
       {/* Memory tab */}
       {tab === 'memory' && (
-        <div data-tour-id="context-memory">
+        <div data-tour-id="context-memory" style={s.tabCard}>
           {/* Add memory row — input bevelled to match the Add button's pill. */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <input
@@ -1397,7 +1402,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               padding: '8px',
               border: 'var(--border-style)',
               borderRadius: '12px',
-              background: 'var(--near-white)',
+              background: 'var(--white)',
             }}>
               {filtered.map((m) => {
                 const isEditing = editingId === m.id;
@@ -1561,7 +1566,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
           </div>
 
           {clearStep === 'choose' && (
-            <div style={{ marginTop: '12px', padding: '14px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
+            <div style={{ marginTop: '12px', padding: '14px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--white)' }}>
               <div style={{ fontSize: '12px', color: 'var(--body)', marginBottom: '10px' }}>
                 {t('context.clearPrompt')}
               </div>
@@ -1589,7 +1594,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
           )}
 
           {clearStep === 'password' && (
-            <div style={{ marginTop: '12px', padding: '14px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--near-white)' }}>
+            <div style={{ marginTop: '12px', padding: '14px', border: 'var(--border-style)', borderRadius: '2px', background: 'var(--white)' }}>
               <div style={{ fontSize: '12px', color: '#c0392b', marginBottom: '10px', fontWeight: '500' }}>
                 {t('context.clearPasswordPrompt')}
               </div>
@@ -1686,7 +1691,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
               )}
             </div>
             {extractJob.running && extractJob.total > 0 && (
-              <div style={{ marginTop: '10px', height: '4px', background: 'var(--near-white)', borderRadius: '2px', overflow: 'hidden' }}>
+              <div style={{ marginTop: '10px', height: '4px', background: 'var(--white)', borderRadius: '2px', overflow: 'hidden' }}>
                 <div style={{
                   height: '100%',
                   width: `${Math.round((extractJob.done / extractJob.total) * 100)}%`,

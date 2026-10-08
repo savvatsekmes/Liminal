@@ -271,12 +271,19 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
   // EXACTLY equal: the form card is `flex: 1` after a 48px left inset, then a
   // 16px gap (the resize grip), then the portrait card with a 16px right
   // margin — so the portrait card is (containerW - 80) / 2.
+  // The container only exists once the portrait has loaded and the Portrait
+  // tab is showing, so measure the first time it appears (not just on mount)
+  // and leave any later drag alone.
   const splitContainerRef = useRef(null);
+  const splitMeasuredRef = useRef(false);
   useLayoutEffect(() => {
-    if (!splitContainerRef.current || isMobile) return;
+    if (!splitContainerRef.current || isMobile || splitMeasuredRef.current) return;
     const measured = splitContainerRef.current.clientWidth;
-    if (measured > 0) setPortraitPanelWidth(Math.floor((measured - 80) / 2));
-  }, [isMobile, setPortraitPanelWidth]);
+    if (measured > 0) {
+      setPortraitPanelWidth(Math.floor((measured - 80) / 2));
+      splitMeasuredRef.current = true;
+    }
+  }, [isMobile, setPortraitPanelWidth, pageTab, !!portrait]);
 
   useEffect(() => {
     apiFetch('/api/portrait')

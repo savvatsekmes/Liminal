@@ -828,8 +828,10 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
     <div style={{ ...s.root, ...(isMobile ? { flexDirection: 'column', overflowY: 'auto' } : {}) }} ref={contentRef}>
 
       {/* ── LEFT COLUMN ──────────────────────────────────────────────────── */}
-      <div style={{ ...s.leftCol, width: isMobile ? '100%' : `calc(${splitPct}% - 4.5px)`, ...(isMobile ? { overflowY: 'visible', flexShrink: 0 } : {}) }}>
-        <div style={{ ...s.leftInner, ...(isMobile ? { padding: '20px 16px 80px' } : {}) }}>
+      <div style={isMobile
+        ? { ...s.leftCol, width: '100%', overflowY: 'visible', flexShrink: 0 }
+        : { ...s.leftCol, width: `calc(${splitPct}% - 40px)`, margin: '0 0 16px 48px', background: 'var(--near-white)', borderRadius: '16px' }}>
+        <div style={{ ...s.leftInner, ...(isMobile ? { padding: '20px 16px 80px' } : { padding: '24px 28px 40px' }) }}>
 
           {/* Tabs */}
           {!hideTabBar && (
@@ -851,7 +853,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
           {tab === 'sky' && !loading && !skyData && <div style={s.loading}>Unable to load sky data.</div>}
 
           {tab === 'sky' && !loading && skyData && (
-            <div style={{ paddingLeft: '15px' }}>
+            <div style={{ paddingLeft: isMobile ? '15px' : 0 }}>
               {/* Moon */}
               <div style={s.section}>
                 <div style={s.sectionLabel}>Moon</div>
@@ -960,7 +962,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
 
           {/* ── CARDS TAB LEFT: settings ───────────────────────────────── */}
           {tab === 'cards' && (
-            <div style={{ paddingLeft: '15px' }}>
+            <div style={{ paddingLeft: isMobile ? '15px' : 0 }}>
               <div style={s.sectionLabel}>Deck</div>
               <div style={s.pillRow}>
                 <button
@@ -1041,7 +1043,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
             the 600px controls-width. Renders the full leftCol width, letting
             many more cards fit per row before wrapping. */}
         {tab === 'cards' && pulledCards && (
-          <div style={{ padding: '0 36px 60px 51px' }}>
+          <div style={{ padding: isMobile ? '0 36px 60px 51px' : '0 28px 40px' }}>
             <div style={{ ...s.sectionLabel, marginBottom: '4px' }}>Reading</div>
             <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '14px' }}>
               Your pulled cards
@@ -1053,7 +1055,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                 fontStyle: 'italic',
                 lineHeight: '1.5',
                 padding: '10px 14px',
-                background: 'var(--near-white)',
+                background: 'var(--white)',
                 borderLeft: '3px solid var(--strong)',
                 borderRadius: '0 8px 8px 0',
                 marginBottom: '16px',
@@ -1126,10 +1128,12 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
       </div>
 
       {/* ── DIVIDER ──────────────────────────────────────────────────────── */}
-      {!isMobile && <ResizeDivider onMouseDown={startDrag} inverted />}
+      {!isMobile && <ResizeDivider onMouseDown={startDrag} inverted hideLine />}
 
       {/* ── RIGHT COLUMN — stacked below on mobile ──────────────────────── */}
-      <div style={{ ...s.rightCol, width: isMobile ? '100%' : `calc(${100 - splitPct}% - 4.5px)`, ...(isMobile ? { borderTop: 'var(--border-style)', overflow: 'visible' } : {}) }}>
+      <div style={isMobile
+        ? { ...s.rightCol, width: '100%', borderTop: 'var(--border-style)', overflow: 'visible' }
+        : { ...s.rightCol, width: `calc(${100 - splitPct}% - 40px)`, margin: '0 16px 16px 0', borderRadius: '16px' }}>
 
         {/* ── SKY TAB RIGHT: astrology summary panel ───────────────────── */}
         {tab === 'sky' && (
@@ -1178,7 +1182,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                     justifyContent: 'center',
                     borderRadius: '20px',
                     border: 'none',
-                    background: playing ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                    background: playing ? 'rgba(0,0,0,0.06)' : 'var(--white)',
                     color: playing ? 'var(--strong)' : 'var(--muted)',
                     cursor: (!skySummary || skyGenerating) ? 'default' : 'pointer',
                     transition: 'color 0.15s, background 0.15s',
@@ -1249,7 +1253,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                     justifyContent: 'center',
                     borderRadius: '20px',
                     border: 'none',
-                    background: cardPlaying ? 'rgba(0,0,0,0.06)' : 'var(--near-white)',
+                    background: cardPlaying ? 'rgba(0,0,0,0.06)' : 'var(--white)',
                     color: cardPlaying ? 'var(--strong)' : 'var(--muted)',
                     cursor: (!cardReading || cardGenerating) ? 'default' : 'pointer',
                     transition: 'color 0.15s, background 0.15s',

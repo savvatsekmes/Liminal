@@ -755,7 +755,7 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
   }, [detectJob, t]);
 
   // List width: resizable like the other card pages (grip in the gap).
-  const [listWidth, startListDrag] = useResizable(260, { min: 220, max: 480 });
+  const [listWidth, startListDrag] = useResizable(220, { min: 220, max: 480 });
 
   return (
     <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
