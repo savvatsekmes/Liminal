@@ -73,8 +73,7 @@ const styles = {
   },
   // Journal page cards — the same "bevelled squares" as Home's widgets: light
   // fill, no border, 16px corners, 16px gaps on the white page. The list's
-  // card lives in EntryList (under the page icon and title); the tag column
-  // renders into the editor card's slot (#journal-tag-strip-slot).
+  // card lives in EntryList (under the page icon and title).
   journalCard: {
     background: 'var(--near-white)',
     borderRadius: '16px',
@@ -642,9 +641,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
           overflow: 'hidden',
         }}>
           {activeView === 'journal' ? (
-            // Editor card: the tag column (rendered here by EntryList) + the editor.
             <div style={{ ...styles.journalCard, flex: 1, margin: entryListOpen ? '16px 0' : '16px 0 16px 16px' }}>
-              <div id="journal-tag-strip-slot" style={{ display: 'flex', flexShrink: 0 }} />
               {canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}
             </div>
           ) : canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}

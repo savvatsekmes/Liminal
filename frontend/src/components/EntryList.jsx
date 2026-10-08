@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useIsMobile } from '../hooks/useIsMobile';
 import { useLanguage } from '../i18n/LanguageContext';
 import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 import { useTagEmojis } from '../hooks/useTagEmojis';
@@ -166,31 +165,45 @@ const s = {
     textAlign: 'center',
     lineHeight: '1.6',
   },
-  tagStrip: {
+  // The tag filters pop out from the list card's right edge (Filter button).
+  tagPopover: {
+    position: 'fixed',
     width: '100px',
-    flexShrink: 0,
-    borderLeft: 'var(--border-style)',
+    zIndex: 1000,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    background: 'var(--near-white)',
+    background: 'var(--white)',
+    border: 'var(--border-style)',
+    borderRadius: '16px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
     overflowY: 'auto',
     overflowX: 'hidden',
-    padding: '16px 6px',
+    padding: '12px 6px',
     gap: '6px',
+    boxSizing: 'border-box',
   },
-  // Inside the editor card (desktop): the card's fill shows through, no rule.
-  tagStripInCard: {
-    width: '100px',
+  searchRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    margin: '8px 10px',
+    flexShrink: 0,
+  },
+  filterBtn: {
+    width: '28px',
+    height: '28px',
     flexShrink: 0,
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
-    background: 'transparent',
-    overflowY: 'auto',
-    overflowX: 'hidden',
-    padding: '16px 6px',
-    gap: '6px',
+    justifyContent: 'center',
+    border: 'var(--border-style)',
+    borderRadius: '10px',
+    background: 'var(--white)',
+    color: 'var(--muted)',
+    cursor: 'pointer',
+    padding: 0,
+    transition: 'color 0.12s, background 0.12s',
   },
 };
 
@@ -264,15 +277,47 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
 
   useListArrowNav(filtered, (e) => e.id, activeId, onSelect);
 
-  // On desktop the tag column is drawn inside the editor's card (Layout's
-  // #journal-tag-strip-slot); its state stays here. Phones have no slot, so it
-  // stays beside the list.
-  const isMobile = useIsMobile();
-  const [stripTarget, setStripTarget] = useState(null);
+  // Tag filters: a pop-out from the list card's right edge, opened by the
+  // Filter button beside the search box. Picking a tag filters and closes it;
+  // click outside or Esc closes it. (Right-click menus and the emoji picker
+  // are drawn inside the pills, so using them doesn't count as outside.)
+  const listCardRef = useRef(null);
+  const filterBtnRef = useRef(null);
+  const popRef = useRef(null);
+  const [filterPos, setFilterPos] = useState(null); // { left, top, maxHeight } while open
+  const filterOpen = !!filterPos;
+  function toggleFilter() {
+    if (filterOpen) { setFilterPos(null); return; }
+    const card = listCardRef.current?.getBoundingClientRect();
+    const btn = filterBtnRef.current?.getBoundingClientRect();
+    if (!card || !btn) return;
+    const width = 100;
+    const left = Math.min(card.right + 8, window.innerWidth - width - 8);
+    const top = btn.top;
+    setFilterPos({ left, top, maxHeight: window.innerHeight - top - 16 });
+  }
+  function pickTag(tag) {
+    setFilterTag(tag);
+    setFilterPos(null);
+  }
   useEffect(() => {
-    setStripTarget(isMobile ? null : document.getElementById('journal-tag-strip-slot'));
-  }, [isMobile]);
-  const renderStrip = (node) => (stripTarget ? createPortal(node, stripTarget) : node);
+    if (!filterOpen) return undefined;
+    const onDown = (e) => {
+      if (popRef.current?.contains(e.target) || filterBtnRef.current?.contains(e.target)) return;
+      setFilterPos(null);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setFilterPos(null); };
+    const onResize = () => setFilterPos(null);
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [filterOpen]);
+  const filterActive = filterTag !== ALL_TAG;
 
   return (
     <div style={s.root}>
@@ -280,17 +325,37 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
       <div style={s.listCol}>
         <PageHero icon="/page-icons/journal.png" title={filterTag !== ALL_TAG ? filterTag : t('nav.journal')} divider={false} />
 
-        <div style={s.listCard}>
+        <div ref={listCardRef} style={s.listCard}>
         <Calendar items={filtered} activeId={activeId} onSelect={onSelect} collapsibleKey="journal" />
 
-        <input
-          data-tour-id="journal-search"
-          style={s.search}
-          placeholder={t('common.search')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label={t('common.search')}
-        />
+        <div style={s.searchRow}>
+          <input
+            data-tour-id="journal-search"
+            style={{ ...s.search, margin: 0, width: 'auto', flex: 1, minWidth: 0 }}
+            placeholder={t('common.search')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label={t('common.search')}
+          />
+          <button
+            ref={filterBtnRef}
+            data-tour-id="journal-tag-filter"
+            onClick={toggleFilter}
+            title={filterActive ? `${t('journal.filterByTag')}: ${filterTag}` : t('journal.filterByTag')}
+            aria-label={t('journal.filterByTag')}
+            aria-expanded={filterOpen}
+            style={{
+              ...s.filterBtn,
+              ...(filterActive ? { background: 'var(--strong)', color: 'var(--white)', border: '1px solid var(--strong)' }
+                : filterOpen ? { background: 'var(--panel-bg)', color: 'var(--strong)' } : {}),
+            }}
+          >
+            {/* funnel */}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 5h18l-7 8.5V19l-4 2v-7.5z" />
+            </svg>
+          </button>
+        </div>
 
         <button
           data-tour-id="journal-new-entry"
@@ -322,13 +387,14 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
         </div>
       </div>
 
-      {/* Tag strip */}
-      {renderStrip(
-      <div data-tour-id="journal-tag-filter" style={stripTarget ? s.tagStripInCard : s.tagStrip}>
+      {/* Tag filters — pop out from the list card while open */}
+      {filterOpen && createPortal(
+      <div ref={popRef} role="dialog" aria-label={t('journal.filterByTag')}
+        style={{ ...s.tagPopover, left: filterPos.left, top: filterPos.top, maxHeight: filterPos.maxHeight }}>
         <TagPill
           label={t('notes.typeAll')}
           active={filterTag === ALL_TAG}
-          onClick={() => setFilterTag(ALL_TAG)}
+          onClick={() => pickTag(ALL_TAG)}
         />
 
         {coreTags.length > 0 && (
@@ -338,7 +404,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
                 key={`c-${tag}`}
                 label={tag}
                 active={filterTag === tag}
-                onClick={() => setFilterTag(tag)}
+                onClick={() => pickTag(tag)}
                 onDelete={() => handleDeleteTag(tag)}
                 auto={false}
               />
@@ -354,7 +420,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
             key={`m-${tag}`}
             label={tag}
             active={filterTag === tag}
-            onClick={() => setFilterTag(tag)}
+            onClick={() => pickTag(tag)}
             onDelete={() => handleDeleteTag(tag)}
           />
         ))}
@@ -364,7 +430,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
             key={`a-${tag}`}
             label={tag}
             active={filterTag === tag}
-            onClick={() => setFilterTag(tag)}
+            onClick={() => pickTag(tag)}
             onDelete={() => handleDeleteTag(tag)}
             auto
           />
@@ -423,8 +489,8 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
           </button>
         )}
 
-        <div style={{ flex: 1 }} />
-      </div>
+      </div>,
+      document.body,
       )}
 
       {confirmModal && (
