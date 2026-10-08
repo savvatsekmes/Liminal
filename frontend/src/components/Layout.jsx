@@ -643,7 +643,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
         }}>
           {activeView === 'journal' ? (
             // Editor card: the tag column (rendered here by EntryList) + the editor.
-            <div style={{ ...styles.journalCard, flex: 1, margin: entryListOpen ? '16px 0 16px 7px' : '16px 0 16px 16px' }}>
+            <div style={{ ...styles.journalCard, flex: 1, margin: entryListOpen ? '16px 0' : '16px 0 16px 16px' }}>
               <div id="journal-tag-strip-slot" style={{ display: 'flex', flexShrink: 0 }} />
               {canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}
             </div>
@@ -657,7 +657,7 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
           display: 'flex',
         }}>
           {activeView === 'journal' ? (
-            <div style={{ ...styles.journalCard, flex: 1, margin: '16px 16px 16px 7px' }}>{mirror}</div>
+            <div style={{ ...styles.journalCard, flex: 1, margin: '16px 16px 16px 0' }}>{mirror}</div>
           ) : mirror}
         </div>
       </div>

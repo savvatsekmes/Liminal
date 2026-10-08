@@ -3,8 +3,9 @@
  *
  * Between plain panels it is the sole visual border (a 1px centre line) —
  * remove borderRight/borderLeft from adjacent panels.
- * Between rounded cards (`hideLine`) the gap already separates them, so it
- * shows a small grip pill in the middle of the gap instead, darker on hover.
+ * Between rounded cards (`hideLine`) the gap already separates them: the
+ * handle is the whole 16px gap (cards keep no margin on that side) with a
+ * grip pill centred in it, darker on hover.
  *
  * Props:
  *   onMouseDown  — startDrag from useResizable
@@ -18,7 +19,7 @@ export default function ResizeDivider({ onMouseDown, inverted = false, hideLine 
     <div
       onMouseDown={(e) => onMouseDown(e, inverted)}
       style={{
-        width: '9px',
+        width: hideLine ? '16px' : '9px',
         flexShrink: 0,
         cursor: 'col-resize',
         position: 'relative',
@@ -33,9 +34,9 @@ export default function ResizeDivider({ onMouseDown, inverted = false, hideLine 
       <div
         className="rd-line"
         style={{
-          width: hideLine ? '4px' : '1px',
-          height: hideLine ? '36px' : undefined,
-          borderRadius: hideLine ? '2px' : undefined,
+          width: hideLine ? '6px' : '1px',
+          height: hideLine ? '48px' : undefined,
+          borderRadius: hideLine ? '3px' : undefined,
           background: rest,
           transition: 'background 0.15s',
           pointerEvents: 'none',
