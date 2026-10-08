@@ -113,12 +113,15 @@ function FittedTitle({ text, sizeAs = WORDMARK_TEXT, width = WORDMARK_TEXT_WIDTH
 }
 
 // `page`: on a full-width page (Oracle, Context) rather than at the top of a
-// list column.
-export default function PageHero({ icon, title, subtitle, page = false, ...rest }) {
+// list column. `iconScale`: draw an icon that reads small in the shared box
+// (tall or round shapes) a little bigger. It grows upward and outward from
+// its bottom edge, so the title and its baseline don't move.
+export default function PageHero({ icon, title, subtitle, page = false, iconScale = 1, ...rest }) {
+  const iconStyle = iconScale === 1 ? s.icon : { ...s.icon, transform: `scale(${iconScale})`, transformOrigin: 'center bottom' };
   return (
     <div className={page ? 'page-hero page-hero--page' : 'page-hero'} style={page ? s.heroPage : s.hero} {...rest}>
       <div style={s.box}>
-        <img src={icon} alt="" aria-hidden="true" className="page-icon" draggable={false} style={s.icon} />
+        <img src={icon} alt="" aria-hidden="true" className="page-icon" draggable={false} style={iconStyle} />
         <FittedTitle text={title} style={s.title} />
         {subtitle && <div style={s.subtitle}>{subtitle}</div>}
       </div>

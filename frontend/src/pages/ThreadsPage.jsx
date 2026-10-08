@@ -758,6 +758,7 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
         <PageHero
           data-tour-id="threads-intro"
           icon="/page-icons/threads.png"
+          iconScale={1.2}
           title={t('threads.title') || 'Threads'}
           subtitle={t('threads.tagline') || 'The arcs weaving through your life'}
         />
