@@ -53,6 +53,7 @@ import VersionsPanel from '../components/VersionsPanel';
 import { useResizable } from '../hooks/useResizable';
 import Calendar from '../components/Calendar';
 import PageHero from '../components/PageHero';
+import { useFilterPopover, FilterButton, LIST_CARD_STYLE, MAIN_CARD_STYLE } from '../components/FilterPopover';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import ResizeDivider from '../components/ResizeDivider';
@@ -152,9 +153,10 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
   const [previewVersion, setPreviewVersion] = useState(null);
   const newTagRef = useRef(null);
 
-  const [noteListWidth, startNoteListDrag] = useResizable(220, { min: 180, max: 380 });
+  // Same default layout as Journal: the narrowest list, Mirror slightly wider.
+  const [noteListWidth, startNoteListDrag] = useResizable(220, { min: 220, max: 480 });
   // Mirror split as percentage of editor+mirror area
-  const [mirrorPct, setMirrorPct] = useState(50);
+  const [mirrorPct, setMirrorPct] = useState(54);
   const editorMirrorRef = useRef(null);
   const startMirrorDrag = useCallback((e) => {
     e.preventDefault();
@@ -387,8 +389,10 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
     },
   });
 
+  const filterPop = useFilterPopover();
+
   return (
-    <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', minWidth: 0 }} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
+    <div style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', minWidth: 0, background: 'var(--white)' }} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
       {/* Note list — fills available space on mobile (minus tag strip) */}
       <div style={{
         width: isMobile ? 'auto' : noteListWidth + 'px',
@@ -398,10 +402,12 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
         display: isMobile && mobileView !== 'list' ? 'none' : 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        background: 'var(--near-white)',
+        background: 'transparent',
       }}>
-        <PageHero icon="/page-icons/notes.png" title={t('notes.title')} />
+        <PageHero icon="/page-icons/notes.png" title={t('notes.title')} divider={false} />
 
+        {/* Calendar, search and notes sit in a card under the icon and title. */}
+        <div ref={filterPop.cardRef} style={LIST_CARD_STYLE}>
         <Calendar
           items={notes}
           activeId={activeNote?.id}
@@ -410,18 +416,20 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
           collapsibleKey="notes"
         />
 
-        <input
-          data-tour-id="notes-search"
-          style={{
-            margin: '8px 10px', padding: '5px 10px', fontSize: '12px',
-            border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
-            width: 'calc(100% - 20px)', color: 'var(--strong)', outline: 'none',
-            flexShrink: 0, fontFamily: 'var(--font)',
-          }}
-          placeholder={t('common.search')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '8px 10px', flexShrink: 0 }}>
+          <input
+            data-tour-id="notes-search"
+            style={{
+              flex: 1, minWidth: 0, padding: '5px 10px', fontSize: '12px',
+              border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
+              color: 'var(--strong)', outline: 'none', fontFamily: 'var(--font)',
+            }}
+            placeholder={t('common.search')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <FilterButton popover={filterPop} active={!isAllActive} label={t('journal.filterByTag')} tourId="notes-type-rail" />
+        </div>
 
         <button
           data-tour-id="notes-new-note"
@@ -460,21 +468,12 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
             />
           ))}
         </div>
+        </div>
       </div>
 
-      {/* Tag strip — hidden on mobile except in list view */}
-      {(!isMobile || mobileView === 'list') && <div data-tour-id="notes-type-rail" style={{
-        width: '76px',
-        flexShrink: 0,
-        borderLeft: 'var(--border-style)',
-        background: 'var(--near-white)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: '16px 6px',
-        gap: '4px',
-        overflowY: 'auto',
-      }}>
+      {/* Type and tag filters — pop out from the list card (Filter button).
+          Several can be on at once, so it stays open while you pick. */}
+      {filterPop.render(<>
         {BUILT_IN_TYPES.map(({ type, labelKey }) => (
           <TypePill
             key={type}
@@ -563,7 +562,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
             onBlur={() => { setNewTagInput(''); setShowNewTagInput(false); }}
             placeholder={t('notes.tagPlaceholder')}
             style={{
-              width: '62px',
+              width: '74px',
               padding: '4px 6px',
               fontSize: '11px',
               borderRadius: '20px',
@@ -579,7 +578,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
             onClick={() => setShowNewTagInput(true)}
             title={t('notes.newCustomTag')}
             style={{
-              width: '62px',
+              width: '74px',
               padding: '4px 0',
               fontSize: '14px',
               color: 'var(--muted)',
@@ -593,11 +592,9 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
             +
           </button>
         )}
+      </>, t('journal.filterByTag'))}
 
-        <div style={{ flex: 1 }} />
-      </div>}
-
-      {!isMobile && <ResizeDivider onMouseDown={startNoteListDrag} />}
+      {!isMobile && <ResizeDivider onMouseDown={startNoteListDrag} hideLine />}
 
       {/* Editor + mirror area — hidden on mobile when viewing list */}
       <div ref={editorMirrorRef} style={{ flex: 1, display: isMobile && mobileView === 'list' ? 'none' : 'flex', minWidth: 0, overflow: 'hidden', flexDirection: isMobile ? 'column' : 'row' }}>
@@ -631,7 +628,8 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
           </div>
         )}
         {/* Note editor — shown on desktop always, on mobile only when view === 'editor' */}
-        <div style={{ width: isMobile ? '100%' : `${100 - mirrorPct}%`, minWidth: 0, display: isMobile && mobileView !== 'editor' ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--white)' }}>
+        <div style={{ width: isMobile ? '100%' : `${100 - mirrorPct}%`, minWidth: 0, display: isMobile && mobileView !== 'editor' ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', background: isMobile ? 'var(--white)' : 'transparent' }}>
+          <div style={isMobile ? { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 } : { ...MAIN_CARD_STYLE, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, margin: '16px 0' }}>
           {activeNote ? (
             <NoteEditor
               key={activeNote.id}
@@ -659,17 +657,19 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
               </button>
             </div>
           )}
+          </div>
         </div>
 
-        {!isMobile && <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted />}
+        {!isMobile && <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted hideLine />}
         {/* Note mirror panel — full width on mobile when view === 'reflect' */}
         <div style={{
           width: isMobile ? '100%' : `${mirrorPct}%`,
           minWidth: 0,
           overflow: 'hidden',
-          display: isMobile && mobileView !== 'reflect' ? 'none' : 'block',
+          display: isMobile && mobileView !== 'reflect' ? 'none' : 'flex',
           flex: isMobile ? 1 : 'none',
         }}>
+          <div style={isMobile ? { flex: 1, minWidth: 0 } : { ...MAIN_CARD_STYLE, flex: 1, minWidth: 0, margin: '16px 16px 16px 0' }}>
           <NoteMirrorPanel
             note={activeNote}
             blocks={reflectBlocks}
@@ -684,6 +684,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
             previewVersion={previewVersion}
             onClearPreview={() => setPreviewVersion(null)}
           />
+          </div>
         </div>
       </div>{/* end editor+mirror area */}
 
@@ -777,7 +778,7 @@ function TypePill({ label, type, active, onClick }) {
       onClick={onClick}
       className={emoji ? 'mono-emoji' : undefined}
       style={{
-        width: emoji ? '72px' : '62px',
+        width: emoji ? '88px' : '74px',
         padding: emoji ? '5px 4px 5px 8px' : '5px 4px',
         fontSize: '10px',
         fontWeight: active ? '600' : '400',
@@ -823,7 +824,7 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        width: '72px',
+        width: '88px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',

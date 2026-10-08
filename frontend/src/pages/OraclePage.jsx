@@ -23,6 +23,9 @@ import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/arche
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import Calendar from '../components/Calendar';
 import PageHero from '../components/PageHero';
+import ResizeDivider from '../components/ResizeDivider';
+import { useResizable } from '../hooks/useResizable';
+import { useFilterPopover, FilterButton, LIST_CARD_STYLE, MAIN_CARD_STYLE } from '../components/FilterPopover';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSwipeNav } from '../hooks/useSwipeNav';
 import { useListArrowNav } from '../hooks/useListArrowNav';
@@ -41,15 +44,15 @@ const s = {
     height: '100%',
     minWidth: 0,
     overflow: 'hidden',
+    background: 'var(--white)',
   },
   // History sidebar
   sidebar: {
     width: '220px',
     flexShrink: 0,
-    borderRight: 'var(--border-style)',
     display: 'flex',
     flexDirection: 'column',
-    background: 'var(--near-white)',
+    background: 'transparent',
     overflow: 'hidden',
   },
   sidebarNew: {
@@ -111,30 +114,6 @@ const s = {
     overflow: 'hidden',
   },
   // Tag strip (between sidebar and main)
-  tagStrip: {
-    width: '76px',
-    flexShrink: 0,
-    borderLeft: 'var(--border-style)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    background: 'var(--near-white)',
-    overflowY: 'auto',
-    overflowX: 'hidden',
-    padding: '16px 6px',
-    gap: '4px',
-  },
-  tagStripDivider: {
-    width: '9px',
-    flexShrink: 0,
-    display: 'flex',
-    alignItems: 'stretch',
-    justifyContent: 'center',
-  },
-  tagStripDividerLine: {
-    width: '1px',
-    background: 'var(--border-color, rgba(0,0,0,0.1))',
-  },
   // Session tag selector in header
   sessionTagSelector: {
     fontSize: '11px',
@@ -407,7 +386,8 @@ const s = {
     fontSize: '13px',
   },
   msgBubbleAssistant: {
-    background: 'var(--near-white)',
+    // White on the chat card's light fill (the card is --near-white).
+    background: 'var(--white)',
     color: 'var(--body)',
     fontSize: '13px',
     border: 'var(--border-style)',
@@ -511,7 +491,7 @@ const s = {
     gap: '10px',
     alignItems: 'flex-end',
     flexShrink: 0,
-    background: 'var(--white)',
+    background: 'transparent', // the chat sits in a card; its fill shows through
   },
   inputTextarea: {
     flex: 1,
@@ -1055,11 +1035,17 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
     onRight: () => { if (mobileView === 'chat') setMobileView('list'); },
   });
 
+  // List width: resizable like Journal's (grip in the gap), same default.
+  const [listWidth, startListDrag] = useResizable(220, { min: 220, max: 480 });
+  const filterPop = useFilterPopover();
+
   return (
     <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
-      {/* History sidebar — hidden on mobile when viewing chat */}
-      <div style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
-        <PageHero icon="/page-icons/conversations.png" title={t('oracle.chatsTitle')} />
+      {/* History sidebar — hidden on mobile when viewing chat. Its content sits
+          in a card under the page icon and title (like Journal). */}
+      <div style={{ ...s.sidebar, width: `${listWidth}px`, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
+        <PageHero icon="/page-icons/conversations.png" title={t('oracle.chatsTitle')} divider={false} />
+        <div ref={filterPop.cardRef} style={LIST_CARD_STYLE}>
         <Calendar
           items={filteredSessions}
           activeId={currentSession?.id}
@@ -1068,18 +1054,20 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
           titleField="first_message"
           collapsibleKey="conversations"
         />
-        <input
-          data-tour-id="conversations-search"
-          style={{
-            margin: '8px 10px', padding: '5px 10px', fontSize: '12px',
-            border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
-            width: 'calc(100% - 20px)', color: 'var(--strong)', outline: 'none',
-            flexShrink: 0, fontFamily: 'var(--font)',
-          }}
-          placeholder={t('common.search')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: '8px 10px', flexShrink: 0 }}>
+          <input
+            data-tour-id="conversations-search"
+            style={{
+              flex: 1, minWidth: 0, padding: '5px 10px', fontSize: '12px',
+              border: 'var(--border-style)', borderRadius: '10px', background: 'var(--white)',
+              color: 'var(--strong)', outline: 'none', fontFamily: 'var(--font)',
+            }}
+            placeholder={t('common.search')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <FilterButton popover={filterPop} active={activeFilters.length > 0} label={t('journal.filterByTag')} tourId="conversations-tags" />
+        </div>
         <button
           data-tour-id="conversations-new"
           style={{
@@ -1116,10 +1104,12 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
             );
           })}
         </div>
+        </div>
       </div>
 
-      {/* Tag strip — hidden on mobile except in list view */}
-      {(!isMobile || mobileView === 'list') && <>
+      {/* Tag filters — pop out from the list card (Filter button). Several can
+          be on at once, so it stays open while you pick. */}
+      {filterPop.render(
         <TagStrip
           tags={allSessionTags}
           manualTags={allManualSessionTags}
@@ -1133,14 +1123,14 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
           onNewTagInput={setNewTagInput}
           onAddTag={handleAddTag}
           onDeleteTag={handleDeleteTag}
-        />
-        <div style={s.tagStripDivider}>
-          <div style={s.tagStripDividerLine} />
-        </div>
-      </>}
+        />,
+        t('journal.filterByTag'),
+      )}
 
-      {/* Main chat area — hidden on mobile when viewing list */}
-      <div style={{ ...s.mainArea, ...(isMobile && mobileView === 'list' ? { display: 'none' } : {}) }}>
+      {!isMobile && <ResizeDivider onMouseDown={startListDrag} hideLine />}
+
+      {/* Main chat area — hidden on mobile when viewing list; a card on desktop */}
+      <div style={{ ...s.mainArea, ...(isMobile ? {} : { ...MAIN_CARD_STYLE, margin: '16px 16px 16px 0' }), ...(isMobile && mobileView === 'list' ? { display: 'none' } : {}) }}>
       {/* Mobile back button */}
       {isMobile && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: 'var(--border-style)', flexShrink: 0 }}>
@@ -1609,7 +1599,7 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
   const auto = allAuto.filter((tag) => !isCore(tag));
 
   return (
-    <div data-tour-id="conversations-tags" style={s.tagStrip}>
+    <>
       {/* "All" pill */}
       <TagFilterPill
         label={t('oracle.allTag')}
@@ -1669,7 +1659,7 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
           placeholder={t('oracle.tagPlaceholder')}
           maxLength={30}
           style={{
-            width: '62px',
+            width: '74px',
             padding: '4px 6px',
             fontSize: '11px',
             borderRadius: '20px',
@@ -1684,7 +1674,7 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
           onClick={() => onAddingTag(true)}
           title={t('oracle.newTag')}
           style={{
-            width: '62px',
+            width: '74px',
             padding: '4px 0',
             fontSize: '14px',
             color: 'var(--muted)',
@@ -1698,9 +1688,7 @@ function TagStrip({ tags, manualTags, autoTags, activeFilters, onToggle, onClear
           +
         </button>
       )}
-
-      <div style={{ flex: 1 }} />
-    </div>
+    </>
   );
 }
 
@@ -1709,7 +1697,7 @@ function TagFilterPill({ label, active, onClick }) {
     <button
       onClick={onClick}
       style={{
-        width: '62px',
+        width: '74px',
         padding: '5px 4px',
         fontSize: '10px',
         fontWeight: active ? '600' : '400',
@@ -1749,7 +1737,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        width: '72px',
+        width: '88px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
