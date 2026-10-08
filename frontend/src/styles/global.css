@@ -395,3 +395,10 @@ hr {
    label/strip itself, never to a panel: a filter on a container would
    re-anchor position:fixed menus inside it. */
 .mono-emoji { filter: grayscale(1); }
+
+/* Page heroes (PageHero): on phones the icon + title box is centred and
+   doesn't step into the page padding (the desktop alignment is in PageHero). */
+@media (max-width: 768px) {
+  .page-hero { align-items: center !important; }
+  .page-hero--page { margin-left: 0 !important; }
+}

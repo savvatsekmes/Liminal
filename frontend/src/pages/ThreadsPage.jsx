@@ -759,7 +759,6 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
           data-tour-id="threads-intro"
           icon="/page-icons/threads.png"
           title={t('threads.title') || 'Threads'}
-          sizeAs={t('nav.journal')}
           subtitle={t('threads.tagline') || 'The arcs weaving through your life'}
         />
         <div style={s.detectRow}>

@@ -2542,8 +2542,10 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
         {/* Greeting + Quick Ask row */}
         <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', minHeight: '160px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
           {/* Pinned to the top of the row (not centred) so the wordmark's baseline
-              stays on the shared title line however tall the row grows. */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0, marginRight: '8px', gap: '6px' }}>
+              stays on the shared title line however tall the row grows; nudged
+              12px right so the logo's centre sits over the page icons' centre
+              (x=176px in the list columns). */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0, marginLeft: '12px', marginRight: '8px', gap: '6px' }}>
             <video src="/Liminal_B_v003_animated_1.webm" autoPlay loop muted playsInline style={{ width: '100px', objectFit: 'contain', opacity: 0.85, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
             <img src="/liminal-wordmark.png" alt="Liminal." style={{ width: '90px', objectFit: 'contain', opacity: 0.75, filter: theme === 'dark' ? 'invert(1)' : 'none' }} />
           </div>

@@ -416,7 +416,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
   const oracleHeader = (
     <div style={{ padding: isMobile ? '20px 16px 0' : '40px 48px 0' }}>
-      <PageHero data-tour-id="oracle-intro" align="left" icon="/page-icons/oracle.png" title="The Oracle" sizeAs={t('nav.journal')} />
+      <PageHero data-tour-id="oracle-intro" page icon="/page-icons/oracle.png" title="The Oracle" />
       <div style={s.pageSubtitle}>Do not try and bend the spoon — that's impossible. Instead, only try to realise the truth: there is no spoon.</div>
       <AILabel compact />
       <div data-tour-id="oracle-tabs" style={tabBarStyle}>

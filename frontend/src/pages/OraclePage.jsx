@@ -1059,7 +1059,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
     <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
       {/* History sidebar — hidden on mobile when viewing chat */}
       <div style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
-        <PageHero icon="/page-icons/conversations.png" title={t('oracle.chatsTitle')} sizeAs={t('nav.journal')} />
+        <PageHero icon="/page-icons/conversations.png" title={t('oracle.chatsTitle')} />
         <Calendar
           items={filteredSessions}
           activeId={currentSession?.id}

@@ -949,7 +949,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
   return (
     <div style={{ ...s.root, ...(isMobile ? { padding: '24px 16px 80px' } : {}) }}>
-      <PageHero align="left" icon="/page-icons/context.png" title={t('context.title')} sizeAs={t('nav.journal')} />
+      <PageHero page icon="/page-icons/context.png" title={t('context.title')} />
       <div style={s.pageSubtitle}>{t('context.subtitle')}</div>
 
       {/* Tab bar */}

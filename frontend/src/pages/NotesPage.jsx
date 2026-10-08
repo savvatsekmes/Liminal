@@ -400,7 +400,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
         overflow: 'hidden',
         background: 'var(--near-white)',
       }}>
-        <PageHero icon="/page-icons/notes.png" title={t('notes.title')} sizeAs={t('nav.journal')} />
+        <PageHero icon="/page-icons/notes.png" title={t('notes.title')} />
 
         <Calendar
           items={notes}
