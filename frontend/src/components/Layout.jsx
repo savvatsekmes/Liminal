@@ -231,9 +231,11 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
   const [entryListOpen, setEntryListOpen] = useState(true);
   const [avatarFailed, setAvatarFailed] = useState(false);
   useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
-  const [entryListWidth, startEntryDrag] = useResizable(296, { min: 220, max: 480 });
+  // Default Journal layout: the narrowest list, and the Mirror a little wider
+  // than the editor (the arrangement the user set by hand, 2026-10-08).
+  const [entryListWidth, startEntryDrag] = useResizable(220, { min: 220, max: 480 });
   // Mirror split as percentage (0–100) of content area
-  const [mirrorPct, setMirrorPct] = useState(50);
+  const [mirrorPct, setMirrorPct] = useState(54);
   const contentRef = useRef(null);
   const startMirrorDrag = useCallback((e) => {
     e.preventDefault();

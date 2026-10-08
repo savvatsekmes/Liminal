@@ -90,10 +90,12 @@ h1, h2, h3, h4 {
   height: 4px;
 }
 ::-webkit-scrollbar-track { background: transparent; }
+/* Hidden until the pointer is over the panel it scrolls. */
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: transparent;
   border-radius: 2px;
 }
+*:hover::-webkit-scrollbar-thumb { background: var(--border); }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
