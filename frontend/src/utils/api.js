@@ -1,7 +1,11 @@
 /**
  * Authenticated fetch wrapper.
  * Attaches the JWT from localStorage to every request.
- * Automatically clears the token and reloads on 401.
+ * Clears the token and reloads when the backend rejects the session itself
+ * (it marks those 401s with X-Session-Invalid). A 401 from a password check
+ * inside a route — e.g. a mistyped current password — is returned to the
+ * caller like any other error, and requests made before login (no token)
+ * never trigger a reload.
  */
 export async function apiFetch(url, options = {}) {
   const token = localStorage.getItem('liminal_token');
@@ -13,7 +17,7 @@ export async function apiFetch(url, options = {}) {
     },
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && token && res.headers.get('X-Session-Invalid')) {
     localStorage.removeItem('liminal_token');
     window.location.reload();
     // Return a never-resolving promise so the calling code doesn't continue

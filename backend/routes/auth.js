@@ -29,12 +29,17 @@ function lockoutErrorPayload(state) {
 const avatarDir = path.join(DATA_DIR, 'avatars');
 if (!fs.existsSync(avatarDir)) fs.mkdirSync(avatarDir, { recursive: true });
 
+// Avatars are images only. The file's extension comes from its checked type,
+// never from the uploaded name — a file kept as .html or .svg would be served
+// as a page that runs script on the app's own origin.
+const AVATAR_EXT_BY_TYPE = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' };
+const AVATAR_TYPE_BY_EXT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
+
 const avatarUpload = multer({
   storage: multer.diskStorage({
     destination: avatarDir,
     filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname) || '.png';
-      cb(null, `user_${req.userId}${ext}`);
+      cb(null, `user_${req.userId}${AVATAR_EXT_BY_TYPE[file.mimetype] || '.png'}`);
     },
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -504,9 +509,16 @@ router.post('/avatar', requireAuth, avatarUpload.single('avatar'), (req, res) =>
 router.get('/avatar/:userId', (req, res) => {
   const user = db.prepare('SELECT avatar_path FROM users WHERE id = ?').get(req.params.userId);
   if (!user?.avatar_path) return res.status(404).json({ error: 'No avatar' });
+  const type = AVATAR_TYPE_BY_EXT[path.extname(user.avatar_path).toLowerCase()];
+  if (!type) return res.status(404).json({ error: 'No avatar' });
   const filePath = path.join(DATA_DIR, user.avatar_path);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-  res.sendFile(filePath);
+  res.set({
+    'Content-Type': type,
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; sandbox",
+  });
+  res.sendFile(filePath, { headers: { 'Content-Type': type } });
 });
 
 // ── POST /api/auth/complete-onboarding ──────────────────────────────────────

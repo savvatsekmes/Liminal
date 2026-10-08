@@ -567,12 +567,13 @@ def synthesise(req: SpeechRequest):
         raise HTTPException(status_code=400, detail="input is required")
 
     # Resolve voice file
+    # Only a plain file name inside VOICES_DIR — never an arbitrary path or
+    # network share (an absolute path would replace the base when joined).
     voice_path = None
-    candidate = VOICES_DIR / req.voice
-    if candidate.exists():
+    voice_name = Path(req.voice or "").name
+    candidate = VOICES_DIR / voice_name
+    if voice_name and voice_name == req.voice and candidate.is_file():
         voice_path = str(candidate)
-    elif Path(req.voice).exists():
-        voice_path = req.voice
     else:
         wavs = list(VOICES_DIR.glob("*.wav")) + list(VOICES_DIR.glob("*.mp3"))
         if wavs:
@@ -673,7 +674,7 @@ def _read_whisper_setting() -> str:
     # mirrors how _read_tts_model_setting works for chatterbox so the user can
     # change the Whisper model from Settings without an env var or restart.
     try:
-        db_path = os.path.join(USER_DATA, "liminal.db")
+        db_path = os.path.join(USER_DATA_DIR, "liminal.db")
         if os.path.exists(db_path):
             import sqlite3
             con = sqlite3.connect(db_path)
@@ -764,4 +765,6 @@ if __name__ == "__main__":
     # case fast. Inside __main__ so multiprocessing workers don't re-trigger it.
     ensure_model(resolve_model_kind("en"))
     log.info(f"Starting on http://localhost:{PORT}")
-    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
+    # Loopback only: the Liminal backend is the sole client, and other devices
+    # reach TTS through its authenticated /api/tts routes.
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

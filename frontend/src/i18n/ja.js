@@ -541,7 +541,6 @@ export default {
   "settings.voiceDeleted": "音声「{name}」を削除しました",
   "settings.uploadFailed": "アップロードに失敗しました",
   "settings.importFromNotion": "Notionからインポート",
-  "settings.notionImportDesc": "Notionのエクスポート ZIPをドロップして履歴をLiminalに取り込みます。インポートは重複安全 — 再実行しても既存のエントリーは上書きされません。",
   "settings.notionDropZone": "Notionエクスポート ZIPをここにドロップ、またはクリックして選択",
   "settings.notionExportPath": "Notion → 設定 → エクスポート → Markdown & CSV",
   "settings.exportBackup": "↓ Liminalバックアップをエクスポート",

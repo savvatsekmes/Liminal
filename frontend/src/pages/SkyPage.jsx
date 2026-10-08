@@ -5,6 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import ResizeDivider from '../components/ResizeDivider';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { CardDetailPopup } from '../extensions/CardReading';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
@@ -1225,7 +1226,7 @@ export default function SkyPage({ onNavigateEntry, initialTab, hideTabBar }) {
                 <div ref={readingRef}>
                   <div
                     style={s.reading}
-                    dangerouslySetInnerHTML={{ __html: cardReading }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(cardReading) }}
                   />
                 </div>
               )}

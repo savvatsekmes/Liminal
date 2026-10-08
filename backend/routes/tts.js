@@ -4,33 +4,19 @@ const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
-const jwt = require('jsonwebtoken');
 const { DATA_DIR } = require('../paths');
 const s = require('../services/settingsService');
 
-// Soft-auth: this router doesn't use requireAuth (LAN/mobile browser
-// clients may not have a JWT, and we want them to fall back to the
-// global default rather than 401). But when a JWT IS present, bind the
-// per-user settings context so s.get('chatterbox_voice'),
-// s.get('language'), etc. resolve to THIS user's saved values instead
-// of the bare-key global. Without this, picking a voice in Settings
-// wrote `chatterbox_voice::<userId>` but /api/tts/speak read the global
-// key and ignored the choice.
-router.use((req, res, next) => {
-  const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) {
-    try {
-      const { getSecret } = require('../middleware/auth');
-      const decoded = jwt.verify(header.slice(7), getSecret());
-      if (decoded?.userId) {
-        return s.runWithUserContext(decoded.userId, () => next());
-      }
-    } catch {
-      // Invalid token — fall through to anonymous, same as no header.
-    }
-  }
-  next();
-});
+// Everything except the status probe needs a session: these routes run the
+// GPU, restart the TTS server and read journal text aloud, and the backend is
+// reachable from other devices on the network. (Phone/browser clients log in
+// like the desktop app, so they have a token too.) requireAuth also binds the
+// per-user settings context, so s.get('chatterbox_voice') etc. resolve to
+// this user's choices.
+const { requireAuth } = require('../middleware/auth');
+router.use((req, res, next) => (
+  req.method === 'GET' && req.path === '/status' ? next() : requireAuth(req, res, next)
+));
 
 function getChatterboxUrl() {
   return require('../services/settingsService').get('chatterbox_url') || 'http://localhost:8100';
@@ -47,6 +33,7 @@ async function ensureTtsViaControl() {
   try {
     const r = await fetch(`${controlUrl}/tts/ensure`, {
       method: 'POST',
+      headers: { 'X-Liminal-Control': process.env.LIMINAL_CONTROL_TOKEN || '' },
       signal: AbortSignal.timeout(45000),
     });
     if (!r.ok) return false;
@@ -64,6 +51,7 @@ function pingTtsKeepalive() {
   if (!controlUrl) return;
   fetch(`${controlUrl}/tts/keepalive`, {
     method: 'POST',
+    headers: { 'X-Liminal-Control': process.env.LIMINAL_CONTROL_TOKEN || '' },
     signal: AbortSignal.timeout(2000),
   }).catch(() => {});
 }
@@ -87,6 +75,27 @@ function getTtsDefaults() {
     cfg_weight:   parseFloat(s.get('chatterbox_cfg_weight')   || '0.10'),
     temperature:  parseFloat(s.get('chatterbox_temperature')  || '1.3'),
   };
+}
+
+function voicesDir() {
+  return require('../services/settingsService').get('voices_path') || path.join(DATA_DIR, 'voices');
+}
+
+// Only a file that's actually in the voices folder may be used as a voice.
+// The TTS server would otherwise accept any path on disk (or a network
+// share) as the voice-clone reference.
+function safeVoice(voice, fallback) {
+  if (typeof voice !== 'string' || !voice) return fallback;
+  const name = path.basename(voice);
+  if (name !== voice || !['.wav', '.mp3'].includes(path.extname(name).toLowerCase())) return fallback;
+  return fs.existsSync(path.join(voicesDir(), name)) ? name : fallback;
+}
+
+// A dropped upstream connection must end this response, not crash the
+// backend with an unhandled 'error' on the piped body.
+function pipeAudio(upstream, res) {
+  upstream.body.on('error', () => res.destroy());
+  upstream.body.pipe(res);
 }
 
 // User voice uploads have been removed. Liminal ships with a curated set of
@@ -117,11 +126,10 @@ router.get('/status', async (req, res) => {
 
 // ── GET /api/tts/voices ───────────────────────────────────────────────────────
 router.get('/voices', async (req, res) => {
-  const s = require('../services/settingsService');
-  const voicesDir = s.get('voices_path') || path.join(DATA_DIR, 'voices');
+  const dir = voicesDir();
   let voices = [];
-  if (fs.existsSync(voicesDir)) {
-    voices = fs.readdirSync(voicesDir)
+  if (fs.existsSync(dir)) {
+    voices = fs.readdirSync(dir)
       .filter(f => ['.wav', '.mp3'].includes(path.extname(f).toLowerCase()))
       .map(f => ({ filename: f, name: path.basename(f, path.extname(f)), local: true }));
   }
@@ -130,7 +138,7 @@ router.get('/voices', async (req, res) => {
 
 // ── POST /api/tts/speak ───────────────────────────────────────────────────────
 router.post('/speak', async (req, res) => {
-  if (!req.body.text) return res.status(400).json({ error: 'text is required' });
+  if (typeof req.body.text !== 'string' || !req.body.text) return res.status(400).json({ error: 'text is required' });
 
   const s = require('../services/settingsService');
   const provider = req.body.provider || s.get('tts_mode') || 'chatterbox';
@@ -194,20 +202,20 @@ router.post('/preload', async (req, res) => {
 
 async function speakChatterbox(req, res, s) {
   const defaults = getTtsDefaults();
+  const voice = safeVoice(req.body.voice, defaults.voice);
   const {
     text,
-    voice        = defaults.voice,
     exaggeration = defaults.exaggeration,
     cfg_weight   = defaults.cfg_weight,
     temperature  = defaults.temperature,
     model        = 'chatterbox',
   } = req.body;
   const language = req.body.language || s.get('language') || 'en';
-  console.log(`[tts] /speak voice=${voice} lang=${language} (req.body.voice=${req.body.voice || '(none)'}) default=${defaults.voice}`);
+  // Never log the text itself — it's the user's journal.
+  console.log(`[tts] /speak voice=${voice} lang=${language} chars=${text.length}`);
 
   const url = getChatterboxUrl();
   const processedText = preprocessText(text);
-  console.log('[tts] Sending to Chatterbox:', JSON.stringify(processedText));
 
   try {
     const chatterboxRes = await fetch(`${url}/v1/audio/speech`, {
@@ -232,7 +240,7 @@ async function speakChatterbox(req, res, s) {
 
     const contentType = chatterboxRes.headers.get('content-type') || 'audio/wav';
     res.setHeader('Content-Type', contentType);
-    chatterboxRes.body.pipe(res);
+    pipeAudio(chatterboxRes, res);
   } catch (err) {
     res.status(503).json({ error: 'Chatterbox server not reachable', fallback: true });
   }
@@ -267,7 +275,7 @@ async function speakOpenAI(req, res, s) {
     }
 
     res.setHeader('Content-Type', 'audio/mpeg');
-    openaiRes.body.pipe(res);
+    pipeAudio(openaiRes, res);
   } catch (err) {
     res.status(503).json({ error: 'OpenAI TTS request failed', detail: err.message });
   }

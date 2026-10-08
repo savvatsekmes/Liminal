@@ -613,6 +613,7 @@ export default function App() {
       }
     } catch {}
     clearStoredToken();
+    window.liminal?.clearSession?.();
     setAuthStatus('gate');
     setUsername('');
     setIsFirstSession(false);

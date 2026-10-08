@@ -45,6 +45,9 @@ contextBridge.exposeInMainWorld('liminal', {
   setSessionPassword(pw, token) {
     ipcRenderer.send('liminal:set-session-password', pw, token);
   },
+  clearSession() {
+    ipcRenderer.send('liminal:clear-session');
+  },
   onBackupStarting(callback) {
     const handler = (_event) => callback();
     ipcRenderer.on('liminal:backup-starting', handler);

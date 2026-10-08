@@ -8,6 +8,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+const { requireAuth } = require('../middleware/auth');
+
+// These restart Ollama and download models, so they need a session like
+// every other route (the backend is reachable from the local network).
+router.use(requireAuth);
 
 function getOllamaUrl() {
   return require('../services/settingsService').get('ollama_url') || 'http://localhost:11434';

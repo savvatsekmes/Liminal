@@ -541,7 +541,6 @@ export default {
   "settings.voiceDeleted": "음성 \"{name}\" 삭제됨",
   "settings.uploadFailed": "업로드 실패",
   "settings.importFromNotion": "Notion에서 가져오기",
-  "settings.notionImportDesc": "Notion 내보내기 ZIP을 놓아서 기록을 Liminal로 가져오세요. 가져오기는 중복 방지 — 다시 실행해도 기존 일기를 덮어쓰지 않습니다.",
   "settings.notionDropZone": "Notion 내보내기 ZIP을 여기에 놓거나 클릭하여 선택",
   "settings.notionExportPath": "Notion → 설정 → 내보내기 → Markdown & CSV",
   "settings.exportBackup": "↓ Liminal 백업 내보내기",

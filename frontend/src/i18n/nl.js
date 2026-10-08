@@ -634,7 +634,6 @@ export default {
   "settings.voiceDeleted": "Stem \"{name}\" verwijderd",
   "settings.uploadFailed": "Upload mislukt",
   "settings.importFromNotion": "Importeren uit Notion",
-  "settings.notionImportDesc": "Sleep je Notion-export-ZIP om je geschiedenis naar Liminal te brengen. Importeren is duplicaatveilig — het opnieuw uitvoeren overschrijft bestaande notities niet.",
   "settings.notionDropZone": "Sleep Notion-export-ZIP hierheen, of klik om te selecteren",
   "settings.notionExportPath": "Notion → Instellingen → Exporteren → Markdown & CSV",
   "settings.exportBackup": "↓ Liminal-backup exporteren",

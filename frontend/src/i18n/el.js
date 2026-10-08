@@ -541,7 +541,6 @@ export default {
   "settings.voiceDeleted": "Η φωνή \"{name}\" διαγράφηκε",
   "settings.uploadFailed": "Το ανέβασμα απέτυχε",
   "settings.importFromNotion": "Εισαγωγή από Notion",
-  "settings.notionImportDesc": "Σύρε το ZIP εξαγωγής Notion για να φέρεις το ιστορικό σου στο Liminal. Η εισαγωγή είναι ασφαλής από διπλότυπα — αν τρέξει ξανά δεν θα αντικαταστήσει υπάρχουσες καταχωρήσεις.",
   "settings.notionDropZone": "Σύρε εδώ το Notion export ZIP, ή κάνε κλικ για επιλογή",
   "settings.notionExportPath": "Notion → Settings → Export → Markdown & CSV",
   "settings.exportBackup": "↓ Εξαγωγή Liminal backup",

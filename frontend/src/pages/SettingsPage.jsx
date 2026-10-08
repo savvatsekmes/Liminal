@@ -2002,9 +2002,6 @@ function RestartButton() {
 // ── Life Context Section ───────────────────────────────────────────────────────
 
 // ── Data Section ──────────────────────────────────────────────────────────────
-// ── Notion Import Section ─────────────────────────────────────────────────────
-
-// ── Data Section ──────────────────────────────────────────────────────────────
 
 function DataSection({ showToast }) {
   const { t } = useLanguage();

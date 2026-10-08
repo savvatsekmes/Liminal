@@ -250,10 +250,21 @@ function openLogStream(name) {
 // Electron main to spawn the on-demand TTS server when a remote client
 // (mobile / other computer) hits /api/tts/speak. Without this, TTS only
 // worked for users physically on the Electron host.
+//
+// Every request must carry CONTROL_TOKEN, which only the backend we spawned
+// knows (it gets it in its env). Being bound to 127.0.0.1 isn't enough on its
+// own: any web page in the user's browser can POST to localhost, and /relaunch
+// would let it kill the app.
+const CONTROL_TOKEN = require('crypto').randomBytes(24).toString('hex');
 let controlServerPort = null;
 function startControlServer() {
   if (controlServerPort) return controlServerPort;
   const server = http.createServer(async (req, res) => {
+    if (req.headers['x-liminal-control'] !== CONTROL_TOKEN) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
     if (req.url === '/tts/ensure' && req.method === 'POST') {
       try {
         await ensureTtsRunning();
@@ -461,6 +472,7 @@ function spawnBackend() {
     LIMINAL_FRONTEND_DIST: FRONTEND_DIST,
     LIMINAL_APP_VERSION: app.getVersion(),
     LIMINAL_CONTROL_URL: `http://127.0.0.1:${controlPort}`,
+    LIMINAL_CONTROL_TOKEN: CONTROL_TOKEN,
     NODE_ENV: isDev ? 'development' : 'production',
   };
 
@@ -669,8 +681,16 @@ async function createWindow() {
 
   // External links open in the user's default browser, not a new Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafe(url);
     return { action: 'deny' };
+  });
+  // The app window only ever shows Liminal itself. Anything else that tries
+  // to take it over (a link, or a script in an embed setting top.location)
+  // would get the preload API — open it in the browser instead.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return;
+    event.preventDefault();
+    openExternalSafe(url);
   });
 
   // The actual `context-menu` listener is registered in
@@ -713,19 +733,36 @@ async function createWindow() {
     mainWindow.webContents.setZoomFactor(0.9);
   }
 
-  // Register a reliable DevTools shortcut. Electron's default Ctrl+Shift+I is
-  // sometimes swallowed by the autoHideMenuBar config; a globalShortcut bypasses
-  // the menu accelerator path entirely.
-  globalShortcut.register('Control+Shift+I', () => {
-    if (mainWindow && mainWindow.isFocused()) {
+  // DevTools shortcut. Electron's default Ctrl+Shift+I is sometimes swallowed
+  // by the autoHideMenuBar config, so handle the keys on this window's own
+  // input. (A globalShortcut grabbed F12 and Ctrl+Shift+I system-wide — they
+  // stopped working in browsers and editors while Liminal ran.)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const isF12 = input.key === 'F12';
+    const isCtrlShiftI = input.control && input.shift && input.key.toLowerCase() === 'i';
+    if (isF12 || isCtrlShiftI) {
+      event.preventDefault();
       mainWindow.webContents.toggleDevTools();
     }
   });
-  globalShortcut.register('F12', () => {
-    if (mainWindow && mainWindow.isFocused()) {
-      mainWindow.webContents.toggleDevTools();
-    }
-  });
+}
+
+// The address the app window loads (see loadURL above).
+function isAppUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname)
+      && u.port === String(BACKEND_PORT);
+  } catch { return false; }
+}
+
+// Only web and mail links leave the app. Anything else — file:, a network
+// share, an ms-* or other protocol handler — could launch a program.
+function openExternalSafe(url) {
+  let protocol = '';
+  try { protocol = new URL(url).protocol; } catch { return; }
+  if (['http:', 'https:', 'mailto:'].includes(protocol)) shell.openExternal(url);
 }
 
 // Focus existing window if user launches a second instance. The window may be
@@ -1193,6 +1230,14 @@ let sessionPassword = null;
 let sessionToken = null;
 let sessionUsername = null;
 
+// Logout: forget the password and token so a later login (possibly another
+// account) never backs up with the previous user's credentials.
+ipcMain.on('liminal:clear-session', () => {
+  sessionPassword = null;
+  sessionToken = null;
+  sessionUsername = null;
+});
+
 ipcMain.on('liminal:set-session-password', (_event, pw, token) => {
   sessionPassword = pw;
   if (token) {
@@ -1456,7 +1501,7 @@ app.on('before-quit', async (event) => {
 
   // Clean up children and force exit. app.exit() bypasses before-quit so we
   // guarantee the process terminates on a single Quit click.
-  if (ttsIdleTimer) clearTimeout(ttsIdleTimer);
+  cancelTtsHiddenIdleCheck();
   killChild(backendProc);
   killChild(ttsProc);
   app.exit(0);

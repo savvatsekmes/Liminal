@@ -3,6 +3,7 @@ import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { NodeSelection } from '@tiptap/pm/state';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 // ── Safe attribute encoding (HTML in data-attributes breaks the parser) ──────
 
@@ -37,7 +38,7 @@ export const CardReading = Node.create({
       tag: 'div[data-card-reading]',
       getAttrs: (dom) => ({
         cards:      decodeAttr(dom.getAttribute('data-cards')),
-        reading:    decodeAttr(dom.getAttribute('data-reading')),
+        reading:    sanitizeHtml(decodeAttr(dom.getAttribute('data-reading'))),
         deckType:   dom.getAttribute('data-deck-type') || 'tarot',
         spreadName: dom.getAttribute('data-spread-name') || '',
       }),
@@ -528,7 +529,7 @@ function CardReadingView({ node, deleteNode, editor, getPos }) {
                       maskImage: 'linear-gradient(to bottom, #000 70%, transparent)',
                     } : {}),
                   }}
-                  dangerouslySetInnerHTML={{ __html: reading }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(reading) }}
                 />
                 {singleOverflows && (
                   <button
@@ -569,7 +570,7 @@ function CardReadingView({ node, deleteNode, editor, getPos }) {
               opacity: readingExpanded ? 1 : 0,
               padding: readingExpanded ? '0 16px 16px' : '0 16px',
             }}>
-              <div dangerouslySetInnerHTML={{ __html: reading }} />
+              <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(reading) }} />
             </div>
           </>
         )}

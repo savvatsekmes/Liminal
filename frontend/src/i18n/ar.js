@@ -541,7 +541,6 @@ export default {
   "settings.voiceDeleted": "تم حذف الصوت \"{name}\"",
   "settings.uploadFailed": "فشل الرفع",
   "settings.importFromNotion": "استيراد من Notion",
-  "settings.notionImportDesc": "أسقط ملف ZIP المُصدَّر من Notion لجلب سجلك إلى Liminal. الاستيراد آمن من التكرار — تشغيله مرة أخرى لن يستبدل التدوينات الموجودة.",
   "settings.notionDropZone": "أسقط ملف ZIP المُصدَّر من Notion هنا، أو انقر للاختيار",
   "settings.notionExportPath": "Notion → الإعدادات → تصدير → Markdown & CSV",
   "settings.exportBackup": "↓ تصدير نسخة احتياطية من Liminal",

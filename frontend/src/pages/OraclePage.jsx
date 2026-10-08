@@ -994,7 +994,10 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
   async function handleSaveMessage(msg) {
     const title = (messages.find((m, i) => m.role === 'user' && messages[i + 1]?.id === msg.id)?.content || t('oracle.oracleConversation')).slice(0, 70);
     const plain = stripEntryCitations(msg.content); // entry links → their wording
-    const body = `<p><em>${t('oracle.title')} — ${msg.archetype || archetype}</em></p><p>${plain.split('\n\n').join('</p><p>')}</p>`;
+    // The reply is plain text: escape it so any markup the AI wrote is saved
+    // as text, not as live HTML in the entry.
+    const esc = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const body = `<p><em>${esc(t('oracle.title'))} — ${esc(msg.archetype || archetype)}</em></p><p>${esc(plain).split('\n\n').join('</p><p>')}</p>`;
     const body_text = plain;
     try {
       const res = await apiFetch('/api/entries', {

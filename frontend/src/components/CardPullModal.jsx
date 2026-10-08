@@ -3,6 +3,7 @@ import { apiFetch } from '../utils/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import AILabel from './AILabel';
 import { CardDetailPopup } from '../extensions/CardReading';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 const CARD_W = 120;
 const CARD_H = 205;
@@ -686,7 +687,7 @@ export default function CardPullModal({ onClose, onInsert, entryText }) {
               <div style={{ ...s.sectionLabel, marginTop: '8px' }}>Reading</div>
               <div
                 style={s.reading}
-                dangerouslySetInnerHTML={{ __html: reading }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(reading) }}
               />
               <button style={s.actionBtn} onClick={handleInsert}>
                 {t('cards.insertReading')}

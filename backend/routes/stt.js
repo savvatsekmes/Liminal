@@ -28,7 +28,7 @@ async function ensureTtsViaControl() {
   const controlUrl = process.env.LIMINAL_CONTROL_URL;
   if (!controlUrl) return false;
   try {
-    const r = await fetch(`${controlUrl}/tts/ensure`, { method: 'POST', signal: AbortSignal.timeout(45000) });
+    const r = await fetch(`${controlUrl}/tts/ensure`, { method: 'POST', headers: { 'X-Liminal-Control': process.env.LIMINAL_CONTROL_TOKEN || '' }, signal: AbortSignal.timeout(45000) });
     if (!r.ok) return false;
     const data = await r.json();
     return !!data.ok;

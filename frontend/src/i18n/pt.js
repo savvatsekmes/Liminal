@@ -634,7 +634,6 @@ export default {
   "settings.voiceDeleted": "Voz \"{name}\" excluída",
   "settings.uploadFailed": "Falha no envio",
   "settings.importFromNotion": "Importar do Notion",
-  "settings.notionImportDesc": "Solte seu ZIP de exportação do Notion para trazer seu histórico para o Liminal. A importação é segura contra duplicatas — executá-la novamente não substituirá entradas existentes.",
   "settings.notionDropZone": "Solte o ZIP de exportação do Notion aqui ou clique para selecionar",
   "settings.notionExportPath": "Notion → Configurações → Exportar → Markdown & CSV",
   "settings.exportBackup": "↓ Exportar backup do Liminal",

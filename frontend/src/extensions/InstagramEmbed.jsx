@@ -5,6 +5,19 @@ import { NodeSelection } from '@tiptap/pm/state';
 
 // ── URL extraction ──────────────────────────────────────────────────────────
 
+// The URL ends up as an iframe src and a window.open target, so it must be a
+// real Instagram link — a javascript: URL in pasted or AI-written HTML would
+// otherwise run as the app.
+function safeInstagramUrl(url) {
+  if (typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    if (!['http:', 'https:'].includes(u.protocol) || !/^(www\.)?instagram\.com$/.test(u.hostname)) return null;
+    u.protocol = 'https:';
+    return u.href;
+  } catch { return null; }
+}
+
 export function extractInstagramUrl(url) {
   const match = url.match(
     /https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/
@@ -36,7 +49,7 @@ export const InstagramEmbed = Node.create({
     return [{
       tag: 'div[data-instagram-embed]',
       getAttrs: (dom) => ({
-        url:   dom.getAttribute('data-url') || null,
+        url:   safeInstagramUrl(dom.getAttribute('data-url')),
         width: dom.getAttribute('data-width') || '100%',
       }),
     }];
@@ -77,7 +90,8 @@ function parseInstagramUrl(url) {
 }
 
 function InstagramEmbedView({ node, updateAttributes, deleteNode, editor, getPos }) {
-  const { url, width } = node.attrs;
+  const { width } = node.attrs;
+  const url = safeInstagramUrl(node.attrs.url);
   const outerRef = useRef(null);
   const dragRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
@@ -246,6 +260,8 @@ function InstagramEmbedView({ node, updateAttributes, deleteNode, editor, getPos
               )}
               <iframe
                 src={embedSrc}
+                /* No allow-top-navigation: the embed can't take over the app window. */
+                sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                 title={`Instagram ${typeLabel}`}
                 onLoad={() => setLoaded(true)}
                 onError={() => setErrored(true)}

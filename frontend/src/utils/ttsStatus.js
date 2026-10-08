@@ -5,6 +5,7 @@
  * released after the window has sat hidden in the tray for a while.
  */
 import { useState, useEffect } from 'react';
+import { apiFetch } from './api';
 
 let online = false;
 let loading = false;
@@ -130,7 +131,7 @@ export async function waitForChatterbox(timeoutMs = 45000) {
       } catch {}
     } else {
       try {
-        const r = await fetch('/api/tts/ensure', { method: 'POST' });
+        const r = await apiFetch('/api/tts/ensure', { method: 'POST' });
         if (r.ok) {
           const data = await r.json();
           if (data.ok) {

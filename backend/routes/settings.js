@@ -8,19 +8,13 @@ const llm = require('../services/llmService');
 const { DATA_DIR } = require('../paths');
 const { encryptField, safeDecrypt } = require('../services/rowCrypto');
 
-// Soft-auth: this router doesn't use requireAuth (some flows like restore
-// run with the user identified manually via resolveUserId), but we still
-// want s.get/s.set inside these handlers to use the correct per-user
-// namespace. Read the JWT if present and bind the user context for the
-// remainder of the request.
-router.use((req, res, next) => {
-  const userId = resolveUserId(req);
-  if (userId) {
-    s.runWithUserContext(userId, () => next());
-  } else {
-    next();
-  }
-});
+// Every settings route needs a real session. These routes can wipe the
+// journal, point the AI at another server or produce a backup, and the
+// backend is reachable from other devices on the network — there used to be
+// a "first user" fallback here that let requests with no token act as
+// account 1. requireAuth also binds the per-user settings context.
+const { requireAuth } = require('../middleware/auth');
+router.use(requireAuth);
 
 // ── GET /api/settings ─────────────────────────────────────────────────────────
 // Returns all settings with secrets masked
@@ -97,8 +91,7 @@ router.post('/test-llm', async (req, res) => {
 // Status of the librarian's index and a manual rebuild. The index normally
 // keeps itself complete (librarianService checks it at every login); rebuild
 // re-embeds all of this user's entries and memories. Decrypting entries needs
-// a real session (requireAuth), not this router's soft-auth fallback.
-const { requireAuth } = require('../middleware/auth');
+// a real session (requireAuth).
 
 router.get('/librarian', requireAuth, async (req, res) => {
   const embedding = require('../services/embeddingService');
@@ -193,26 +186,11 @@ router.post('/test-tts', async (req, res) => {
 
     const contentType = r.headers.get('content-type') || 'audio/wav';
     res.setHeader('Content-Type', contentType);
+    r.body.on('error', () => res.destroy());
     r.body.pipe(res);
   } catch (err) {
     res.status(503).json({ error: 'Chatterbox not reachable', detail: err.message });
   }
-});
-
-// ── GET /api/settings/memory ──────────────────────────────────────────────────
-router.get('/memory', (req, res) => {
-  const row = db.prepare('SELECT summary, updated_at FROM memory WHERE id = 1').get();
-  res.json({
-    summary:    row?.summary || '',
-    updated_at: row?.updated_at || null,
-    word_count: row?.summary ? row.summary.trim().split(/\s+/).length : 0,
-  });
-});
-
-// ── DELETE /api/settings/memory ───────────────────────────────────────────────
-router.delete('/memory', (req, res) => {
-  db.prepare('DELETE FROM memory WHERE id = 1').run();
-  res.json({ success: true });
 });
 
 // ── POST /api/settings/reindex ────────────────────────────────────────────────
@@ -342,6 +320,7 @@ function doRestart() {
     port: url.port,
     path: url.pathname,
     method: 'POST',
+    headers: { 'X-Liminal-Control': process.env.LIMINAL_CONTROL_TOKEN || '' },
   }, (resp) => {
     if (resp.statusCode === 200) return; // Electron will relaunch
     fallbackRestart();
@@ -1297,7 +1276,9 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     const av = data.avatars[0]; // use the first avatar from backup
     try {
       // Write to a path based on the restoring user's ID, not the original path
-      const ext = path.extname(av.path) || '.png';
+      // Image extensions only (the avatar is served from the app's origin).
+      const ext = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(path.extname(av.path || '').toLowerCase())
+        ? path.extname(av.path).toLowerCase() : '.png';
       const newRelPath = `avatars/user_${userId}${ext}`;
       const dest = path.join(DATA_DIR, newRelPath);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -1333,20 +1314,9 @@ function parseJSON(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
 }
 
-/** Extract userId from JWT in Authorization header (without requiring auth middleware). */
+/** The signed-in user (every route here runs behind requireAuth). */
 function resolveUserId(req) {
-  try {
-    const header = req.headers.authorization;
-    if (header?.startsWith('Bearer ')) {
-      const jwt = require('jsonwebtoken');
-      const { getSecret } = require('../middleware/auth');
-      const decoded = jwt.verify(header.slice(7), getSecret());
-      return decoded.userId;
-    }
-  } catch {}
-  // Fallback: first user in DB
-  const first = db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get();
-  return first?.id || 1;
+  return req.userId;
 }
 
 module.exports = router;

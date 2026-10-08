@@ -541,7 +541,6 @@ export default {
   "settings.voiceDeleted": "音色 \"{name}\" 已删除",
   "settings.uploadFailed": "上传失败",
   "settings.importFromNotion": "从 Notion 导入",
-  "settings.notionImportDesc": "拖入你的 Notion 导出 ZIP 文件，将历史记录带入 Liminal。导入是防重复的 — 再次运行不会覆盖现有日记。",
   "settings.notionDropZone": "将 Notion 导出 ZIP 拖到此处，或点击选择",
   "settings.notionExportPath": "Notion → 设置 → 导出 → Markdown & CSV",
   "settings.exportBackup": "↓ 导出 Liminal 备份",

@@ -541,7 +541,6 @@ export default {
   "settings.voiceDeleted": "\"{name}\" sesi silindi",
   "settings.uploadFailed": "Yükleme başarısız",
   "settings.importFromNotion": "Notion’dan içe aktar",
-  "settings.notionImportDesc": "Geçmişini Liminal’e aktarmak için Notion dışa aktarma ZIP’ini bırak. İçe aktarma kopya güvenlidir — tekrar çalıştırmak mevcut kayıtların üzerine yazmaz.",
   "settings.notionDropZone": "Notion dışa aktarma ZIP dosyasını buraya bırak veya tıklayarak seç",
   "settings.notionExportPath": "Notion → Ayarlar → Dışa Aktar → Markdown ve CSV",
   "settings.exportBackup": "↓ Liminal yedeğini dışa aktar",

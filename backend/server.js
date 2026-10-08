@@ -13,10 +13,53 @@ const path = require('path');
 lap('express + cors required');
 
 const app = express();
+
+// An error in an async route used to take the whole backend down (Express 4
+// doesn't catch rejected promises and Node exits on them), and nothing
+// restarts it. Log it and keep serving instead.
+process.on('unhandledRejection', (err) => {
+  console.error('[unhandledRejection]', err?.stack || err);
+});
 const PORT = process.env.PORT || 3001;
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000'], credentials: true }));
+const DEV_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
+// Network guard. The backend listens on every interface so phones and other
+// computers can use Liminal, which also makes it reachable by web pages open
+// in the user's browser:
+//  - DNS rebinding: a site points its own domain at this machine to read
+//    responses. Those requests carry the site's name in Host, so only
+//    localhost, IP addresses and this machine's own names are accepted.
+//  - Cross-site requests: a page posts a form or fetch to localhost. Browsers
+//    always send Origin on those, so a write whose Origin isn't the address
+//    the app was opened at (or the dev server) is refused.
+const os = require('os');
+const OWN_NAMES = new Set(['localhost', os.hostname().toLowerCase(), `${os.hostname().toLowerCase()}.local`]);
+function hostAllowed(hostHeader) {
+  const host = String(hostHeader || '').toLowerCase().replace(/:\d+$/, '');
+  if (!host) return false;
+  if (OWN_NAMES.has(host) || host.endsWith('.localhost')) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;   // IPv4 literal
+  if (host.startsWith('[') && host.endsWith(']')) return true; // IPv6 literal
+  return false;
+}
+app.use((req, res, next) => {
+  if (!hostAllowed(req.headers.host)) {
+    return res.status(403).json({ error: 'Unrecognised host' });
+  }
+  const origin = req.headers.origin;
+  if (origin && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    let originHost = null;
+    try { originHost = new URL(origin).host.toLowerCase(); } catch {}
+    if (originHost !== String(req.headers.host).toLowerCase() && !DEV_ORIGINS.includes(origin)) {
+      return res.status(403).json({ error: 'Cross-site request refused' });
+    }
+  }
+  next();
+});
+
+app.use(cors({ origin: DEV_ORIGINS, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -48,7 +91,6 @@ timedRoute('/api/entries',  './routes/entries');
 timedRoute('/api/reflect',  './routes/reflect');
 timedRoute('/api/portrait', './routes/portrait');
 timedRoute('/api/tts',      './routes/tts');
-timedRoute('/api/notion',   './routes/notion');
 timedRoute('/api/settings', './routes/settings');
 timedRoute('/api/notes',    './routes/notes');
 timedRoute('/api/context',  './routes/context');

@@ -541,7 +541,6 @@ export default {
   "settings.voiceDeleted": "Stimme \"{name}\" gelöscht",
   "settings.uploadFailed": "Hochladen fehlgeschlagen",
   "settings.importFromNotion": "Aus Notion importieren",
-  "settings.notionImportDesc": "Lege deinen Notion-Export-ZIP ab, um deinen Verlauf in Liminal zu importieren. Der Import ist duplikatsicher — ein erneutes Ausführen überschreibt keine bestehenden Einträge.",
   "settings.notionDropZone": "Lege das Notion-Export-ZIP hier ab oder klicke zur Auswahl",
   "settings.notionExportPath": "Notion → Einstellungen → Export → Markdown & CSV",
   "settings.exportBackup": "↓ Liminal-Backup exportieren",
