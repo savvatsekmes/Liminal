@@ -50,7 +50,7 @@ const s = {
     marginBottom: '0',
   },
   quoteBlock: {
-    marginBottom: '24px',
+    marginBottom: 0,
     paddingLeft: '14px',
     borderLeft: '2px solid var(--border)',
   },
@@ -680,7 +680,7 @@ const s = {
   },
   // Pulse
   pulseBlock: {
-    marginBottom: '24px',
+    marginBottom: 0,
     paddingLeft: '14px',
     borderLeft: '2px solid var(--border)',
   },
@@ -759,7 +759,7 @@ const s = {
   },
   // Insight
   insightBlock: {
-    marginBottom: '24px',
+    marginBottom: 0,
     paddingLeft: '14px',
     borderLeft: '2px solid var(--border)',
   },
@@ -1608,11 +1608,11 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
         const q = quotePoolReady ? getDailyQuote(lang, userQuotes) : null;
         if (!q) {
           return (
-            <div style={{ ...s.quoteBlock, ...(isMobile ? { marginBottom: '16px', paddingLeft: '10px' } : {}) }} />
+            <div style={{ ...s.quoteBlock, ...(isMobile ? { paddingLeft: '10px' } : {}) }} />
           );
         }
         return (
-          <div style={{ ...s.quoteBlock, ...(isMobile ? { marginBottom: '16px', paddingLeft: '10px' } : {}) }}>
+          <div style={{ ...s.quoteBlock, ...(isMobile ? { paddingLeft: '10px' } : {}) }}>
             <span style={s.quoteText}>"{q.text}"</span>
             <span style={s.pulseAttribution}>
               {q.author && <span>— {q.author}</span>}
@@ -2760,7 +2760,9 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
         {/* Widget zone */}
         <DndContext sensors={sensors} collisionDetection={customCollision} onDragEnd={handleDragEnd}>
           <SortableContext items={layout.currentLayout.map(w => w.id)} strategy={() => []}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '16px', alignItems: 'stretch' }}>
+            {/* Rows sit 24px apart — the same as the gap under the top row — so
+                every row on Home has the same space above and below. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', columnGap: '16px', rowGap: '24px', alignItems: 'stretch' }}>
               {layout.currentLayout.map((widget) => {
                 const content = renderWidget(widget.id, widget.width);
                 if (!content && !layout.editMode) return null;
