@@ -2540,7 +2540,7 @@ export default function HomePage({ username, avatarUrl, layoutPreference, onNavi
     <div style={s.root}>
       <div style={s.inner}>
         {/* Greeting + Quick Ask row */}
-        <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '48px', minHeight: '160px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
+        <div ref={greetingRowRef} style={{ display: 'flex', alignItems: 'stretch', gap: '18px', marginBottom: '24px', minHeight: '160px', ...(rowHeight ? { height: rowHeight, maxHeight: rowHeight } : {}) }}>
           {/* Pinned to the top of the row (not centred) so the wordmark's baseline
               stays on the shared title line however tall the row grows; nudged
               12px right so the logo's centre sits over the page icons' centre
