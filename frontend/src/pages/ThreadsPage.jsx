@@ -6,6 +6,9 @@ import { useSwipeNav } from '../hooks/useSwipeNav';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useFirstTourTrigger } from '../components/TutorialContext';
 import PageHero from '../components/PageHero';
+import ResizeDivider from '../components/ResizeDivider';
+import { useResizable } from '../hooks/useResizable';
+import { LIST_CARD_STYLE, MAIN_CARD_STYLE } from '../components/FilterPopover';
 
 const s = {
   root: {
@@ -19,7 +22,6 @@ const s = {
   sidebar: {
     width: '260px',
     flexShrink: 0,
-    borderRight: 'var(--border-style)',
     display: 'flex',
     flexDirection: 'column',
     minHeight: 0,
@@ -752,16 +754,22 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
     return t('threads.detecting') || 'Detecting themes…';
   }, [detectJob, t]);
 
+  // List width: resizable like the other card pages (grip in the gap).
+  const [listWidth, startListDrag] = useResizable(260, { min: 220, max: 480 });
+
   return (
     <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
-      <aside style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, borderRight: 'none', display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
+      <aside style={{ ...s.sidebar, width: `${listWidth}px`, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
         <PageHero
           data-tour-id="threads-intro"
           icon="/page-icons/threads.png"
           iconScale={1.2}
           title={t('threads.title') || 'Threads'}
           subtitle={t('threads.tagline') || 'The arcs weaving through your life'}
+          divider={false}
         />
+        {/* Re-thread and the theme list sit in a card under the icon and title. */}
+        <div style={LIST_CARD_STYLE}>
         <div style={s.detectRow}>
           <button
             data-tour-id="threads-rethread"
@@ -874,9 +882,13 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
             </div>
           )}
         </div>
+        </div>
       </aside>
 
-      <section style={{ ...s.detail, ...(isMobile && mobileView === 'list' ? { display: 'none' } : {}) }}>
+      {!isMobile && <ResizeDivider onMouseDown={startListDrag} hideLine />}
+
+      {/* Theme detail — a card on desktop */}
+      <section style={{ ...s.detail, ...(isMobile ? {} : { ...MAIN_CARD_STYLE, margin: '16px 16px 16px 0' }), ...(isMobile && mobileView === 'list' ? { display: 'none' } : {}) }}>
         {isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: 'var(--border-style)', flexShrink: 0 }}>
             <button
