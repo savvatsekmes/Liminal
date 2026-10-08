@@ -210,12 +210,11 @@ function AstroField({ label, value, missing }) {
 }
 
 
+// Tabs as small bevelled boxes (the Home-card fill); the selected one dark.
 const tabBarStyle = {
   display: 'flex',
-  gap: '4px',
-  marginBottom: '28px',
-  borderBottom: 'var(--border-style)',
-  paddingBottom: '0',
+  gap: '8px',
+  marginBottom: '16px',
 };
 const tabStyle = {
   padding: '8px 16px',
@@ -224,17 +223,16 @@ const tabStyle = {
   letterSpacing: '0.05em',
   textTransform: 'uppercase',
   color: 'var(--muted)',
-  background: 'none',
+  background: 'var(--near-white)',
   border: 'none',
-  borderBottom: '2px solid transparent',
+  borderRadius: '12px',
   cursor: 'pointer',
   fontFamily: 'var(--font)',
-  transition: 'color 0.12s, border-color 0.12s',
-  marginBottom: '-1px',
+  transition: 'color 0.12s, background 0.12s',
 };
 const tabActiveStyle = {
-  color: 'var(--strong)',
-  borderBottomColor: 'var(--strong)',
+  color: 'var(--white)',
+  background: 'var(--strong)',
 };
 
 export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded }) {
@@ -269,16 +267,15 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
     Math.floor((window.innerWidth - 48) / 2),
     { min: 280, max: window.innerWidth - 48 - 280 }
   );
-  // Measure the actual page container after mount so the right panel takes
-  // EXACTLY half AFTER subtracting the 9px ResizeDivider sitting between the
-  // two columns. The left column is `flex: 1` so it absorbs the remainder —
-  // setting the right panel to (containerW - 9) / 2 makes both visible
-  // halves identical instead of leaving the left ~9px narrower.
+  // Measure the actual page container after mount so the two cards come out
+  // EXACTLY equal: the form card is `flex: 1` after a 48px left inset, then a
+  // 16px gap (the resize grip), then the portrait card with a 16px right
+  // margin — so the portrait card is (containerW - 80) / 2.
   const splitContainerRef = useRef(null);
   useLayoutEffect(() => {
     if (!splitContainerRef.current || isMobile) return;
     const measured = splitContainerRef.current.clientWidth;
-    if (measured > 0) setPortraitPanelWidth(Math.floor((measured - 9) / 2));
+    if (measured > 0) setPortraitPanelWidth(Math.floor((measured - 80) / 2));
   }, [isMobile, setPortraitPanelWidth]);
 
   useEffect(() => {
@@ -444,7 +441,9 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
       {oracleHeader}
     <div ref={splitContainerRef} style={{ ...s.root, ...(isMobile ? { flexDirection: 'column', overflowY: 'auto' } : {}) }}>
       {/* ── Left: form column ── */}
-      <div style={{ ...s.formCol, paddingTop: '0', ...(isMobile ? { padding: '0 16px 24px', overflowY: 'visible', flex: 'none' } : {}) }}>
+      <div style={isMobile
+        ? { ...s.formCol, padding: '0 16px 24px', overflowY: 'visible', flex: 'none' }
+        : { ...s.formCol, margin: '0 0 16px 48px', padding: '24px 28px 40px', background: 'var(--near-white)', borderRadius: '16px' }}>
 
       <>
       {/* Personality */}
@@ -512,7 +511,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
         {/* Calculated results */}
         {portrait.birth_date && (
-          <div style={{ marginTop: '20px', padding: '16px 20px', border: 'none', borderRadius: '16px', background: 'var(--near-white)' }}>
+          <div style={{ marginTop: '20px', padding: '16px 20px', border: 'none', borderRadius: '16px', background: 'var(--white)' }}>
             <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '12px' }}>
               {t('portrait.calculated')}
             </div>
@@ -608,7 +607,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
       </div>{/* end formCol */}
 
-      {!isMobile && <ResizeDivider onMouseDown={startPortraitPanelDrag} inverted />}
+      {!isMobile && <ResizeDivider onMouseDown={startPortraitPanelDrag} inverted hideLine />}
       {/* ── Right: character portrait panel — stacks below on mobile ── */}
       <CharacterPortraitPanel
         width={isMobile ? '100%' : portraitPanelWidth}
@@ -684,6 +683,7 @@ function CharacterPortraitPanel({ description, edited = false, generating, editi
       flexDirection: 'column',
       overflow: isMobile ? 'visible' : 'hidden',
       borderTop: isMobile ? 'var(--border-style)' : undefined,
+      ...(isMobile ? {} : { borderRadius: '16px', margin: '0 16px 16px 0' }),
     }}>
       {/* Header */}
       <div style={{
