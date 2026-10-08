@@ -55,7 +55,6 @@ const s = {
     flexDirection: 'column',
     flex: 1,
     minWidth: 0,
-    borderRight: 'var(--border-style)',
     overflow: 'hidden',
     position: 'relative',
   },
@@ -67,7 +66,7 @@ const s = {
     height: '40px',
     borderBottom: 'var(--border-style)',
     flexShrink: 0,
-    background: 'var(--white)',
+    background: 'transparent', // the editor sits in a card; its fill shows through
   },
   toolbarBtn: {
     width: '28px',
@@ -763,7 +762,7 @@ const editor = useEditor({
 
       {/* Polish + Mic — fixed footer */}
       {entry && (
-        <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)', display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'transparent', display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
             data-tour-id="journal-polish"
             style={{

@@ -116,10 +116,11 @@ function FittedTitle({ text, sizeAs = WORDMARK_TEXT, width = WORDMARK_TEXT_WIDTH
 // list column. `iconScale`: draw an icon that reads small in the shared box
 // (tall or round shapes) a little bigger. It grows upward and outward from
 // its bottom edge, so the title and its baseline don't move.
-export default function PageHero({ icon, title, subtitle, page = false, iconScale = 1, ...rest }) {
+// `divider={false}`: no rule under the hero (pages whose content sits in cards).
+export default function PageHero({ icon, title, subtitle, page = false, iconScale = 1, divider = true, ...rest }) {
   const iconStyle = iconScale === 1 ? s.icon : { ...s.icon, transform: `scale(${iconScale})`, transformOrigin: 'center bottom' };
   return (
-    <div className={page ? 'page-hero page-hero--page' : 'page-hero'} style={page ? s.heroPage : s.hero} {...rest}>
+    <div className={page ? 'page-hero page-hero--page' : 'page-hero'} style={page ? s.heroPage : (divider ? s.hero : { ...s.hero, borderBottom: 'none' })} {...rest}>
       <div style={s.box}>
         <img src={icon} alt="" aria-hidden="true" className="page-icon" draggable={false} style={iconStyle} />
         {/* Titles end in a full stop, like the "Liminal." wordmark. */}

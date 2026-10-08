@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useLanguage } from '../i18n/LanguageContext';
 import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 import { useTagEmojis } from '../hooks/useTagEmojis';
@@ -84,6 +86,18 @@ const s = {
     overflow: 'hidden',
     minWidth: 0,
   },
+  // Card holding the calendar, search and entries — a Home-style bevelled
+  // square under the page icon and title (which stay on the white page).
+  listCard: {
+    flex: 1,
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    margin: '0 0 16px 16px',
+    background: 'var(--near-white)',
+    borderRadius: '16px',
+  },
   search: {
     margin: '8px 10px',
     padding: '5px 10px',
@@ -165,6 +179,19 @@ const s = {
     padding: '16px 6px',
     gap: '4px',
   },
+  // Inside the editor card (desktop): the card's fill shows through, no rule.
+  tagStripInCard: {
+    width: '76px',
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    background: 'transparent',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    padding: '16px 6px',
+    gap: '4px',
+  },
 };
 
 
@@ -237,12 +264,23 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
 
   useListArrowNav(filtered, (e) => e.id, activeId, onSelect);
 
+  // On desktop the tag column is drawn inside the editor's card (Layout's
+  // #journal-tag-strip-slot); its state stays here. Phones have no slot, so it
+  // stays beside the list.
+  const isMobile = useIsMobile();
+  const [stripTarget, setStripTarget] = useState(null);
+  useEffect(() => {
+    setStripTarget(isMobile ? null : document.getElementById('journal-tag-strip-slot'));
+  }, [isMobile]);
+  const renderStrip = (node) => (stripTarget ? createPortal(node, stripTarget) : node);
+
   return (
     <div style={s.root}>
       {/* List column */}
       <div style={s.listCol}>
-        <PageHero icon="/page-icons/journal.png" title={filterTag !== ALL_TAG ? filterTag : t('nav.journal')} />
+        <PageHero icon="/page-icons/journal.png" title={filterTag !== ALL_TAG ? filterTag : t('nav.journal')} divider={false} />
 
+        <div style={s.listCard}>
         <Calendar items={filtered} activeId={activeId} onSelect={onSelect} collapsibleKey="journal" />
 
         <input
@@ -281,10 +319,12 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
             />
           ))}
         </div>
+        </div>
       </div>
 
       {/* Tag strip */}
-      <div data-tour-id="journal-tag-filter" style={s.tagStrip}>
+      {renderStrip(
+      <div data-tour-id="journal-tag-filter" style={stripTarget ? s.tagStripInCard : s.tagStrip}>
         <TagPill
           label={t('notes.typeAll')}
           active={filterTag === ALL_TAG}
@@ -385,6 +425,7 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
 
         <div style={{ flex: 1 }} />
       </div>
+      )}
 
       {confirmModal && (
         <ConfirmModal

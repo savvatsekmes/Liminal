@@ -56,7 +56,7 @@ const s = {
     borderTop: 'var(--border-style)',
     padding: '14px 18px',
     flexShrink: 0,
-    background: 'var(--white)',
+    background: 'transparent', // the Mirror sits in a card; its fill shows through
     display: 'flex',
     gap: '10px',
     alignItems: 'center',

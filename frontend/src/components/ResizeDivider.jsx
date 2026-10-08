@@ -13,7 +13,10 @@
  *   onMouseDown  — startDrag from useResizable
  *   inverted     — true for right-side panels (drag left = wider)
  */
-export default function ResizeDivider({ onMouseDown, inverted = false }) {
+// hideLine: between rounded cards the gap itself separates the panels, so the
+// 1px line only appears while hovering (to show it can be dragged).
+export default function ResizeDivider({ onMouseDown, inverted = false, hideLine = false }) {
+  const restColor = hideLine ? 'transparent' : 'var(--border-color, rgba(0,0,0,0.1))';
   return (
     <div
       onMouseDown={(e) => onMouseDown(e, inverted)}
@@ -31,7 +34,7 @@ export default function ResizeDivider({ onMouseDown, inverted = false }) {
         e.currentTarget.querySelector('.rd-line').style.background = 'rgba(0,0,0,0.18)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.querySelector('.rd-line').style.background = 'var(--border-color, rgba(0,0,0,0.1))';
+        e.currentTarget.querySelector('.rd-line').style.background = restColor;
       }}
     >
       {/* Visible 1px centre line */}
@@ -39,7 +42,7 @@ export default function ResizeDivider({ onMouseDown, inverted = false }) {
         className="rd-line"
         style={{
           width: '1px',
-          background: 'var(--border-color, rgba(0,0,0,0.1))',
+          background: restColor,
           transition: 'background 0.15s',
           pointerEvents: 'none',
         }}

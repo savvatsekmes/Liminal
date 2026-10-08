@@ -71,6 +71,18 @@ const styles = {
     width: '0',
     overflow: 'hidden',
   },
+  // Journal page cards — the same "bevelled squares" as Home's widgets: light
+  // fill, no border, 16px corners, 16px gaps on the white page. The list's
+  // card lives in EntryList (under the page icon and title); the tag column
+  // renders into the editor card's slot (#journal-tag-strip-slot).
+  journalCard: {
+    background: 'var(--near-white)',
+    borderRadius: '16px',
+    overflow: 'hidden',
+    display: 'flex',
+    minWidth: 0,
+    boxSizing: 'border-box',
+  },
   // Content area (canvas + mirror)
   content: {
     flex: 1,
@@ -611,11 +623,13 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
         <>
           <div style={{
             ...styles.entryList,
+            background: 'transparent',
             width: entryListOpen ? entryListWidth + 'px' : 0,
           }}>
             {entryList}
           </div>
-          {entryListOpen && <ResizeDivider onMouseDown={startEntryDrag} />}
+          {/* Sits in the 16px gap between the list card and the editor card. */}
+          {entryListOpen && <ResizeDivider onMouseDown={startEntryDrag} hideLine />}
         </>
       )}
 
@@ -627,15 +641,24 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
           display: 'flex',
           overflow: 'hidden',
         }}>
-          {canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}
+          {activeView === 'journal' ? (
+            // Editor card: the tag column (rendered here by EntryList) + the editor.
+            <div style={{ ...styles.journalCard, flex: 1, margin: entryListOpen ? '16px 0 16px 7px' : '16px 0 16px 16px' }}>
+              <div id="journal-tag-strip-slot" style={{ display: 'flex', flexShrink: 0 }} />
+              {canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}
+            </div>
+          ) : canvas({ toggleEntryList: () => setEntryListOpen((v) => !v), entryListOpen })}
         </div>
-        {activeView === 'journal' && <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted />}
+        {activeView === 'journal' && <ResizeDivider onMouseDown={(e) => startMirrorDrag(e)} inverted hideLine />}
         <div style={{
           width: activeView === 'journal' ? `${mirrorPct}%` : 0,
           minWidth: 0,
           overflow: 'hidden',
+          display: 'flex',
         }}>
-          {mirror}
+          {activeView === 'journal' ? (
+            <div style={{ ...styles.journalCard, flex: 1, margin: '16px 16px 16px 7px' }}>{mirror}</div>
+          ) : mirror}
         </div>
       </div>
     </div>
