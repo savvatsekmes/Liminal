@@ -1256,7 +1256,7 @@ function NoteToolbar({ editor, saveStatus, onVersionsOpen, onCardPull, onDoodle,
       height: '40px',
       borderBottom: 'var(--border-style)',
       flexShrink: 0,
-      background: 'var(--white)',
+      background: 'transparent', // the editor sits in a card; its fill shows through
     }}>
       {btn('Bold',          editor.isActive('bold'),          () => editor.chain().focus().toggleBold().run(),          <strong>B</strong>)}
       {btn('Italic',        editor.isActive('italic'),        () => editor.chain().focus().toggleItalic().run(),        <em>I</em>)}
@@ -1582,7 +1582,7 @@ async function handlePolish() {
   const hasText = editor && editor.getText().trim().length > 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%', overflow: 'hidden' }}>
       {/* Formatting toolbar (with mic on right) */}
       <NoteToolbar
         editor={editor}
@@ -1603,7 +1603,7 @@ async function handlePolish() {
         padding: '8px 14px',
         borderBottom: 'var(--border-style)',
         flexShrink: 0,
-        background: 'var(--white)',
+        background: 'transparent',
       }}>
         <TypeSelector
           note={note}
@@ -1653,7 +1653,7 @@ async function handlePolish() {
       </div>
 
       {/* Polish + Mic — fixed footer */}
-      <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'var(--white)', display: 'flex', gap: '10px', alignItems: 'center' }}>
+      <div style={{ borderTop: 'var(--border-style)', padding: '14px 18px', flexShrink: 0, background: 'transparent', display: 'flex', gap: '10px', alignItems: 'center' }}>
         <button
           data-tour-id="notes-polish"
           style={{
