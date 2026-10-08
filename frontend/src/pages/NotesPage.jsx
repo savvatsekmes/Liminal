@@ -180,8 +180,21 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
     window.addEventListener('mouseup', onUp);
   }, [mirrorPct]);
 
+  // Which note the reflection on screen belongs to, plus a counter bumped on
+  // every switch — the same guard as the journal's useReflect: a stream or
+  // load for note A stops touching state once B is open, and whole-array
+  // saves only go to the note that's shown.
+  const reflectShownRef = useRef({ noteId: null, seq: 0 });
+  function beginShowingReflection(noteId) {
+    reflectShownRef.current = { noteId, seq: reflectShownRef.current.seq + 1 };
+    return reflectShownRef.current.seq;
+  }
+  const isReflectionCurrent = (seq) => reflectShownRef.current.seq === seq;
+
   // Load saved reflection when note changes
   useEffect(() => {
+    const seq = beginShowingReflection(activeNote?.id ?? null);
+    setReflecting(false);
     setReflectBlocks([]);
     setNoteExtracted(null);
     setReflectError(null);
@@ -190,6 +203,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
     apiFetch(`/api/notes/${activeNote.id}/reflect`)
       .then((r) => r.json())
       .then((data) => {
+        if (!isReflectionCurrent(seq)) return;
         if (data.blocks?.length) setReflectBlocks(data.blocks);
         setNoteExtracted(data.extracted_items || null);
       })
@@ -200,6 +214,7 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
     if (!activeNote?.id) return;
     const noteText = (activeNote.body || '').replace(/<[^>]*>/g, ' ');
     if (!await confirmIfCrisis(noteText)) return;
+    const seq = beginShowingReflection(activeNote.id);
     setReflecting(true);
     setReflectError(null);
     // Clear prior blocks so the new reflection visibly streams in fresh.
@@ -231,6 +246,9 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        // Switched to another note: stop applying this stream (the backend
+        // still saves it to its own note).
+        if (!isReflectionCurrent(seq)) { reader.cancel().catch(() => {}); return; }
         buffer += decoder.decode(value, { stream: true });
         let sepIdx;
         while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
@@ -264,15 +282,15 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
       }
       if (streamErr) throw new Error(streamErr);
     } catch (err) {
-      setReflectError(err.message);
+      if (isReflectionCurrent(seq)) setReflectError(err.message);
     } finally {
-      setReflecting(false);
+      if (isReflectionCurrent(seq)) setReflecting(false);
     }
   }
 
   // Persist a manually-edited blocks array to the note's reflection.
   async function saveNoteBlocks(noteId, nextBlocks) {
-    if (!noteId) return;
+    if (!noteId || noteId !== reflectShownRef.current.noteId) return;
     try {
       await apiFetch(`/api/notes/${noteId}/reflect/blocks`, {
         method: 'PUT',
@@ -296,7 +314,9 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
   // current, so it survives the user editing and immediately switching notes.
   async function handlePatchNoteBlock(noteId, index, patch) {
     if (!noteId || index == null) return;
-    setReflectBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    if (noteId === reflectShownRef.current.noteId) {
+      setReflectBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    }
     try {
       await apiFetch(`/api/notes/${noteId}/reflect/blocks/${index}`, {
         method: 'PATCH',

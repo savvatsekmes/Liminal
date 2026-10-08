@@ -573,6 +573,7 @@ router.post('/tutorial-reset', requireAuth, (req, res) => {
 // requirements).
 function wipeUserData(uid) {
   const avatarRow = db.prepare('SELECT avatar_path FROM users WHERE id = ?').get(uid);
+  const entryIds = db.prepare('SELECT id FROM entries WHERE user_id = ?').all(uid).map((r) => r.id);
 
   db.prepare('DELETE FROM reflections WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
   db.prepare('DELETE FROM entry_embeddings WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)').run(uid);
@@ -590,6 +591,12 @@ function wipeUserData(uid) {
   db.prepare('DELETE FROM memory WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM portrait WHERE user_id = ?').run(uid);
   db.prepare('DELETE FROM home_layouts WHERE user_id = ?').run(uid);
+  // Everything else the account owns — summaries of the journal (home
+  // insights, photo descriptions, life context) used to survive deletion.
+  for (const table of ['life_context', 'image_descriptions', 'locked_tags', 'core_tags',
+    'daily_cards', 'home_cache', 'youtube_transcripts', 'memories_archive']) {
+    try { db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(uid); } catch { /* table not created yet */ }
+  }
   // thread_nodes is ON DELETE CASCADE on thread_id
   db.prepare('DELETE FROM threads WHERE user_id = ?').run(uid);
   // Per-user scoped settings live as `key::userId` (see settingsService).
@@ -605,6 +612,10 @@ function wipeUserData(uid) {
     } catch (err) {
       console.warn('[delete-account] avatar unlink failed:', err.message);
     }
+  }
+  // Images that older imports copied in for these entries.
+  for (const id of entryIds) {
+    try { fs.rmSync(path.join(DATA_DIR, 'journal-media', String(id)), { recursive: true, force: true }); } catch {}
   }
   // The librarian's index is shared by every account on this machine; the
   // deleted user's items are pruned above (librarianService.pruneDeleted).

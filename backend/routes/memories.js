@@ -611,15 +611,16 @@ router.post('/dedup-restore', (req, res) => {
   // we kept). INSERT OR IGNORE so we don't crash on those — the canonical
   // already lives there.
   const insertBack = db.prepare(`
-    INSERT OR IGNORE INTO memories (id, user_id, content, pinned, source_entry_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO memories (id, user_id, content, pinned, is_core, status, source_entry_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const removeArchive = db.prepare("DELETE FROM memories_archive WHERE id = ? AND user_id = ?");
 
   let restored = 0;
   const tx = db.transaction(() => {
     for (const a of archived) {
-      const result = insertBack.run(a.id, a.user_id, a.content, a.pinned || 0, a.source_entry_id || null, a.created_at);
+      // The archive kept is_core and status — restore them too.
+      const result = insertBack.run(a.id, a.user_id, a.content, a.pinned || 0, a.is_core || 0, a.status || 'active', a.source_entry_id || null, a.created_at);
       if (result.changes > 0) restored++;
       removeArchive.run(a.id, a.user_id);
     }

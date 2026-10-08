@@ -112,7 +112,7 @@ router.get('/insight', async (req, res) => {
   let memoryContext = '';
   try {
     const memoryService = require('../services/memoryService');
-    const synthesis = await memoryService.synthesize(req.userId);
+    const synthesis = await memoryService.synthesizeMemory(req.userId);
     if (synthesis) memoryContext = `\n\nMemory synthesis:\n${synthesis.slice(0, 500)}`;
   } catch {}
 

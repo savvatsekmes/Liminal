@@ -557,10 +557,14 @@ router.patch('/:entryId/blocks/:index', (req, res) => {
     const blocks = Array.isArray(saved) ? saved : (saved.blocks || []);
     if (index < 0 || index >= blocks.length) return res.status(400).json({ error: 'index out of range' });
     blocks[index] = applyPatchWithEditTracking(blocks[index], patch);
+    // Keep everything else in the saved reflection (closing question and
+    // the user's answer, time anchor, extracted items) — only one block
+    // changed. Writing just { opening, blocks } used to delete the answer.
+    const savedData = Array.isArray(saved) ? { opening, blocks } : { ...saved, opening, blocks };
     db.prepare(
       `INSERT OR REPLACE INTO reflections (entry_id, user_id, blocks, updated_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify({ opening, blocks })));
+    ).run(entryId, req.userId, encryptField(req.userId, JSON.stringify(savedData)));
     res.json({ opening, blocks });
   } catch (err) {
     console.error('[reflect] PATCH block failed:', err.message);

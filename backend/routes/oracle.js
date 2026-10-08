@@ -401,6 +401,8 @@ router.delete('/sessions/:id', (req, res) => {
     .run(session.id, req.userId);
   db.prepare('UPDATE notes SET linked_session_id = NULL WHERE linked_session_id = ? AND user_id = ?')
     .run(session.id, req.userId);
+  db.prepare(`DELETE FROM thread_nodes WHERE content_type = 'conversation' AND content_id = ?
+              AND thread_id IN (SELECT id FROM threads WHERE user_id = ?)`).run(session.id, req.userId);
   db.prepare('DELETE FROM oracle_sessions WHERE id = ?').run(session.id);
   res.json({ success: true });
 });

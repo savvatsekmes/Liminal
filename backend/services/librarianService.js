@@ -59,22 +59,25 @@ function sync(userId, { force = false } = {}) {
       if (!job.total) return;
       console.log(`[librarian] user ${userId}: indexing ${entries.length} entries and ${memories.length} memories${force ? ' (rebuild)' : ' missing from the index'}`);
 
+      // In batches: each batch is embedded, then written to the index in one
+      // go (one file rewrite per batch rather than two per item).
+      const BATCH = 32;
+      const runBatches = async (rows, textOf, indexBatch) => {
+        for (let i = 0; i < rows.length; i += BATCH) {
+          const slice = rows.slice(i, i + BATCH);
+          const items = slice.map((r) => ({ id: r.id, text: textOf(r) })).filter((it) => it.text);
+          try {
+            const { indexed, failed } = await indexBatch(undefined, items);
+            job.indexed += indexed;
+            job.failed += failed;
+          } catch { job.failed += items.length; }
+          job.done += slice.length;
+        }
+      };
       job.phase = 'entries';
-      for (const r of entries) {
-        const text = plaintext(userId, r.body_text);
-        if (text) {
-          try { await embedding.indexEntryInto(undefined, r.id, text); job.indexed++; } catch { job.failed++; }
-        }
-        job.done++;
-      }
+      await runBatches(entries, (r) => plaintext(userId, r.body_text), embedding.indexEntriesInto);
       job.phase = 'memories';
-      for (const r of memories) {
-        const text = plaintext(userId, r.content);
-        if (text) {
-          try { await embedding.indexMemoryInto(undefined, r.id, text); job.indexed++; } catch { job.failed++; }
-        }
-        job.done++;
-      }
+      await runBatches(memories, (r) => plaintext(userId, r.content), embedding.indexMemoriesInto);
       console.log(`[librarian] user ${userId}: ${job.indexed} indexed, ${job.failed} failed in ${Math.round((Date.now() - t0) / 1000)}s`);
     } catch (err) {
       job.error = err.message;

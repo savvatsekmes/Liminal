@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiFetch } from '../utils/api';
 import { useTtsOnline } from '../utils/ttsStatus';
 import { useCrisisGate } from '../components/CrisisGate';
@@ -29,9 +29,22 @@ export function useReflect() {
   // the only true open-ended chat surface.
   const { confirmIfCrisis } = useCrisisGate();
 
+  // Which entry the blocks on screen belong to, and a counter bumped every
+  // time that changes. A reflection still streaming (or loading) for entry A
+  // checks it before touching state, so switching to B mid-stream can't mix
+  // A's blocks into B — and the edit/delete/add saves below, which write the
+  // whole array, refuse to write to any entry but the one shown.
+  const shownRef = useRef({ entryId: null, seq: 0 });
+  function beginShowing(entryId) {
+    shownRef.current = { entryId, seq: shownRef.current.seq + 1 };
+    return shownRef.current.seq;
+  }
+  const isCurrent = (seq) => shownRef.current.seq === seq;
+
   async function reflect(entry, archetype) {
     if (!entry || !entry.body_text) return;
     if (!await confirmIfCrisis(entry.body_text)) return;
+    const seq = beginShowing(entry.id);
     setLoading(true);
     setError(null);
     // Reset blocks/opening so prior reflection visibly clears as the new one
@@ -89,6 +102,9 @@ export function useReflect() {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        // Switched to another entry: stop applying this stream. (The backend
+        // still finishes and saves this reflection to its own entry.)
+        if (!isCurrent(seq)) { reader.cancel().catch(() => {}); return; }
         buffer += decoder.decode(value, { stream: true });
         // SSE events are separated by a blank line (\n\n).
         let sepIdx;
@@ -135,9 +151,9 @@ export function useReflect() {
       }
       if (streamErr) throw new Error(streamErr);
     } catch (err) {
-      setError(err.message);
+      if (isCurrent(seq)) setError(err.message);
     } finally {
-      setLoading(false);
+      if (isCurrent(seq)) setLoading(false);
     }
   }
 
@@ -157,14 +173,17 @@ export function useReflect() {
 
       if (!res.ok) throw new Error('Regeneration failed.');
 
+      const seq = shownRef.current.seq;
       const newBlock = await res.json();
-      setBlocks((prev) => prev.map((b, i) => (i === index ? newBlock : b)));
+      if (isCurrent(seq)) setBlocks((prev) => prev.map((b, i) => (i === index ? newBlock : b)));
     } catch (err) {
       console.error('[useReflect] Regen failed:', err.message);
     }
   }
 
   async function loadReflections(entryId) {
+    const seq = beginShowing(entryId || null);
+    setLoading(false);
     setBlocks([]);
     setOpening(null);
     setTimeAnchor(null);
@@ -177,6 +196,7 @@ export function useReflect() {
       const res = await apiFetch(`/api/reflect/${entryId}`);
       if (res.ok) {
         const data = await res.json();
+        if (!isCurrent(seq)) return; // a newer entry was opened meanwhile
         setOpening(data.opening || null);
         setBlocks(data.blocks || []);
         setTimeAnchor(data.time_anchor || null);
@@ -204,6 +224,8 @@ export function useReflect() {
   }
 
   function clearBlocks() {
+    beginShowing(null);
+    setLoading(false);
     setBlocks([]);
     setOpening(null);
     setTimeAnchor(null);
@@ -217,7 +239,7 @@ export function useReflect() {
   // additions, and deletions. Pass the latest array explicitly so we don't race
   // React's state batching.
   async function saveBlocks(entryId, nextBlocks, nextOpening) {
-    if (!entryId) return;
+    if (!entryId || entryId !== shownRef.current.entryId) return;
     try {
       await apiFetch(`/api/reflect/${entryId}/blocks`, {
         method: 'PUT',
@@ -247,7 +269,9 @@ export function useReflect() {
   async function patchBlock(entryId, index, patch) {
     if (!entryId || index == null) return;
     // Optimistic local update so UI updates instantly when not switching entries
-    setBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    if (entryId === shownRef.current.entryId) {
+      setBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    }
     try {
       await apiFetch(`/api/reflect/${entryId}/blocks/${index}`, {
         method: 'PATCH',

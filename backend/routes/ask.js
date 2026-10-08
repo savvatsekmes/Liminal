@@ -9,7 +9,8 @@ router.use(requireAuth);
 // POST /api/ask
 // Body: { question, archetype }
 router.post('/', async (req, res, next) => {
-  console.log('[ask] POST received, userId:', req.userId, 'body:', JSON.stringify(req.body));
+  // Never log the question itself — it's the user's private text.
+  console.log('[ask] POST received, userId:', req.userId);
   try {
     const { question, archetype = 'Direct Friend' } = req.body || {};
     if (!question?.trim()) return res.status(400).json({ error: 'question is required' });

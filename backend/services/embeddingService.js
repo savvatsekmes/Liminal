@@ -213,6 +213,28 @@ async function _upsert(dir, label, id, vector, metadata) {
   });
 }
 
+// Many items in one write. Outside an update, Vectra rewrites the whole index
+// file on every delete and insert — rebuilding ~2,000 items meant ~4,000
+// rewrites of a multi-MB file. One update = one rewrite.
+async function _upsertMany(dir, label, items) {
+  if (!items.length) return 0;
+  const index = await _getIndexAt(dir, label);
+  return _enqueueWrite(dir, async () => {
+    await index.beginUpdate();
+    try {
+      for (const { id, vector, metadata } of items) {
+        try { await index.deleteItem(id); } catch {}
+        await index.insertItem({ id, vector, metadata });
+      }
+      await index.endUpdate();
+      return items.length;
+    } catch (err) {
+      index.cancelUpdate();
+      throw err;
+    }
+  });
+}
+
 async function _remove(dir, label, id) {
   const index = await _getIndexAt(dir, label);
   return _enqueueWrite(dir, async () => {
@@ -320,6 +342,36 @@ async function entryVectors(entryIds, modelId) {
 async function getMemoryIndex(modelId) {
   const m = model(modelId);
   return _getIndexAt(m.memoriesDir, `${m.id} memory`);
+}
+
+/**
+ * Embed and index a batch of entries ([{ id, text }]) with a single index
+ * write. Returns { indexed, failed } — an item whose embedding fails is
+ * skipped, not the whole batch.
+ */
+async function indexEntriesInto(modelId, items) {
+  const m = model(modelId);
+  const ready = [];
+  let failed = 0;
+  for (const { id, text } of items) {
+    try { ready.push({ id: `entry_${id}`, vector: await embed(text, m.id, 'document'), metadata: { entryId: id } }); }
+    catch { failed++; }
+  }
+  await _upsertMany(m.entriesDir, `${m.id} entries`, ready);
+  return { indexed: ready.length, failed };
+}
+
+/** Same as indexEntriesInto, for memories. */
+async function indexMemoriesInto(modelId, items) {
+  const m = model(modelId);
+  const ready = [];
+  let failed = 0;
+  for (const { id, text } of items) {
+    try { ready.push({ id: `memory_${id}`, vector: await embed(text, m.id, 'document'), metadata: { memoryId: id } }); }
+    catch { failed++; }
+  }
+  await _upsertMany(m.memoriesDir, `${m.id} memory`, ready);
+  return { indexed: ready.length, failed };
 }
 
 async function indexMemoryInto(modelId, memoryId, text) {
@@ -443,7 +495,7 @@ function warmup() {
 module.exports = {
   MODELS, currentModelId, status, indexedEntryIds, indexedMemoryIds, pruneIndex,
   embed, embedMany, similarity,
-  indexEntry, indexEntryInto, querySimilar, entryVectors,
-  indexMemory, indexMemoryInto, unindexMemory, queryMemoriesSimilar, getMemoryIndex,
+  indexEntry, indexEntryInto, indexEntriesInto, querySimilar, entryVectors,
+  indexMemory, indexMemoryInto, indexMemoriesInto, unindexMemory, queryMemoriesSimilar, getMemoryIndex,
   warmup, invalidateIndexCache, VECTRA_DIR, VECTRA_MEMORIES_DIR,
 };

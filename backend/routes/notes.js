@@ -157,7 +157,12 @@ router.delete('/:id', (req, res) => {
     db.prepare('DELETE FROM oracle_sessions WHERE id = ? AND user_id = ?').run(existing.linked_session_id, req.userId);
   }
 
-  db.prepare('DELETE FROM notes WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+  // Its places in threads go with it (they inflated thread counts).
+  db.transaction(() => {
+    db.prepare(`DELETE FROM thread_nodes WHERE content_type = 'note' AND content_id = ?
+                AND thread_id IN (SELECT id FROM threads WHERE user_id = ?)`).run(req.params.id, req.userId);
+    db.prepare('DELETE FROM notes WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+  })();
   res.json({ success: true });
 });
 

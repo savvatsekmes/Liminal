@@ -224,8 +224,18 @@ db.exec(`
 `);
 
 // Add new columns if they don't exist yet (migration for existing databases)
+// Adds a column if it isn't there yet. "duplicate column" is expected (every
+// launch re-runs these), and so is "no such table" on a fresh database for
+// tables created further down with the column already in place. Anything
+// else is a real migration problem and is logged instead of swallowed.
 const addColumnSafe = (table, column, typeAndDefault) => {
-  try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeAndDefault}`); } catch {}
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeAndDefault}`);
+  } catch (err) {
+    if (!/duplicate column|no such table/i.test(err.message)) {
+      console.error(`[db] adding ${table}.${column} failed:`, err.message);
+    }
+  }
 };
 addColumnSafe('portrait', 'chinese_zodiac', 'TEXT');
 addColumnSafe('portrait', 'chinese_element', 'TEXT');
@@ -599,6 +609,16 @@ db.exec(`
     is_active   BOOLEAN DEFAULT 0,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+`);
+
+// Indexes for the per-user queries nearly every service runs
+// (WHERE user_id = ? ORDER BY date / created_at), and for the thread
+// "is this item already in a thread?" lookups. Created last so the user_id
+// columns added by the migrations above exist on old databases.
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_entries_user_date   ON entries(user_id, date DESC, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_notes_user_created  ON notes(user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_thread_nodes_content ON thread_nodes(content_type, content_id);
 `);
 
 module.exports = db;

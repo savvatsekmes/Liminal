@@ -345,7 +345,10 @@ async function matchItemsToTheme(theme, corpus) {
       if (Array.isArray(parsed[key])) { nums = parsed[key]; break; }
     }
   }
-  if (!nums.length) {
+  // Fallback for a reply that isn't JSON: accept only a bare list of numbers
+  // ("2, 5"). Pulling any number out of prose ("None fit — maybe 2 at most")
+  // put items into threads the model had just rejected.
+  if (!nums.length && /^[\s\d,.;[\]]*$/.test(String(raw || '').trim())) {
     const matches = String(raw || '').match(/\b\d+\b/g);
     if (matches) nums = matches.map(Number);
   }
@@ -1009,7 +1012,10 @@ async function threadSingleItem(type, id, userId) {
       if (Array.isArray(parsed[key])) { nums = parsed[key]; break; }
     }
   }
-  if (!nums.length) {
+  // Fallback for a reply that isn't JSON: accept only a bare list of numbers
+  // ("2, 5"). Pulling any number out of prose ("None fit — maybe 2 at most")
+  // put items into threads the model had just rejected.
+  if (!nums.length && /^[\s\d,.;[\]]*$/.test(String(raw || '').trim())) {
     const matches = String(raw || '').match(/\b\d+\b/g);
     if (matches) nums = matches.map(Number);
   }

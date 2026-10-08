@@ -309,9 +309,19 @@ async function* stream(systemPrompt, userMessage, options = {}) {
     const ollamaUrl = options.ollamaUrl || cfg.ollamaUrl;
     const model = options.model || cfg.ollamaModel;
 
+    // A local model that stalls mid-stream used to hang the reflection
+    // forever. Abort if nothing arrives for a while (generous: the first
+    // token waits on the model loading), and when the caller stops reading.
+    const OLLAMA_STALL_MS = 180000;
+    const controller = new AbortController();
+    let stallTimer = setTimeout(() => controller.abort(), OLLAMA_STALL_MS);
+    const resetStall = () => { clearTimeout(stallTimer); stallTimer = setTimeout(() => controller.abort(), OLLAMA_STALL_MS); };
+
+    try {
     const response = await fetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         model,
         stream: true,
@@ -336,6 +346,7 @@ async function* stream(systemPrompt, userMessage, options = {}) {
     let buffer = '';
     let inThink = false;
     for await (const rawChunk of response.body) {
+      resetStall();
       buffer += rawChunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -359,6 +370,13 @@ async function* stream(systemPrompt, userMessage, options = {}) {
           }
         } catch {}
       }
+    }
+    } catch (err) {
+      if (controller.signal.aborted) throw new Error('Ollama stopped responding (no output for 3 minutes).');
+      throw err;
+    } finally {
+      clearTimeout(stallTimer);
+      controller.abort(); // no-op if finished; stops generation if the caller quit early
     }
   }
 }

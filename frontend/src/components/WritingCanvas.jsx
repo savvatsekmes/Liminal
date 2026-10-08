@@ -186,6 +186,15 @@ export default function WritingCanvas({
   const saveTimer = useRef(null);
   const savedTimer = useRef(null);
   const snapshotTimer = useRef(null);
+  // The body waiting in the 800ms save debounce, captured together with the
+  // entry it belongs to. Switching entries or leaving the page saves it right
+  // away (flushPendingSave) instead of dropping what was typed since the last
+  // pause.
+  const pendingSaveRef = useRef(null);
+  // Title edits are debounced the same way. One PUT per keystroke could
+  // arrive out of order and leave an older prefix as the saved title.
+  const titleTimer = useRef(null);
+  const pendingTitleRef = useRef(null);
   // Tracks which entry's body is currently loaded into the Tiptap editor.
   // Defensive guard for the lock-edit bug: any onUpdate emission whose
   // captured entryId does not match this ref is a stale event from a prior
@@ -424,6 +433,7 @@ const editor = useEditor({
       setSaveStatus('saving');
       clearTimeout(saveTimer.current);
       clearTimeout(savedTimer.current);
+      pendingSaveRef.current = { entryId, html, text };
       saveTimer.current = setTimeout(async () => {
         // Re-check at fire time: the user may have switched entries during
         // the 800ms debounce, invalidating the captured html/entryId.
@@ -436,6 +446,7 @@ const editor = useEditor({
           return;
         }
         lockbug('save:FIRE', { entryId, htmlLen: html.length, htmlPrefix: html.slice(0, 60) });
+        pendingSaveRef.current = null;
         await onUpdate({ body: html, body_text: text }, entryId);
         setSaveStatus('saved');
         savedTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -505,25 +516,43 @@ const editor = useEditor({
     lockbug('reload:done', { entryId: entry?.id, loadedLen: loadedHtmlRef.current.length, epoch: loadEpochRef.current });
   }, [entry?.id]);
 
-  // Reset save status and timers when switching entries. Clearing saveTimer
-  // is critical: a pending debounced save captured from the previous entry
-  // would otherwise fire after the editor has reloaded with the new entry's
-  // content, silently overwriting one entry's body with another.
+  // Save the debounced body now, to the entry it was typed into. Uses the
+  // html + id captured together in onUpdate — never the editor's current
+  // content, which may already be the next entry's.
+  function flushPendingTitle() {
+    clearTimeout(titleTimer.current);
+    titleTimer.current = null;
+    const pending = pendingTitleRef.current;
+    pendingTitleRef.current = null;
+    if (pending) onUpdate({ title: pending.title }, pending.entryId);
+  }
+
+  function flushPendingSave() {
+    flushPendingTitle();
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (!pending) return;
+    lockbug('save:FLUSH', { entryId: pending.entryId, htmlLen: pending.html.length });
+    onUpdate({ body: pending.html, body_text: pending.text }, pending.entryId);
+  }
+
+  // Reset save status and timers when switching entries. The pending
+  // debounced save must not fire later (it would land after the editor has
+  // reloaded with the new entry) — it's flushed now, to its own entry.
   useEffect(() => {
     setSaveStatus('idle');
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    flushPendingSave();
     if (snapshotTimer.current) {
       clearTimeout(snapshotTimer.current);
       snapshotTimer.current = null;
     }
   }, [entry?.id]);
 
-  // Cleanup debounce on unmount
+  // Leaving the page: save what's pending, then clear the timers.
   useEffect(() => () => {
-    clearTimeout(saveTimer.current);
+    flushPendingSave();
     clearTimeout(savedTimer.current);
     clearTimeout(snapshotTimer.current);
   }, []);
@@ -722,11 +751,14 @@ const editor = useEditor({
             style={s.dateTitle}
             value={titleDraft}
             onFocus={() => { titleFocusedRef.current = true; }}
-            onBlur={() => { titleFocusedRef.current = false; }}
+            onBlur={() => { titleFocusedRef.current = false; flushPendingTitle(); }}
             onChange={(e) => {
               const next = e.target.value;
               setTitleDraft(next);
-              if (entry?.id) onUpdate({ title: next }, entry.id);
+              if (!entry?.id) return;
+              pendingTitleRef.current = { entryId: entry.id, title: next };
+              clearTimeout(titleTimer.current);
+              titleTimer.current = setTimeout(flushPendingTitle, 400);
             }}
             placeholder={t('journal.entryTitle')}
             aria-label={t('journal.entryTitle')}

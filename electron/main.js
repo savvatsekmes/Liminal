@@ -217,8 +217,9 @@ async function ensureTtsRunning() {
   }
   ttsStartingPromise = (async () => {
     try {
-      ttsProc = spawnTts();
-      if (!ttsProc) throw new Error('TTS server could not be started');
+      const child = spawnTts();
+      ttsProc = child;
+      if (!child) throw new Error('TTS server could not be started');
       markTtsActivity();
       scheduleTtsHiddenIdleCheck();
       // Mac MPS Turbo cold-load is ~10s; a multilingual swap on top can push
@@ -226,7 +227,12 @@ async function ensureTtsRunning() {
       // hung to the user (frontend shows a spinner during this).
       const deadline = Date.now() + 90000;
       while (Date.now() < deadline) {
-        if (ttsProc && ttsProc.killed) throw new Error('TTS server exited during startup');
+        // The exit/error handlers null ttsProc when the process dies, so a
+        // crash shows up as ttsProc no longer being this child — stop waiting
+        // instead of polling a dead process for the full 90s.
+        if (ttsProc !== child || child.killed || child.exitCode != null) {
+          throw new Error('TTS server exited during startup');
+        }
         if (await healthCheckTts(2000)) return;
         await new Promise((r) => setTimeout(r, 500));
       }
@@ -1339,8 +1345,13 @@ async function performBackup(backupDir, maxBackups, prfOutput, allowPasswordOnly
   // the user's other content. The Liminal_Backup wrapper keeps everything
   // Liminal-related in one tidy place; the per-user subfolder isolates
   // accounts on shared machines.
-  const userDir = sessionUsername
-    ? path.join(backupDir, 'Liminal_Backup', sessionUsername)
+  // Usernames can contain characters Windows won't allow in a folder name
+  // (: ? * …) or path segments (..) — keep the folder name to safe characters.
+  const safeUsername = sessionUsername
+    ? String(sessionUsername).replace(/[^\p{L}\p{N} ._-]/gu, '_').replace(/^\.+/, '_').slice(0, 64)
+    : null;
+  const userDir = safeUsername
+    ? path.join(backupDir, 'Liminal_Backup', safeUsername)
     : path.join(backupDir, 'Liminal_Backup');
   fs.mkdirSync(userDir, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');

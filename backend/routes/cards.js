@@ -146,9 +146,10 @@ router.get('/daily', async (req, res) => {
     // in today's energy rather than stitching together 3 entries' worth of
     // disparate detail. 200 chars is enough to convey current mood without
     // dumping a paragraph the model will try to name back.
+    // body_text is stored encrypted — decrypt before it goes in the prompt.
     const recentEntries = db.prepare(
       "SELECT title, body_text FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 1"
-    ).all(req.userId);
+    ).all(req.userId).map((e) => ({ ...e, body_text: safeDecrypt(req.userId, e.body_text) }));
     const journalContext = recentEntries
       .map(e => `${e.title || 'Untitled'}: ${(e.body_text || '').slice(0, 200)}`)
       .join('\n');
@@ -330,9 +331,11 @@ router.post('/pull', async (req, res) => {
   const memoryService = require('../services/memoryService');
 
   // Recent journal entries (last 5)
+  // Entry and note bodies are stored encrypted — decrypt before they go in
+  // the prompt (and before they're used as the memory-retrieval query).
   const recentEntries = db.prepare(
     "SELECT title, body_text FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 5"
-  ).all(req.userId);
+  ).all(req.userId).map((e) => ({ ...e, body_text: safeDecrypt(req.userId, e.body_text) }));
   const entryContext = recentEntries
     .map(e => `${e.title || 'Untitled'}: ${(e.body_text || '').slice(0, 200)}`)
     .join('\n');
@@ -340,7 +343,7 @@ router.post('/pull', async (req, res) => {
   // Recent notes
   const recentNotes = db.prepare(
     "SELECT type, body FROM notes WHERE user_id = ? ORDER BY created_at DESC LIMIT 5"
-  ).all(req.userId);
+  ).all(req.userId).map((n) => ({ ...n, body: safeDecrypt(req.userId, n.body) }));
   const noteContext = recentNotes
     .map(n => `[${n.type}] ${(n.body || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 150)}`)
     .join('\n');

@@ -95,6 +95,9 @@ export function useEntries() {
         }),
       });
       const entry = await res.json();
+      // Supersede any entry still loading from an earlier click, so it can't
+      // land on top of the new one.
+      ++selectSeqRef.current;
       setEntries((prev) => [entry, ...prev]);
       setActiveEntry(entry);
       window.dispatchEvent(new CustomEvent('liminal:entry-created', { detail: entry }));
@@ -146,11 +149,14 @@ export function useEntries() {
         const next = prev.filter((e) => e.id !== id);
         if (activeEntry?.id === id) {
           if (next[0]) {
-            // Fetch full entry (with body) to avoid loading an entry with undefined body
+            // Fetch full entry (with body) to avoid loading an entry with
+            // undefined body. Same sequence guard as selectEntry: if the user
+            // clicks another entry meanwhile, that one wins.
+            const seq = ++selectSeqRef.current;
             apiFetch(`${API}/entries/${next[0].id}`)
               .then((r) => r.json())
-              .then((full) => setActiveEntry(full))
-              .catch(() => setActiveEntry(next[0]));
+              .then((full) => { if (seq === selectSeqRef.current) setActiveEntry(full); })
+              .catch(() => { if (seq === selectSeqRef.current) setActiveEntry(next[0]); });
           } else {
             setActiveEntry(null);
           }

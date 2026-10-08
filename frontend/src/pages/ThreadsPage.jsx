@@ -597,11 +597,13 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
 
   async function refreshInsight() {
     if (!activeThread || regeneratingInsight) return;
+    const threadId = activeThread.id;
     setRegeneratingInsight(true);
     try {
-      const res = await apiFetch(`/api/threads/${activeThread.id}/insight`, { method: 'POST' });
+      const res = await apiFetch(`/api/threads/${threadId}/insight`, { method: 'POST' });
       const data = await res.json();
-      setActiveThread((prev) => prev ? { ...prev, insight: data.insight || '' } : prev);
+      // Only into the thread it was written for (the user may have moved on).
+      setActiveThread((prev) => prev?.id === threadId ? { ...prev, insight: data.insight || '' } : prev);
     } catch {}
     finally { setRegeneratingInsight(false); }
   }

@@ -278,19 +278,53 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
 
   const initial = (username || '?')[0].toUpperCase();
 
+  // ── Phone-layout state ──────────────────────────────────────────────────
+  // These hooks belong to the mobile layout below but must run on every
+  // render: isMobile follows the window width, so it can flip while Layout
+  // stays mounted (zooming in, resizing, rotating a tablet), and hooks called
+  // inside `if (isMobile)` then crash React (#310 / #300 — the blank page).
+  const moreRef = useRef(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Close more menu on outside tap
+  useEffect(() => {
+    if (!moreOpen) return;
+    function h(e) { if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false); }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [moreOpen]);
+
+  const [journalView, setJournalView] = useState('editor'); // 'list' | 'editor' | 'mirror'
+  useEffect(() => {
+    if (activeView !== 'journal') setJournalView('editor');
+  }, [activeView]);
+
+  // Open the editor whenever a brand-new entry is created — otherwise the
+  // "new entry" button on mobile would leave you stuck on the list view.
+  useEffect(() => {
+    function onCreated() { setJournalView('editor'); }
+    window.addEventListener('liminal:entry-created', onCreated);
+    return () => window.removeEventListener('liminal:entry-created', onCreated);
+  }, []);
+
+  const isJournal = activeView === 'journal';
+  const journalViewOrder = ['list', 'editor', 'mirror'];
+  const swipe = useSwipeNav({
+    enabled: isMobile && isJournal,
+    onLeft: () => {
+      const i = journalViewOrder.indexOf(journalView);
+      if (i < 0 || i >= journalViewOrder.length - 1) return;
+      setJournalView(journalViewOrder[i + 1]);
+    },
+    onRight: () => {
+      const i = journalViewOrder.indexOf(journalView);
+      if (i <= 0) return;
+      setJournalView(journalViewOrder[i - 1]);
+    },
+  });
+
   // ── Mobile layout: bottom nav bar ───────────────────────────────────────
   if (isMobile) {
-    const moreRef = useRef(null);
-    const [moreOpen, setMoreOpen] = useState(false);
-
-    // Close more menu on outside tap
-    useEffect(() => {
-      if (!moreOpen) return;
-      function h(e) { if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false); }
-      document.addEventListener('mousedown', h);
-      return () => document.removeEventListener('mousedown', h);
-    }, [moreOpen]);
-
     const navItems = [
       { id: 'home',    label: t('nav.home'),    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><polyline points="9 21 9 14 15 14 15 21"/></svg> },
       { id: 'journal', label: t('nav.journal'),  icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4c2-1 4-1.5 6-1.5S12 3.5 12 4.5c0-1 3.5-2 6-1.5s4 .5 4 1.5v14c0-.5-2-1-4-1s-4.5.5-6 1.5c-1.5-1-3.5-1.5-6-1.5s-3.5.5-4 1V4z"/><line x1="12" y1="4.5" x2="12" y2="19.5"/></svg> },
@@ -305,34 +339,6 @@ export default function Layout({ children, activeView, onViewChange, onLogout, o
       { id: 'settings', label: t('nav.settings') },
     ];
 
-    const [journalView, setJournalView] = useState('editor'); // 'list' | 'editor' | 'mirror'
-    useEffect(() => {
-      if (activeView !== 'journal') setJournalView('editor');
-    }, [activeView]);
-
-    // Open the editor whenever a brand-new entry is created — otherwise the
-    // "new entry" button on mobile would leave you stuck on the list view.
-    useEffect(() => {
-      function onCreated() { setJournalView('editor'); }
-      window.addEventListener('liminal:entry-created', onCreated);
-      return () => window.removeEventListener('liminal:entry-created', onCreated);
-    }, []);
-
-    const isJournal = activeView === 'journal';
-    const journalViewOrder = ['list', 'editor', 'mirror'];
-    const swipe = useSwipeNav({
-      enabled: isJournal,
-      onLeft: () => {
-        const i = journalViewOrder.indexOf(journalView);
-        if (i < 0 || i >= journalViewOrder.length - 1) return;
-        setJournalView(journalViewOrder[i + 1]);
-      },
-      onRight: () => {
-        const i = journalViewOrder.indexOf(journalView);
-        if (i <= 0) return;
-        setJournalView(journalViewOrder[i - 1]);
-      },
-    });
     const headerBtn = {
       background: 'none', border: 'none', fontSize: '13px',
       color: 'var(--muted)', cursor: 'pointer',

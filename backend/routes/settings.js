@@ -757,7 +757,7 @@ router.post('/restore-backup', backupUpload.single('backup'), async (req, res) =
     res.json({ success: true, ...counts });
   } catch (err) {
     console.error('[restore-backup] Error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -792,7 +792,8 @@ function buildExportData(userId, opts = {}) {
     : ((v) => parseJSON(safeDecrypt(userId, v), []));
 
   const entries = db.prepare(`
-    SELECT id, title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at
+    SELECT id, title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at,
+           locked, moon_phase, moon_sign, sky_notes, breakthrough_level
     FROM entries WHERE user_id = ? ORDER BY date DESC, created_at DESC
   `).all(userId).map(e => ({
     ...e,
@@ -834,7 +835,7 @@ function buildExportData(userId, opts = {}) {
   `).all(userId).map(r => ({ ...r, blocks: decAndParse(r.blocks) }));
 
   const memories = db.prepare(`
-    SELECT content, pinned, source_entry_id, created_at FROM memories WHERE user_id = ? ORDER BY created_at DESC
+    SELECT content, pinned, is_core, status, source_entry_id, created_at FROM memories WHERE user_id = ? ORDER BY created_at DESC
   `).all(userId).map(m => ({ ...m, content: dec(m.content) }));
 
   const entryVersions = db.prepare(`
@@ -935,6 +936,15 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
   // (or passed through legacy unencrypted) so values arrive here as plaintext.
   // encryptField is a no-op on null/empty; safe to call unconditionally.
   const enc = (v) => encryptField(userId, v);
+
+  // Restoring replaces this user's journal, so refuse a file with nothing to
+  // restore (e.g. the wrong JSON, holding only settings) before deleting
+  // anything. Runs inside the caller's transaction; throwing rolls back.
+  const hasContent = entries.length + notes.length + oracleSessions.length + (memories || []).length > 0;
+  if (!hasContent) {
+    throw Object.assign(new Error('This backup has no entries, notes, chats or memories. Nothing was changed.'), { status: 400 });
+  }
+
   // ── Clear existing user data to prevent duplicates ──────────────────────────
   db.prepare('DELETE FROM entry_versions WHERE user_id = ?').run(userId);
   db.prepare('DELETE FROM note_versions WHERE user_id = ?').run(userId);
@@ -954,8 +964,10 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
 
   // 1. Entries
   const insertEntry = db.prepare(`
-    INSERT INTO entries (title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at, user_id)
-    VALUES (@title, @body, @body_text, @date, @tags, @auto_tags, @threaded_at, @created_at, @updated_at, @user_id)
+    INSERT INTO entries (title, body, body_text, date, tags, auto_tags, threaded_at, created_at, updated_at, user_id,
+                         locked, moon_phase, moon_sign, sky_notes, breakthrough_level)
+    VALUES (@title, @body, @body_text, @date, @tags, @auto_tags, @threaded_at, @created_at, @updated_at, @user_id,
+            @locked, @moon_phase, @moon_sign, @sky_notes, @breakthrough_level)
   `);
   for (const e of entries) {
     try {
@@ -970,6 +982,11 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
         created_at: e.created_at || new Date().toISOString(),
         updated_at: e.updated_at || e.created_at || new Date().toISOString(),
         user_id: userId,
+        locked: e.locked ? 1 : 0,
+        moon_phase: e.moon_phase ?? null,
+        moon_sign: e.moon_sign ?? null,
+        sky_notes: e.sky_notes ?? null,
+        breakthrough_level: e.breakthrough_level ?? null,
       });
       entryIdMap[e.id] = result.lastInsertRowid;
       counts.entries++;
@@ -1043,9 +1060,12 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     VALUES (@entry_id, @user_id, @blocks, @created_at, @updated_at)
   `);
   for (const r of reflections) {
+    // Only rows whose entry/note came over in this restore. Falling back to
+    // the old id attached orphans to whichever new row happened to get it.
+    if (!entryIdMap[r.entry_id]) { counts.skipped++; continue; }
     try {
       insertReflection.run({
-        entry_id: entryIdMap[r.entry_id] || r.entry_id,
+        entry_id: entryIdMap[r.entry_id],
         user_id: userId,
         blocks: enc(typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || [])),
         created_at: r.created_at || new Date().toISOString(),
@@ -1061,9 +1081,10 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     VALUES (@note_id, @user_id, @blocks, @created_at, @updated_at)
   `);
   for (const r of noteReflections) {
+    if (!noteIdMap[r.note_id]) { counts.skipped++; continue; }
     try {
       insertNoteReflection.run({
-        note_id: noteIdMap[r.note_id] || r.note_id,
+        note_id: noteIdMap[r.note_id],
         user_id: userId,
         blocks: enc(typeof r.blocks === 'string' ? r.blocks : JSON.stringify(r.blocks || [])),
         created_at: r.created_at || new Date().toISOString(),
@@ -1100,8 +1121,8 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
 
   // 7. Memories
   const insertMemory = db.prepare(`
-    INSERT INTO memories (user_id, content, pinned, source_entry_id, created_at)
-    VALUES (@user_id, @content, @pinned, @source_entry_id, @created_at)
+    INSERT INTO memories (user_id, content, pinned, is_core, status, source_entry_id, created_at)
+    VALUES (@user_id, @content, @pinned, @is_core, @status, @source_entry_id, @created_at)
   `);
   for (const m of memories) {
     try {
@@ -1109,7 +1130,10 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
         user_id: userId,
         content: enc(m.content || ''),
         pinned: m.pinned || 0,
-        source_entry_id: m.source_entry_id ? (entryIdMap[m.source_entry_id] || m.source_entry_id) : null,
+        // Core and resolved/past memories used to come back as ordinary active ones.
+        is_core: m.is_core ? 1 : 0,
+        status: typeof m.status === 'string' && m.status ? m.status : 'active',
+        source_entry_id: m.source_entry_id ? (entryIdMap[m.source_entry_id] || null) : null,
         created_at: m.created_at || new Date().toISOString(),
       });
       counts.memories++;
@@ -1135,9 +1159,10 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     VALUES (@entry_id, @user_id, @title, @body, @body_text, @saved_at)
   `);
   for (const v of entryVersions) {
+    if (!entryIdMap[v.entry_id]) { counts.skipped++; continue; }
     try {
       insertEntryVersion.run({
-        entry_id: entryIdMap[v.entry_id] || v.entry_id,
+        entry_id: entryIdMap[v.entry_id],
         user_id: userId,
         title: v.title || '',
         body: enc(v.body || ''),
@@ -1154,9 +1179,10 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     VALUES (@note_id, @user_id, @body, @saved_at)
   `);
   for (const v of noteVersions) {
+    if (!noteIdMap[v.note_id]) { counts.skipped++; continue; }
     try {
       insertNoteVersion.run({
-        note_id: noteIdMap[v.note_id] || v.note_id,
+        note_id: noteIdMap[v.note_id],
         user_id: userId,
         body: enc(v.body || ''),
         saved_at: v.saved_at || new Date().toISOString(),
@@ -1307,6 +1333,14 @@ function importDataIntoDb(data, entries, notes, oracleSessions, reflections, not
     try {
       db.prepare('UPDATE users SET onboarding_complete = 1 WHERE id = ?').run(userId);
     } catch {}
+  }
+
+  // Each insert above skips rows it can't write. If none of the journal
+  // content made it in (wrong key, damaged file), undo the whole restore —
+  // the deletes at the top included — instead of reporting success over an
+  // emptied journal.
+  if (counts.entries + counts.notes + counts.oracle_sessions + counts.memories === 0) {
+    throw Object.assign(new Error('None of the backup could be restored, so your journal was left as it was.'), { status: 422 });
   }
 }
 

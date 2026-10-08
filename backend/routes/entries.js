@@ -198,7 +198,15 @@ router.delete('/:id', (req, res) => {
     db.prepare('DELETE FROM oracle_sessions WHERE id = ? AND user_id = ?').run(existing.linked_session_id, req.userId);
   }
 
-  db.prepare('DELETE FROM entries WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+  // Its reflection (no foreign key) and its places in threads go with it —
+  // left behind, they inflated thread counts and could be restored onto
+  // another entry.
+  db.transaction(() => {
+    db.prepare('DELETE FROM reflections WHERE entry_id = ? AND user_id = ?').run(req.params.id, req.userId);
+    db.prepare(`DELETE FROM thread_nodes WHERE content_type = 'entry' AND content_id = ?
+                AND thread_id IN (SELECT id FROM threads WHERE user_id = ?)`).run(req.params.id, req.userId);
+    db.prepare('DELETE FROM entries WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+  })();
   res.json({ success: true });
 });
 

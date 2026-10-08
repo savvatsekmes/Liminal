@@ -733,24 +733,31 @@ def whisper_preload(req: WhisperPreloadRequest):
     _ensure_whisper(req.model)
     return {"ok": True, "model": _whisper_loaded_name}
 
+_MAX_AUDIO_BYTES = 50 * 1024 * 1024  # ~an hour of compressed speech
+
 @app.post("/v1/transcribe")
 async def transcribe(audio: UploadFile = File(...), language: str | None = Form(None)):
     """Transcribe an uploaded audio file (any format faster-whisper/ffmpeg accepts).
     `language` is optional ISO 639-1; omit for auto-detect."""
     try:
-        data = await audio.read()
+        data = await audio.read(_MAX_AUDIO_BYTES + 1)
         if not data:
             raise HTTPException(status_code=400, detail="empty audio")
-        # faster-whisper accepts a file-like or path; an in-memory BytesIO is simplest
-        import io
-        model = _ensure_whisper()
-        segments, info = model.transcribe(
-            io.BytesIO(data),
-            language=language or None,
-            vad_filter=True,
-        )
-        text = "".join(seg.text for seg in segments).strip()
-        return {"text": text, "language": info.language, "duration": info.duration}
+        if len(data) > _MAX_AUDIO_BYTES:
+            raise HTTPException(status_code=413, detail="audio too large")
+
+        def run():
+            # faster-whisper accepts a file-like or path; an in-memory BytesIO
+            # is simplest. Segments are lazy — the work happens in the join.
+            model = _ensure_whisper()
+            segments, info = model.transcribe(io.BytesIO(data), language=language or None, vad_filter=True)
+            text = "".join(seg.text for seg in segments).strip()
+            return {"text": text, "language": info.language, "duration": info.duration}
+
+        # Off the event loop: a model load or a long dictation used to block
+        # every other request (health checks failed, read-aloud stalled).
+        import asyncio
+        return await asyncio.to_thread(run)
     except HTTPException:
         raise
     except Exception as e:

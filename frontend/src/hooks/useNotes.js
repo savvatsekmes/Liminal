@@ -10,6 +10,10 @@ export function useNotes() {
   const [customTags, setCustomTags] = useState([]);
   const [loading, setLoading] = useState(false);
   const saveTimers = useRef({});
+  // Fields waiting in each note's save debounce, merged — so editing the body
+  // and then the title (or a tag) within the debounce saves both, not just
+  // the last one.
+  const pendingFields = useRef({});
 
   // Collect manual + auto tags as separate sorted pools so the filter column
   // can render user-typed tags above LLM-applied ones with a visual divider.
@@ -114,10 +118,13 @@ export function useNotes() {
 
   function scheduleUpdate(id, fields) {
     updateNoteLocal(id, fields);
+    pendingFields.current[id] = { ...pendingFields.current[id], ...fields };
     clearTimeout(saveTimers.current[id]);
     saveTimers.current[id] = setTimeout(() => {
-      saveNote(id, fields);
+      const merged = pendingFields.current[id];
+      delete pendingFields.current[id];
       delete saveTimers.current[id];
+      if (merged) saveNote(id, merged);
     }, 700);
   }
 
@@ -144,6 +151,7 @@ export function useNotes() {
   async function deleteNote(id) {
     clearTimeout(saveTimers.current[id]);
     delete saveTimers.current[id];
+    delete pendingFields.current[id];
     await apiFetch(`${API}/${id}`, { method: 'DELETE' });
     setAllNotes((prev) => {
       const next = prev.filter((n) => n.id !== id);

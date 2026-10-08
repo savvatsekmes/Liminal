@@ -699,10 +699,22 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
     el.style.height = Math.min(el.scrollHeight, 160) + 'px';
   }, [input]);
 
+  // The chat on screen (set the moment one is picked, before its messages
+  // arrive) and a counter for session loads. A reply or a load that finishes
+  // after the user has moved to another chat is dropped instead of landing
+  // in the wrong one — the server has it, and reopening that chat shows it.
+  const shownSessionRef = useRef(null);
+  const loadSeqRef = useRef(0);
+  useEffect(() => { shownSessionRef.current = currentSession?.id ?? null; }, [currentSession?.id]);
+
   async function loadSession(sessionId) {
+    const seq = ++loadSeqRef.current;
+    shownSessionRef.current = sessionId;
+    setLoading(false);
     try {
       const res = await apiFetch(`/api/oracle/sessions/${sessionId}`);
       const data = await res.json();
+      if (seq !== loadSeqRef.current) return; // a newer chat was opened meanwhile
       setCurrentSession(data);
       setMessages(data.messages || []);
       if (data.archetype) setArchetype(data.archetype);
@@ -746,6 +758,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
         setCurrentSession(newSession);
         setSessions((prev) => [newSession, ...prev]);
         sessionId = newSession.id;
+        shownSessionRef.current = sessionId;
       } catch { return; }
     }
 
@@ -776,8 +789,9 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
       // still renders; the banner sits above as a separate signal.
       try { flagOutput?.(assistantMsg.content || ''); } catch { /* */ }
 
-      // Append assistant message (keep the optimistic user message)
-      setMessages((prev) => [...prev, assistantMsg]);
+      // Append assistant message (keep the optimistic user message) — only if
+      // this chat is still the one on screen.
+      if (shownSessionRef.current === sessionId) setMessages((prev) => [...prev, assistantMsg]);
 
       // Update current session archetype
       if (switched) {
@@ -786,12 +800,14 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
       }
     } catch (err) {
       // Remove optimistic messages on error and show it
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== tempId && m.type !== 'switch'),
-        { id: `err-${Date.now()}`, role: 'error', content: err.message || t('oracle.error') },
-      ]);
+      if (shownSessionRef.current === sessionId) {
+        setMessages((prev) => [
+          ...prev.filter((m) => m.id !== tempId && m.type !== 'switch'),
+          { id: `err-${Date.now()}`, role: 'error', content: err.message || t('oracle.error') },
+        ]);
+      }
     } finally {
-      setLoading(false);
+      if (shownSessionRef.current === sessionId) setLoading(false);
     }
   }
 
@@ -814,6 +830,9 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
         });
         newSession.tags = [...(newSession.tags || []), tag];
       }
+      loadSeqRef.current++; // supersede any chat still loading
+      shownSessionRef.current = newSession.id;
+      setLoading(false);
       setCurrentSession(newSession);
       setMessages([]);
       setSessions((prev) => [newSession, ...prev]);

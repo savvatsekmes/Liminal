@@ -83,6 +83,10 @@ async function ensureEmbedded(lang, modelId = currentModelId()) {
       }
     }
     console.log(`[quoteBank] ${lang} (${modelId}): embedded ${out.length} attributable quotes in ${Date.now() - t0}ms`);
+    // Nothing embedded (e.g. the model couldn't load offline): reject so the
+    // empty bank isn't cached for the rest of the session — the next
+    // reflection tries again.
+    if (pool.length && !out.length) throw new Error(`no ${lang} quotes could be embedded`);
     return out;
   })();
   cache.set(key, promise);
@@ -116,7 +120,8 @@ async function findBestQuote(text, lang = 'en', opts = {}) {
   // Pin one model for the whole match so pool and query vectors agree even
   // if the librarian is switched mid-reflection.
   const modelId = currentModelId();
-  const pool = await ensureEmbedded(code, modelId);
+  let pool;
+  try { pool = await ensureEmbedded(code, modelId); } catch { return null; }
   if (!pool.length) return null;
 
   let queryVec;

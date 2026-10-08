@@ -149,10 +149,10 @@ async function extractAndStoreMemories(currentEntry, portrait, userId = 1, entry
       if (ids.length) {
         const placeholders = ids.map(() => '?').join(',');
         const rows = db
-          .prepare(`SELECT id, content FROM memories WHERE id IN (${placeholders}) AND user_id = ?`)
+          .prepare(`SELECT id, content, pinned, is_core FROM memories WHERE id IN (${placeholders}) AND user_id = ?`)
           .all(...ids, userId);
         for (const r of rows) {
-          neighbourMap.set(r.id, { id: r.id, content: safeDecrypt(userId, r.content) || '' });
+          neighbourMap.set(r.id, { id: r.id, content: safeDecrypt(userId, r.content) || '', curated: !!(r.pinned || r.is_core) });
         }
       }
     }
@@ -161,12 +161,12 @@ async function extractAndStoreMemories(currentEntry, portrait, userId = 1, entry
   }
   if (neighbourMap.size < 30) {
     const recents = db
-      .prepare('SELECT id, content FROM memories WHERE user_id = ? ORDER BY id DESC LIMIT 50')
+      .prepare('SELECT id, content, pinned, is_core FROM memories WHERE user_id = ? ORDER BY id DESC LIMIT 50')
       .all(userId);
     for (const r of recents) {
       if (neighbourMap.size >= 30) break;
       if (!neighbourMap.has(r.id)) {
-        neighbourMap.set(r.id, { id: r.id, content: safeDecrypt(userId, r.content) || '' });
+        neighbourMap.set(r.id, { id: r.id, content: safeDecrypt(userId, r.content) || '', curated: !!(r.pinned || r.is_core) });
       }
     }
   }
@@ -299,6 +299,13 @@ Extract any genuinely new facts. Return only the JSON.`;
         insertAudit.run(userId, item.ref_id, target?.content || null, content, 'duplicate_of', entryId || null);
         counts.duplicate++;
         continue;
+      }
+
+      // Pinned and core memories are the user's own curation: they stay as
+      // neighbours (so duplicates of them are still caught) but extraction
+      // never rewrites or retires them — that becomes a new memory instead.
+      if ((item.action === 'supersedes' || item.action === 'contradicts') && neighbourMap.get(item.ref_id)?.curated) {
+        item.action = 'new';
       }
 
       if (item.action === 'supersedes') {
@@ -732,24 +739,28 @@ function formatRetrievedMemoriesForPrompt(memories) {
 // ── Semantic Retrieval ────────────────────────────────────────────────────────
 
 /**
- * Retrieve 3-5 past entries most similar to the current entry body.
- * Returns full entry rows with their text.
+ * Retrieve the user's past entries most similar to the current entry body.
+ * Returns entry rows with their text decrypted.
  */
-async function retrieveSimilarEntries(currentEntryText, currentEntryId, k = 3) {
+async function retrieveSimilarEntries(userId, currentEntryText, currentEntryId, k = 3) {
   try {
-    const results = await embedding.querySimilar(currentEntryText, k, currentEntryId ? [currentEntryId] : []);
+    // The vector index is shared by every account on this machine, so
+    // over-fetch and keep only this user's entries (filtered in SQL below).
+    const results = await embedding.querySimilar(currentEntryText, k * 3, currentEntryId ? [currentEntryId] : []);
 
     if (!results.length) return [];
 
     const placeholders = results.map(() => '?').join(',');
     const ids = results.map((r) => r.entryId);
     const rows = db
-      .prepare(`SELECT id, title, body_text, date, created_at FROM entries WHERE id IN (${placeholders})`)
-      .all(...ids);
+      .prepare(`SELECT id, title, body_text, date, created_at FROM entries WHERE id IN (${placeholders}) AND user_id = ?`)
+      .all(...ids, userId)
+      // body_text is stored encrypted — the prompt needs the words.
+      .map((r) => ({ ...r, title: safeDecrypt(userId, r.title), body_text: safeDecrypt(userId, r.body_text) }));
 
     // Re-attach scores and sort by similarity
     const scoreMap = Object.fromEntries(results.map((r) => [r.entryId, r.score]));
-    return rows.sort((a, b) => (scoreMap[b.id] || 0) - (scoreMap[a.id] || 0));
+    return rows.sort((a, b) => (scoreMap[b.id] || 0) - (scoreMap[a.id] || 0)).slice(0, k);
   } catch (err) {
     console.error('[memory] Semantic retrieval failed:', err.message);
     return [];
@@ -776,7 +787,7 @@ async function buildReflectSystemPrompt(portrait, currentEntryText, currentEntry
     // Bumped from default k=3 → 8 so arc-anchor selection has enough
     // candidates to cover both a short-arc (recent) AND long-arc (year+)
     // window. Without this we'd often only see candidates from one window.
-    retrieveSimilarEntries(currentEntryText, currentEntryId, 8),
+    retrieveSimilarEntries(userId, currentEntryText, currentEntryId, 8),
   ]);
   let memorySection = formatRetrievedMemoriesForPrompt(retrievedMemories);
   if (!memorySection) {
@@ -978,19 +989,23 @@ function buildNotesDigest(userId = 1) {
 
     if (!goals.length && !quotes.length) return null;
 
+    // Note bodies are stored encrypted (and as editor HTML) — decrypt and
+    // flatten them, or the prompt gets lenc:v1: ciphertext.
+    const text = (body) => (safeDecrypt(userId, body) || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
     const lines = [];
 
     if (goals.length) {
       lines.push('Goals:');
       goals.forEach((g) => {
-        lines.push(`- ${g.body}${g.target_date ? ` (by ${g.target_date})` : ''}`);
+        lines.push(`- ${text(g.body)}${g.target_date ? ` (by ${g.target_date})` : ''}`);
       });
     }
 
     if (quotes.length) {
       lines.push('Meaningful quotes:');
       quotes.forEach((q) => {
-        lines.push(`- "${q.body}"${q.attribution ? ` — ${q.attribution}` : ''}`);
+        lines.push(`- "${text(q.body)}"${q.attribution ? ` — ${q.attribution}` : ''}`);
       });
     }
 
