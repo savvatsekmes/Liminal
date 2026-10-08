@@ -7,6 +7,7 @@ import { BUILT_IN_ARCHETYPES, isBuiltIn } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import { confirmUploadRights } from '../utils/confirmUploadRights';
 import { useFirstTourTrigger } from '../components/TutorialContext';
+import PageHero from '../components/PageHero';
 
 // Inline icons for memory item actions (modern replacements for ✎/★/×).
 function PencilIcon({ size = 14 }) {
@@ -198,14 +199,6 @@ const s = {
     overflowY: 'auto',
     padding: '40px 48px 80px',
     minWidth: 0,
-  },
-  pageTitle: {
-    fontFamily: 'var(--font-display)',
-    fontSize: '32px',
-    fontWeight: 700,
-    color: 'var(--strong)',
-    marginBottom: '6px',
-    lineHeight: 1.1,
   },
   pageSubtitle: {
     fontSize: '12px',
@@ -956,7 +949,7 @@ export default function MemoryPage({ onNavigateToPortrait }) {
 
   return (
     <div style={{ ...s.root, ...(isMobile ? { padding: '24px 16px 80px' } : {}) }}>
-      <div style={s.pageTitle}>{t('context.title')}</div>
+      <PageHero align="left" icon="/page-icons/context.png" title={t('context.title')} sizeAs={t('nav.journal')} />
       <div style={s.pageSubtitle}>{t('context.subtitle')}</div>
 
       {/* Tab bar */}

@@ -400,6 +400,7 @@ export default {
   "oracle.noSessions": "Brak sesji wyroczni.",
   "oracle.deleteConfirm": "Usunąć tę rozmowę?",
   "oracle.conversations": "Rozmowy",
+  "oracle.chatsTitle": "Czaty",
   "oracle.newConversation": "Nowa rozmowa",
   "oracle.noConversations": "Brak rozmów.",
   "oracle.noTag": "Brak tagu",

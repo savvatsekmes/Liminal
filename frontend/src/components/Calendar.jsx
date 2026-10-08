@@ -18,6 +18,24 @@ const s = {
     color: 'var(--strong)',
     letterSpacing: '0.02em',
   },
+  // Collapsible calendars: the month label is the fold/unfold control.
+  calTitleBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    font: 'inherit',
+  },
+  calChevron: {
+    width: '10px',
+    height: '10px',
+    color: 'var(--muted)',
+    transition: 'transform 0.15s',
+    flexShrink: 0,
+  },
   calNav: {
     display: 'flex',
     alignItems: 'center',
@@ -91,12 +109,25 @@ function toLocalYMD(date) {
  * @param {(item: Object) => void} onSelect - Callback when a day with items is clicked
  * @param {string} [dateField] - Which field to use for dates. Defaults to 'date' then 'created_at'.
  * @param {string} [titleField] - Which field to use for hover title. Defaults to 'title'.
+ * @param {string} [collapsibleKey] - Makes the calendar foldable: clicking the
+ *   month label folds the grid away. Open/closed is remembered under this key.
  */
-export default function Calendar({ items, activeId, onSelect, dateField, titleField = 'title' }) {
+export default function Calendar({ items, activeId, onSelect, dateField, titleField = 'title', collapsibleKey }) {
   const today = new Date();
   const todayYMD = toLocalYMD(today);
 
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
+  const storageKey = collapsibleKey ? `liminal.calendarCollapsed.${collapsibleKey}` : null;
+  const [collapsed, setCollapsed] = useState(() => {
+    if (!storageKey) return false;
+    try { return localStorage.getItem(storageKey) === '1'; } catch { return false; }
+  });
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      try { localStorage.setItem(storageKey, c ? '0' : '1'); } catch { /* per-device nicety only */ }
+      return !c;
+    });
+  }
 
   const extractDate = (item) => {
     if (dateField) return (item[dateField] || '').slice(0, 10);
@@ -144,14 +175,25 @@ export default function Calendar({ items, activeId, onSelect, dateField, titleFi
 
   return (
     <div style={s.cal}>
-      <div style={s.calHeader}>
-        <span style={s.calTitle}>{monthLabel}</span>
-        <div style={s.calNav}>
-          <button style={s.calNavBtn} onClick={prevMonth} title="Previous month">‹</button>
-          <button style={s.calNavBtn} onClick={nextMonth} title="Next month">›</button>
-        </div>
+      <div style={{ ...s.calHeader, ...(collapsed ? { marginBottom: 0 } : {}) }}>
+        {storageKey ? (
+          <button style={s.calTitleBtn} onClick={toggleCollapsed} aria-expanded={!collapsed} title={collapsed ? 'Show calendar' : 'Hide calendar'}>
+            <span style={s.calTitle}>{monthLabel}</span>
+            <svg viewBox="0 0 10 10" style={{ ...s.calChevron, transform: collapsed ? 'rotate(-90deg)' : 'none' }} aria-hidden="true">
+              <path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : (
+          <span style={s.calTitle}>{monthLabel}</span>
+        )}
+        {!collapsed && (
+          <div style={s.calNav}>
+            <button style={s.calNavBtn} onClick={prevMonth} title="Previous month">‹</button>
+            <button style={s.calNavBtn} onClick={nextMonth} title="Next month">›</button>
+          </div>
+        )}
       </div>
-      <div style={s.calGrid}>
+      {!collapsed && <div style={s.calGrid}>
         {DOW.map((d, i) => <div key={i} style={s.calDow}>{d}</div>)}
         {days.map((day, i) => {
           if (!day) return <div key={`blank-${i}`} />;
@@ -176,7 +218,7 @@ export default function Calendar({ items, activeId, onSelect, dateField, titleFi
             </div>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }

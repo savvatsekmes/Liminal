@@ -9,6 +9,7 @@ import SkyPage from './SkyPage';
 import AILabel from '../components/AILabel';
 import { useFirstTourTrigger } from '../components/TutorialContext';
 import { CardDetailPopup } from '../extensions/CardReading';
+import PageHero from '../components/PageHero';
 
 const s = {
   root: {
@@ -21,14 +22,6 @@ const s = {
     overflowY: 'auto',
     padding: '40px 48px 80px',
     minWidth: 0,
-  },
-  pageTitle: {
-    fontFamily: 'var(--font-display)',
-    fontSize: '32px',
-    fontWeight: 700,
-    color: 'var(--strong)',
-    marginBottom: '6px',
-    lineHeight: 1.1,
   },
   pageSubtitle: {
     fontSize: '12px',
@@ -423,7 +416,7 @@ export default function PortraitPage({ onNavigateEntry, initialTab, onTabLoaded 
 
   const oracleHeader = (
     <div style={{ padding: isMobile ? '20px 16px 0' : '40px 48px 0' }}>
-      <div data-tour-id="oracle-intro" style={s.pageTitle}>The Oracle</div>
+      <PageHero data-tour-id="oracle-intro" align="left" icon="/page-icons/oracle.png" title="The Oracle" sizeAs={t('nav.journal')} />
       <div style={s.pageSubtitle}>Do not try and bend the spoon — that's impossible. Instead, only try to realise the truth: there is no spoon.</div>
       <AILabel compact />
       <div data-tour-id="oracle-tabs" style={tabBarStyle}>

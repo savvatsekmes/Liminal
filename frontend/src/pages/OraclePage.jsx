@@ -15,13 +15,14 @@ import EmojiPicker from '../components/EmojiPicker';
 
 function TagLabel({ tag, dynamicMap }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
-  if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
-  return tagLabel(tag, dynamicMap);
+  if (src) return <span className="mono-emoji"><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</span>;
+  return <span className="mono-emoji">{tagLabel(tag, dynamicMap)}</span>;
 }
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { BUILT_IN_ARCHETYPES as BUILT_IN_ARCH_OBJECTS } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import Calendar from '../components/Calendar';
+import PageHero from '../components/PageHero';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSwipeNav } from '../hooks/useSwipeNav';
 import { useListArrowNav } from '../hooks/useListArrowNav';
@@ -50,22 +51,6 @@ const s = {
     flexDirection: 'column',
     background: 'var(--near-white)',
     overflow: 'hidden',
-  },
-  sidebarHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 12px',
-    height: '44px',
-    borderBottom: 'var(--border-style)',
-    flexShrink: 0,
-  },
-  sidebarTitle: {
-    fontFamily: 'var(--font-display)',
-    fontSize: '22px',
-    fontWeight: 700,
-    color: 'var(--strong)',
-    lineHeight: 1.1,
   },
   sidebarNew: {
     fontSize: '18px',
@@ -575,7 +560,6 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('chat'); // 'list' | 'chat'
   const [sessions, setSessions] = useState([]);
-  const [showCal, setShowCal] = useState(true);
   const [search, setSearch] = useState('');
   const [currentSession, setCurrentSession] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -1075,38 +1059,15 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
     <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
       {/* History sidebar — hidden on mobile when viewing chat */}
       <div style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
-        <div style={s.sidebarHeader}>
-          <span style={s.sidebarTitle}>{t('oracle.conversations')}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              style={{
-                fontSize: '11px',
-                color: showCal ? 'var(--strong)' : 'var(--muted)',
-                background: showCal ? 'var(--panel-bg)' : 'none',
-                border: 'var(--border-style)',
-                borderRadius: '2px',
-                padding: '2px 5px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font)',
-                lineHeight: 1.4,
-                transition: 'color 0.15s, background 0.15s',
-              }}
-              onClick={() => setShowCal(v => !v)}
-              title={t('journal.calendar')}
-            >
-              {t('journal.calendar')}
-            </button>
-          </div>
-        </div>
-        {showCal && (
-          <Calendar
-            items={filteredSessions}
-            activeId={currentSession?.id}
-            onSelect={(sess) => loadSession(sess.id)}
-            dateField="created_at"
-            titleField="first_message"
-          />
-        )}
+        <PageHero icon="/page-icons/conversations.png" title={t('oracle.chatsTitle')} sizeAs={t('nav.journal')} />
+        <Calendar
+          items={filteredSessions}
+          activeId={currentSession?.id}
+          onSelect={(sess) => loadSession(sess.id)}
+          dateField="created_at"
+          titleField="first_message"
+          collapsibleKey="conversations"
+        />
         <input
           data-tour-id="conversations-search"
           style={{
@@ -1187,7 +1148,7 @@ export default function OraclePage({ initialSessionId, requestNew, onNewHandled,
             onClick={() => setMobileView('list')}
             style={{ background: 'none', border: 'none', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'var(--font)', padding: '4px 0' }}
           >
-            ‹ {t('oracle.conversations')}
+            ‹ {t('oracle.chatsTitle')}
           </button>
         </div>
       )}
@@ -1802,9 +1763,10 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
     >
       <button
         onClick={onClick}
+        className="mono-emoji"
         style={{
           flex: 1,
-          padding: '5px 0 5px 6px',
+          padding: '5px 0 5px 8px',
           fontSize: '10px',
           fontWeight: active ? '600' : '400',
           fontStyle: auto && !active ? 'italic' : 'normal',
@@ -1935,6 +1897,7 @@ function SidebarItem({ sess, active, onClick, onDelete, onNavigateToSource }) {
         return (
           <div
             title={emojiTags.map(e => e.tag).join(', ')}
+            className="mono-emoji"
             style={{
               display: 'flex',
               flexDirection: 'row',

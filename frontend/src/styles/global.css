@@ -387,3 +387,11 @@ hr {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+
+/* Page icons are black ink on transparent; in dark mode they turn white. */
+[data-theme="dark"] .page-icon { filter: invert(1); }
+
+/* Emojis in black and white (trial on the Journal page). Applied to the
+   label/strip itself, never to a panel: a filter on a container would
+   re-anchor position:fixed menus inside it. */
+.mono-emoji { filter: grayscale(1); }

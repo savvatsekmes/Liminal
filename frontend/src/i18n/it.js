@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "Ancora nessuna sessione dell’Oracolo.",
   "oracle.deleteConfirm": "Eliminare questa conversazione?",
   "oracle.conversations": "Conversazioni",
+  "oracle.chatsTitle": "Chat",
   "oracle.newConversation": "Nuova conversazione",
   "oracle.noConversations": "Ancora nessuna conversazione.",
   "oracle.noTag": "Nessun tag",

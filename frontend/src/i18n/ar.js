@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "لا توجد جلسات عرّاف بعد.",
   "oracle.deleteConfirm": "حذف هذه المحادثة؟",
   "oracle.conversations": "المحادثات",
+  "oracle.chatsTitle": "الدردشات",
   "oracle.newConversation": "محادثة جديدة",
   "oracle.noConversations": "لا توجد محادثات بعد.",
   "oracle.noTag": "بدون وسم",

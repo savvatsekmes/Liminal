@@ -400,6 +400,7 @@ export default {
   "oracle.noSessions": "Nog geen orakel sessies.",
   "oracle.deleteConfirm": "Dit gesprek verwijderen?",
   "oracle.conversations": "Gesprekken",
+  "oracle.chatsTitle": "Chats",
   "oracle.newConversation": "Nieuw gesprek",
   "oracle.noConversations": "Nog geen gesprekken.",
   "oracle.noTag": "Geen tag",

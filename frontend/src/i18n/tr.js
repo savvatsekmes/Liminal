@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "Henüz kâhin oturumu yok.",
   "oracle.deleteConfirm": "Bu sohbet silinsin mi?",
   "oracle.conversations": "Sohbetler",
+  "oracle.chatsTitle": "Sohbetler",
   "oracle.newConversation": "Yeni sohbet",
   "oracle.noConversations": "Henüz sohbet yok.",
   "oracle.noTag": "Etiket yok",

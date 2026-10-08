@@ -5,6 +5,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useSwipeNav } from '../hooks/useSwipeNav';
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import { useFirstTourTrigger } from '../components/TutorialContext';
+import PageHero from '../components/PageHero';
 
 const s = {
   root: {
@@ -22,25 +23,6 @@ const s = {
     display: 'flex',
     flexDirection: 'column',
     minHeight: 0,
-  },
-  sidebarHeader: {
-    padding: '14px 16px 10px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    borderBottom: 'var(--border-style)',
-  },
-  sidebarTitle: {
-    fontFamily: 'var(--font-display)',
-    fontSize: '22px',
-    fontWeight: 700,
-    lineHeight: 1.1,
-    color: 'var(--strong)',
-  },
-  sidebarTagline: {
-    fontSize: '11px',
-    color: 'var(--muted)',
-    fontStyle: 'italic',
   },
   detectRow: {
     padding: '10px 10px',
@@ -773,10 +755,13 @@ export default function ThreadsPage({ onNavigateToEntry, onNavigateToNote, onNav
   return (
     <div style={s.root} onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd}>
       <aside style={{ ...s.sidebar, ...(isMobile ? { width: 'auto', flex: 1, minWidth: 0, borderRight: 'none', display: mobileView === 'list' ? 'flex' : 'none' } : {}) }}>
-        <div data-tour-id="threads-intro" style={s.sidebarHeader}>
-          <div style={s.sidebarTitle}>{t('threads.title') || 'Threads'}</div>
-          <div style={s.sidebarTagline}>{t('threads.tagline') || 'The arcs weaving through your life'}</div>
-        </div>
+        <PageHero
+          data-tour-id="threads-intro"
+          icon="/page-icons/threads.png"
+          title={t('threads.title') || 'Threads'}
+          sizeAs={t('nav.journal')}
+          subtitle={t('threads.tagline') || 'The arcs weaving through your life'}
+        />
         <div style={s.detectRow}>
           <button
             data-tour-id="threads-rethread"

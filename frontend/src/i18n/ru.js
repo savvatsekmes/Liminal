@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "Сессий оракула пока нет.",
   "oracle.deleteConfirm": "Удалить эту беседу?",
   "oracle.conversations": "Беседы",
+  "oracle.chatsTitle": "Чаты",
   "oracle.newConversation": "Новая беседа",
   "oracle.noConversations": "Бесед пока нет.",
   "oracle.noTag": "Без тега",

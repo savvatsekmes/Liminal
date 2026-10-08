@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "还没有神谕会话。",
   "oracle.deleteConfirm": "删除这段对话？",
   "oracle.conversations": "对话",
+  "oracle.chatsTitle": "聊天",
   "oracle.newConversation": "新对话",
   "oracle.noConversations": "还没有对话。",
   "oracle.noTag": "无标签",

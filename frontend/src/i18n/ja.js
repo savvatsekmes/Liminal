@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "まだオラクルセッションはありません。",
   "oracle.deleteConfirm": "この対話を削除しますか?",
   "oracle.conversations": "対話",
+  "oracle.chatsTitle": "チャット",
   "oracle.newConversation": "新しい対話",
   "oracle.noConversations": "まだ対話はありません。",
   "oracle.noTag": "タグなし",

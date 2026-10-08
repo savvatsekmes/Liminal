@@ -400,6 +400,7 @@ export default {
   "oracle.noSessions": "Inga orakelsessioner än.",
   "oracle.deleteConfirm": "Ta bort detta samtal?",
   "oracle.conversations": "Samtal",
+  "oracle.chatsTitle": "Chattar",
   "oracle.newConversation": "Nytt samtal",
   "oracle.noConversations": "Inga samtal än.",
   "oracle.noTag": "Ingen tagg",

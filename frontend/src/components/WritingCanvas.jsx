@@ -6,8 +6,8 @@ import { useTagEmojis } from '../hooks/useTagEmojis';
 
 function TagLabel({ tag, dynamicMap }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
-  if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
-  return tagLabel(tag, dynamicMap);
+  if (src) return <span className="mono-emoji"><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</span>;
+  return <span className="mono-emoji">{tagLabel(tag, dynamicMap)}</span>;
 }
 import MicButton from './MicButton';
 import ChatBubbleIcon from './ChatBubbleIcon';

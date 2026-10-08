@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "아직 오라클 세션이 없습니다.",
   "oracle.deleteConfirm": "이 대화를 삭제하시겠습니까?",
   "oracle.conversations": "대화",
+  "oracle.chatsTitle": "채팅",
   "oracle.newConversation": "새 대화",
   "oracle.noConversations": "아직 대화가 없습니다.",
   "oracle.noTag": "태그 없음",

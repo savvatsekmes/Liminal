@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "Δεν υπάρχουν συνεδρίες Oracle ακόμα.",
   "oracle.deleteConfirm": "Διαγραφή αυτής της συνομιλίας;",
   "oracle.conversations": "Συνομιλίες",
+  "oracle.chatsTitle": "Συζητήσεις",
   "oracle.newConversation": "Νέα συνομιλία",
   "oracle.noConversations": "Δεν υπάρχουν συνομιλίες ακόμα.",
   "oracle.noTag": "Χωρίς ετικέτα",

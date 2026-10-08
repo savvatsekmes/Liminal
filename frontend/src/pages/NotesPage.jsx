@@ -35,8 +35,8 @@ import EmojiPicker from '../components/EmojiPicker';
 
 function TagLabel({ tag, dynamicMap }) {
   const src = IMG_EMOJI[tag.toLowerCase()];
-  if (src) return <><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</>;
-  return tagLabel(tag, dynamicMap);
+  if (src) return <span className="mono-emoji"><img src={src} alt="" style={{ width: '12px', height: '12px', verticalAlign: '-2px' }} /> {tag}</span>;
+  return <span className="mono-emoji">{tagLabel(tag, dynamicMap)}</span>;
 }
 import { streamSpeak, stopSpeak } from '../utils/ttsStream';
 import MirrorBlock from '../components/MirrorBlock';
@@ -52,6 +52,7 @@ import { atomDragGuard } from '../extensions/atomDragGuard';
 import VersionsPanel from '../components/VersionsPanel';
 import { useResizable } from '../hooks/useResizable';
 import Calendar from '../components/Calendar';
+import PageHero from '../components/PageHero';
 import { BUILT_IN_ARCHETYPES } from '../constants/archetypes';
 import ArchetypeAvatar from '../components/ArchetypeAvatar';
 import ResizeDivider from '../components/ResizeDivider';
@@ -140,7 +141,6 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
   const [newTagInput, setNewTagInput] = useState('');
   const [showNewTagInput, setShowNewTagInput] = useState(false);
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
-  const [showCal, setShowCal] = useState(true);
   const [search, setSearch] = useState('');
   const [reflectBlocks, setReflectBlocks] = useState([]);
   // Captured items scraped from the note (goals/gratitudes/dreams/books/
@@ -400,49 +400,15 @@ export default function NotesPage({ initialNoteId, requestNew, onNewHandled, onN
         overflow: 'hidden',
         background: 'var(--near-white)',
       }}>
-        {/* List header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 12px',
-          height: '44px',
-          borderBottom: 'var(--border-style)',
-          flexShrink: 0,
-        }}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 700, color: 'var(--strong)', lineHeight: 1.1 }}>
-            {t('notes.title')}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              style={{
-                fontSize: '11px',
-                color: showCal ? 'var(--strong)' : 'var(--muted)',
-                background: showCal ? 'var(--panel-bg)' : 'none',
-                border: 'var(--border-style)',
-                borderRadius: '2px',
-                padding: '2px 5px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font)',
-                lineHeight: 1.4,
-                transition: 'color 0.15s, background 0.15s',
-              }}
-              onClick={() => setShowCal(v => !v)}
-              title={t('journal.calendar')}
-            >
-              {t('journal.calendar')}
-            </button>
-          </div>
-        </div>
+        <PageHero icon="/page-icons/notes.png" title={t('notes.title')} sizeAs={t('nav.journal')} />
 
-        {showCal && (
-          <Calendar
-            items={notes}
-            activeId={activeNote?.id}
-            onSelect={(note) => selectNote(note)}
-            dateField="created_at"
-          />
-        )}
+        <Calendar
+          items={notes}
+          activeId={activeNote?.id}
+          onSelect={(note) => selectNote(note)}
+          dateField="created_at"
+          collapsibleKey="notes"
+        />
 
         <input
           data-tour-id="notes-search"
@@ -809,9 +775,10 @@ function TypePill({ label, type, active, onClick }) {
   return (
     <button
       onClick={onClick}
+      className={emoji ? 'mono-emoji' : undefined}
       style={{
-        minWidth: '62px',
-        padding: '5px 8px',
+        width: emoji ? '72px' : '62px',
+        padding: emoji ? '5px 4px 5px 8px' : '5px 4px',
         fontSize: '10px',
         fontWeight: active ? '600' : '400',
         letterSpacing: '0.03em',
@@ -820,10 +787,12 @@ function TypePill({ label, type, active, onClick }) {
         background: active ? 'var(--strong)' : 'transparent',
         color: active ? 'var(--white)' : 'var(--body)',
         cursor: 'pointer',
-        textAlign: 'center',
+        textAlign: emoji ? 'left' : 'center',
         transition: 'all 0.12s',
         flexShrink: 0,
         whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
       }}
     >
       {emoji ? `${emoji} ${label}` : label}
@@ -854,8 +823,7 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        minWidth: '72px',
-        maxWidth: '110px',
+        width: '72px',
         borderRadius: '20px',
         border: borderStyle,
         background: active ? 'var(--strong)' : 'transparent',
@@ -873,9 +841,10 @@ function CustomTagPill({ label, active, onClick, onDelete, auto = false }) {
     >
       <button
         onClick={onClick}
+        className="mono-emoji"
         style={{
           flex: 1,
-          padding: '5px 0 5px 6px',
+          padding: '5px 0 5px 8px',
           fontSize: '10px',
           fontWeight: active ? '600' : '400',
           fontStyle: auto && !active ? 'italic' : 'normal',
@@ -1031,6 +1000,7 @@ function NoteListItem({ note, active, onClick, onDelete, onNavigateToChat }) {
         return (
           <div
             title={emojiTags.map(e => e.tag).join(', ')}
+            className="mono-emoji"
             style={{
               display: 'flex',
               flexDirection: 'row',

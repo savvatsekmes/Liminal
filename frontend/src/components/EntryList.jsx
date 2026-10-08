@@ -4,6 +4,7 @@ import { tagLabel, IMG_EMOJI, tagEmojisFromTags } from '../utils/tagEmoji';
 import { useTagEmojis } from '../hooks/useTagEmojis';
 import EmojiPicker from './EmojiPicker';
 import Calendar from './Calendar';
+import PageHero from './PageHero';
 import TagContextMenu from './TagContextMenu';
 import { useLockedTags } from '../hooks/useLockedTags';
 import { useCoreTags } from '../hooks/useCoreTags';
@@ -82,39 +83,6 @@ const s = {
     flexDirection: 'column',
     overflow: 'hidden',
     minWidth: 0,
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 12px',
-    height: '44px',
-    borderBottom: 'var(--border-style)',
-    flexShrink: 0,
-  },
-  headerTitle: {
-    fontFamily: 'var(--font-display)',
-    fontSize: '22px',
-    fontWeight: 700,
-    color: 'var(--strong)',
-    lineHeight: 1.1,
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  calToggle: {
-    fontSize: '11px',
-    color: 'var(--muted)',
-    padding: '2px 5px',
-    borderRadius: '2px',
-    border: 'var(--border-style)',
-    lineHeight: 1.4,
-    transition: 'color 0.15s, background 0.15s',
-    cursor: 'pointer',
-    background: 'none',
-    fontFamily: 'var(--font)',
   },
   search: {
     margin: '8px 10px',
@@ -224,7 +192,6 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
   const manualTags = allManual.filter((tag) => !isCore(tag));
   const autoTags = allAuto.filter((tag) => !isCore(tag));
   const [search, setSearch] = useState('');
-  const [showCal, setShowCal] = useState(true);
 
   const [confirmModal, setConfirmModal] = useState(null);
   const [filterTag, setFilterTag] = useState(ALL_TAG);
@@ -274,24 +241,9 @@ export default function EntryList({ entries, activeId, onSelect, onNew, onDelete
     <div style={s.root}>
       {/* List column */}
       <div style={s.listCol}>
-        <div style={s.header}>
-          <span style={s.headerTitle}>
-            {filterTag !== ALL_TAG ? filterTag : t('nav.journal')}
-          </span>
-          <div style={s.headerRight}>
-            <button
-              style={{ ...s.calToggle, ...(showCal ? { color: 'var(--strong)', background: 'var(--panel-bg)' } : {}) }}
-              onClick={() => setShowCal(v => !v)}
-              title={t('journal.calendar')}
-            >
-              {t('journal.calendar')}
-            </button>
-          </div>
-        </div>
+        <PageHero icon="/page-icons/journal.png" title={filterTag !== ALL_TAG ? filterTag : t('nav.journal')} />
 
-        {showCal && (
-          <Calendar items={filtered} activeId={activeId} onSelect={onSelect} />
-        )}
+        <Calendar items={filtered} activeId={activeId} onSelect={onSelect} collapsibleKey="journal" />
 
         <input
           data-tour-id="journal-search"
@@ -503,9 +455,10 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
     >
       <button
         onClick={onClick}
+        className="mono-emoji"
         style={{
           flex: 1,
-          padding: '5px 0 5px 4px',
+          padding: '5px 0 5px 8px',
           fontSize: '10px',
           fontWeight: active ? '600' : '400',
           fontStyle: auto && !active ? 'italic' : 'normal',
@@ -514,7 +467,7 @@ function TagCustomPill({ label, active, onClick, onDelete, auto = false }) {
           border: 'none',
           color: active ? 'var(--white)' : (auto ? 'var(--muted)' : 'var(--body)'),
           cursor: 'pointer',
-          textAlign: 'center',
+          textAlign: 'left',
           fontFamily: 'var(--font)',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -662,7 +615,7 @@ function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
             </span>
           )}
           {isFight && (
-            <span title="Fight" style={{ fontSize: '9px', opacity: 0.7 }}>🔥</span>
+            <span title="Fight" className="mono-emoji" style={{ fontSize: '9px', opacity: 0.7 }}>🔥</span>
           )}
         </div>
         <div style={{ ...s.itemTitle, paddingRight: hover ? '18px' : '0' }}>
@@ -672,6 +625,7 @@ function EntryItem({ entry, active, onClick, onDelete, onNavigateToChat }) {
       {emojiTags.length > 0 && (
         <div
           title={emojiTags.map(e => e.tag).join(', ')}
+          className="mono-emoji"
           style={{
             display: 'flex',
             flexDirection: 'row',

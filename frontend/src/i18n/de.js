@@ -307,6 +307,7 @@ export default {
   "oracle.noSessions": "Noch keine Orakel-Sitzungen.",
   "oracle.deleteConfirm": "Dieses Gespräch löschen?",
   "oracle.conversations": "Gespräche",
+  "oracle.chatsTitle": "Chats",
   "oracle.newConversation": "Neues Gespräch",
   "oracle.noConversations": "Noch keine Gespräche.",
   "oracle.noTag": "Kein Tag",
