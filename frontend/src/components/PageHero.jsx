@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { PAGE_ICON_ANIMATIONS, canPlayIconAnimations } from './pageIconAnimations';
 
 // Top of a page's list column: the page's hand-drawn icon with the page title
 // under it, in the same type as the "Liminal." wordmark under Home's logo. Icons live in /public/page-icons (black ink on
@@ -112,6 +113,48 @@ function FittedTitle({ text, sizeAs = WORDMARK_TEXT, width = WORDMARK_TEXT_WIDTH
   );
 }
 
+// The page icon, animated when there's an animation for it: plays once on
+// mount (i.e. when the page opens) and holds its last frame — a video that
+// ends without `loop` stays on its final frame. The last frame is placed
+// exactly where the static PNG would be, so nothing shifts; falls back to the
+// PNG where transparent video can't play, or if the video fails to load.
+function PageIcon({ icon, style }) {
+  const anim = PAGE_ICON_ANIMATIONS[icon];
+  const [useVideo, setUseVideo] = useState(() => !!anim && canPlayIconAnimations());
+  if (!useVideo) {
+    return <img src={icon} alt="" aria-hidden="true" className="page-icon" draggable={false} style={style} />;
+  }
+  // Fit the last frame's drawing into the icon box like objectFit: contain,
+  // centred, then size and offset the whole video to match.
+  const endW = anim.end.w * anim.w;
+  const endH = anim.end.h * anim.h;
+  const k = Math.min(PAGE_ICON_WIDTH / endW, PAGE_ICON_HEIGHT / endH);
+  const left = (PAGE_ICON_WIDTH - endW * k) / 2 - anim.end.x * anim.w * k;
+  const top = (PAGE_ICON_HEIGHT - endH * k) / 2 - anim.end.y * anim.h * k;
+  return (
+    <div aria-hidden="true" style={{ ...style, position: 'relative', overflow: 'visible' }}>
+      <video
+        src={anim.src}
+        className="page-icon"
+        autoPlay
+        muted
+        playsInline
+        preload="auto"
+        disablePictureInPicture
+        onError={() => setUseVideo(false)}
+        style={{
+          position: 'absolute',
+          left: `${left}px`,
+          top: `${top}px`,
+          width: `${anim.w * k}px`,
+          height: `${anim.h * k}px`,
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
+  );
+}
+
 // `page`: on a full-width page (Oracle, Context) rather than at the top of a
 // list column. `iconScale`: draw an icon that reads small in the shared box
 // (tall or round shapes) a little bigger. It grows upward and outward from
@@ -122,7 +165,7 @@ export default function PageHero({ icon, title, subtitle, page = false, iconScal
   return (
     <div className={page ? 'page-hero page-hero--page' : 'page-hero'} style={page ? s.heroPage : (divider ? s.hero : { ...s.hero, borderBottom: 'none' })} {...rest}>
       <div style={s.box}>
-        <img src={icon} alt="" aria-hidden="true" className="page-icon" draggable={false} style={iconStyle} />
+        <PageIcon icon={icon} style={iconStyle} />
         {/* Titles end in a full stop, like the "Liminal." wordmark. */}
         <FittedTitle text={/[.!?。．]$/.test(title) ? title : `${title}.`} style={s.title} />
         {subtitle && <div style={s.subtitle}>{subtitle}</div>}
