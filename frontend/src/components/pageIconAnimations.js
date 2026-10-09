@@ -13,7 +13,7 @@ export const PAGE_ICON_ANIMATIONS = {
   '/page-icons/notes.png':         { src: '/page-icons/notes.webm',         w: 176, h: 162, end: { x: 0.0109, y: 0.0095, w: 0.9803, h: 0.981 } },
   '/page-icons/conversations.png': { src: '/page-icons/conversations.webm', w: 156, h: 162, end: { x: 0.0094, y: 0.0114, w: 0.9811, h: 0.9795 } },
   '/page-icons/threads.png':       { src: '/page-icons/threads.webm',       w: 208, h: 162, end: { x: 0.0092, y: 0.0094, w: 0.7051, h: 0.9765 } },
-  '/page-icons/context.png':       { src: '/page-icons/context.webm',       w: 194, h: 160, end: { x: 0.0064, y: 0.0077, w: 0.9871, h: 0.9845 } },
+  '/page-icons/context.png':       { src: '/page-icons/context.webm',       w: 194, h: 162, end: { x: 0.0098, y: 0.0118, w: 0.9804, h: 0.9765 } },
   '/page-icons/oracle.png':        { src: '/page-icons/oracle.webm',        w: 166, h: 166, end: { x: 0.0326, y: 0.0371, w: 0.9419, h: 0.9536 } },
 };
 
