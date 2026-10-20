@@ -589,6 +589,7 @@ export default {
   "settings.builtinUse": "このモデルを使う",
   "settings.builtinInUse": "使用中",
   "settings.builtinDelete": "削除",
+  "settings.builtinAddVision": "写真の説明を追加（{size}）",
   "settings.builtinDeleteConfirm": "{name} をこのコンピューターから削除しますか？ あとでもう一度ダウンロードできます。",
   "settings.builtinOwnModels": "Liminal のモデルフォルダー",
   "settings.builtinOllamaModels": "Ollama のモデル",

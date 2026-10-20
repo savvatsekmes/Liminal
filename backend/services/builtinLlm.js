@@ -78,6 +78,9 @@ function listOllamaModels() {
         if (!layer) continue;
         const file = blobPath(root, layer.digest);
         if (!fs.existsSync(file)) continue;
+        // Vision models carry their image encoder ("projector") as its own layer.
+        const projector = (manifest.layers || []).find((l) => l.mediaType === 'application/vnd.ollama.image.projector');
+        const projectorFile = projector ? blobPath(root, projector.digest) : null;
         let config = {};
         try { config = JSON.parse(fs.readFileSync(blobPath(root, manifest.config?.digest), 'utf8')); } catch {}
         const family = String(config.model_family || '').toLowerCase();
@@ -95,6 +98,7 @@ function listOllamaModels() {
           detail: [config.model_type, config.file_type].filter(Boolean).join(' '),
           source: 'ollama',
           path: file,
+          vision: projectorFile && fs.existsSync(projectorFile) ? projectorFile : null,
           size: layer.size,
         });
       } catch { /* not a manifest */ }
@@ -113,7 +117,11 @@ function listLocalModels() {
       const file = path.join(MODELS_DIR, f);
       // Downloaded from the picker → its friendly name ("Gemma 4 12B").
       const name = require('./modelCatalog').nameForFile(f); // lazy: modelCatalog requires this module
-      return { id: `file:${f}`, label: name || f.replace(/\.gguf$/i, ''), detail: '', source: 'liminal', path: file, size: fs.statSync(file).size };
+      const visionFile = path.join(MODELS_DIR, f.replace(/\.gguf$/i, '.mmproj.gguf'));
+      return {
+        id: `file:${f}`, label: name || f.replace(/\.gguf$/i, ''), detail: '', source: 'liminal',
+        path: file, vision: fs.existsSync(visionFile) ? visionFile : null, size: fs.statSync(file).size,
+      };
     });
 }
 
@@ -219,7 +227,7 @@ function tailLog(n = 6) {
   } catch { return ''; }
 }
 
-async function start(model, ctx) {
+async function start(model, ctx, visionPath = null) {
   const dir = binDir();
   if (!dir) throw new Error('The built-in engine is missing from this install of Liminal.');
   killOrphan();
@@ -231,6 +239,10 @@ async function start(model, ctx) {
     '-c', String(ctx),
     '-np', '1',                 // one request at a time, with the full context
     '--no-webui',
+    // With vision, a bigger micro-batch: an image is encoded in one batch, so
+    // the default 512 caps it at 512 image tokens — Gemma 4 wants up to 1120,
+    // and below that small text in photos goes "faint".
+    ...(visionPath ? ['--mmproj', visionPath, '-ub', '1152'] : []),
     ...device.args,
   ];
   const log = fs.openSync(LOG_FILE, 'w');
@@ -241,10 +253,10 @@ async function start(model, ctx) {
   });
   fs.closeSync(log);
   try { fs.writeFileSync(PID_FILE, String(proc.pid)); } catch {}
-  console.log(`[builtin-llm] starting ${model.label} on ${device.label} (ctx ${ctx}, port ${port})`);
+  console.log(`[builtin-llm] starting ${model.label} on ${device.label} (ctx ${ctx}, port ${port}${visionPath ? ', with vision' : ''})`);
 
   const url = `http://127.0.0.1:${port}`;
-  const entry = { proc, url, modelId: model.id, device: device.label, devicePref: device.pref, ctx, ready: null };
+  const entry = { proc, url, modelId: model.id, device: device.label, devicePref: device.pref, ctx, visionPath, ready: null };
   proc.on('exit', (code) => {
     if (server === entry) server = null;
     if (code) console.warn(`[builtin-llm] engine exited (${code}). Last log lines:\n${tailLog()}`);
@@ -271,6 +283,7 @@ async function start(model, ctx) {
 }
 
 let _ensuring = null;
+const visionFailed = new Set(); // model ids whose vision add-on wouldn't load
 async function ensure() {
   const s = require('./settingsService');
   const modelId = s.get('builtin_model');
@@ -281,16 +294,30 @@ async function ensure() {
   // Serialise: two requests arriving together must not start two engines.
   while (_ensuring) await _ensuring.catch(() => {});
   const p = (async () => {
-    if (server && server.modelId === modelId && server.ctx === ctx && server.devicePref === devicePref && server.proc.exitCode == null) {
+    const model = resolveModel(modelId);
+    if (!model) throw new Error('The model chosen for the built-in engine is no longer on this computer. Pick another in Settings → AI.');
+    const visionPath = model.vision && !visionFailed.has(model.id) ? model.vision : null;
+    if (server && server.modelId === modelId && server.ctx === ctx && server.devicePref === devicePref
+        && server.visionPath === visionPath && server.proc.exitCode == null) {
       await server.ready;
       return server;
     }
-    const model = resolveModel(modelId);
-    if (!model) throw new Error('The model chosen for the built-in engine is no longer on this computer. Pick another in Settings → AI.');
     stop();
-    const entry = await start(model, ctx);
-    await entry.ready;
-    return entry;
+    try {
+      const entry = await start(model, ctx, visionPath);
+      await entry.ready;
+      return entry;
+    } catch (err) {
+      if (!visionPath) throw err;
+      // The vision add-on didn't load (an Ollama projector llama.cpp can't
+      // read, say). Text is what matters most: run without it.
+      console.warn(`[builtin-llm] ${model.label} wouldn't start with its vision add-on — running without it`);
+      visionFailed.add(model.id);
+      stop();
+      const entry = await start(model, ctx, null);
+      await entry.ready;
+      return entry;
+    }
   })();
   _ensuring = p;
   try { return await p; } finally { if (_ensuring === p) _ensuring = null; }
@@ -312,6 +339,7 @@ function status() {
     running: !!server && server.proc.exitCode == null,
     model: server?.modelId || null,
     device: server?.device || null,
+    vision: !!server?.visionPath,
     modelsDir: MODELS_DIR,
     devices: listDevices().map(({ name, totalMiB }) => ({ name, totalMiB })),
   };
@@ -413,4 +441,25 @@ async function* streamChat(messages, options = {}) {
   }
 }
 
-module.exports = { available, listModels, listDevices, status, ensure, stop, chat, streamChat, MODELS_DIR };
+/** Whether the chosen model can see images (has a vision add-on that loads). */
+function canDescribeImages() {
+  const modelId = require('./settingsService').get('builtin_model');
+  if (!modelId || !available()) return false;
+  const model = resolveModel(modelId);
+  return !!(model?.vision && !visionFailed.has(model.id));
+}
+
+/** Describe a JPEG (base64) with the chosen model. */
+async function describeImage(jpegBase64, prompt) {
+  const srv = await ensure();
+  if (!srv.visionPath) throw new Error('The chosen built-in model has no vision add-on.');
+  return chat([{
+    role: 'user',
+    content: [
+      { type: 'text', text: prompt },
+      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${jpegBase64}` } },
+    ],
+  }], {});
+}
+
+module.exports = { available, listModels, listDevices, status, ensure, stop, chat, streamChat, canDescribeImages, describeImage, MODELS_DIR };

@@ -589,6 +589,7 @@ export default {
   "settings.builtinUse": "Использовать эту модель",
   "settings.builtinInUse": "Используется",
   "settings.builtinDelete": "Удалить",
+  "settings.builtinAddVision": "Добавить описание фото ({size})",
   "settings.builtinDeleteConfirm": "Удалить {name} с этого компьютера? Позже её можно скачать снова.",
   "settings.builtinOwnModels": "Папка моделей Liminal",
   "settings.builtinOllamaModels": "Ваши модели Ollama",

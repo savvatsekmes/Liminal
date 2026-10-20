@@ -589,6 +589,7 @@ export default {
   "settings.builtinUse": "이 모델 사용",
   "settings.builtinInUse": "사용 중",
   "settings.builtinDelete": "삭제",
+  "settings.builtinAddVision": "사진 설명 추가 ({size})",
   "settings.builtinDeleteConfirm": "이 컴퓨터에서 {name}을(를) 삭제할까요? 나중에 다시 다운로드할 수 있어요.",
   "settings.builtinOwnModels": "Liminal 모델 폴더",
   "settings.builtinOllamaModels": "내 Ollama 모델",

@@ -589,6 +589,7 @@ export default {
   "settings.builtinUse": "استخدم هذا النموذج",
   "settings.builtinInUse": "قيد الاستخدام",
   "settings.builtinDelete": "حذف",
+  "settings.builtinAddVision": "إضافة وصف الصور ({size})",
   "settings.builtinDeleteConfirm": "حذف {name} من هذا الحاسوب؟ يمكنك تنزيله مجددًا لاحقًا.",
   "settings.builtinOwnModels": "مجلد نماذج Liminal",
   "settings.builtinOllamaModels": "نماذجك في Ollama",

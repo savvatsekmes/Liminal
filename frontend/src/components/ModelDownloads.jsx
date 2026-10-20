@@ -128,6 +128,11 @@ export function ModelDownloadRow({ m, selected, onUse, onChanged, onDownload }) 
               {selected
                 ? <span style={{ ...sublabel, marginTop: 0 }}>{t('settings.builtinInUse')}</span>
                 : <Btn primary onClick={onUse}>{t('settings.builtinUse')}</Btn>}
+              {/* Downloaded before the built-in engine could describe photos:
+                  offer the model's small vision add-on. */}
+              {m.vision === false && (
+                <Btn onClick={download}>{t('settings.builtinAddVision', { size: formatGB(m.visionSize) })}</Btn>
+              )}
               <Btn onClick={remove}>{t('settings.builtinDelete')}</Btn>
             </>
           ) : m.status === 'paused' || m.status === 'error' ? (

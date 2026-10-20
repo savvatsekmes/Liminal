@@ -990,6 +990,7 @@ export default {
   "settings.builtinUse": "Use this model",
   "settings.builtinInUse": "In use",
   "settings.builtinDelete": "Delete",
+  "settings.builtinAddVision": "Add photo descriptions ({size})",
   "settings.builtinDeleteConfirm": "Delete {name} from this computer? You can download it again later.",
   "settings.builtinOwnModels": "Liminal models folder",
   "settings.builtinOllamaModels": "Your Ollama models",

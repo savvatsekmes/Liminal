@@ -589,6 +589,7 @@ export default {
   "settings.builtinUse": "Bu modeli kullan",
   "settings.builtinInUse": "Kullanımda",
   "settings.builtinDelete": "Sil",
+  "settings.builtinAddVision": "Fotoğraf açıklamalarını ekle ({size})",
   "settings.builtinDeleteConfirm": "{name} bu bilgisayardan silinsin mi? Daha sonra yeniden indirebilirsin.",
   "settings.builtinOwnModels": "Liminal model klasörü",
   "settings.builtinOllamaModels": "Ollama modellerin",

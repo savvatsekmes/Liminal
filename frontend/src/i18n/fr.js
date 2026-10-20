@@ -589,6 +589,7 @@ export default {
   "settings.builtinUse": "Utiliser ce modèle",
   "settings.builtinInUse": "Utilisé",
   "settings.builtinDelete": "Supprimer",
+  "settings.builtinAddVision": "Ajouter la description des photos ({size})",
   "settings.builtinDeleteConfirm": "Supprimer {name} de cet ordinateur ? Tu pourras le télécharger à nouveau plus tard.",
   "settings.builtinOwnModels": "Dossier de modèles de Liminal",
   "settings.builtinOllamaModels": "Tes modèles Ollama",

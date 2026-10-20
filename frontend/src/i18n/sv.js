@@ -682,6 +682,7 @@ export default {
   "settings.builtinUse": "Använd den här modellen",
   "settings.builtinInUse": "Används",
   "settings.builtinDelete": "Ta bort",
+  "settings.builtinAddVision": "Lägg till fotobeskrivningar ({size})",
   "settings.builtinDeleteConfirm": "Ta bort {name} från den här datorn? Du kan ladda ned den igen senare.",
   "settings.builtinOwnModels": "Liminals modellmapp",
   "settings.builtinOllamaModels": "Dina Ollama-modeller",

@@ -589,6 +589,7 @@ export default {
   "settings.builtinUse": "Χρήση αυτού του μοντέλου",
   "settings.builtinInUse": "Σε χρήση",
   "settings.builtinDelete": "Διαγραφή",
+  "settings.builtinAddVision": "Προσθήκη περιγραφής φωτογραφιών ({size})",
   "settings.builtinDeleteConfirm": "Διαγραφή του {name} από αυτόν τον υπολογιστή; Μπορείς να το κατεβάσεις ξανά αργότερα.",
   "settings.builtinOwnModels": "Φάκελος μοντέλων του Liminal",
   "settings.builtinOllamaModels": "Τα μοντέλα σου στο Ollama",

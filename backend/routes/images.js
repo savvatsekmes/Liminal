@@ -18,6 +18,8 @@ function getOllamaSettings() {
   };
 }
 
+const DESCRIBE_PROMPT = 'Describe this image in detail. Include what you see, any text visible, the mood or tone, and any context that would help someone understand what this image is about. Be thorough but concise — aim for 2-4 sentences.';
+
 // ── POST /api/images/analyze ────────────────────────────────────────────────
 // Body: { imageData }  (base64 data URL e.g. "data:image/png;base64,...")
 // Returns: { description, hash, cached }
@@ -56,6 +58,31 @@ router.post('/analyze', async (req, res) => {
     base64ForVision = rawBase64;
   }
 
+  const save = (description) => {
+    if (description) {
+      db.prepare(
+        `INSERT OR REPLACE INTO image_descriptions (image_hash, user_id, description)
+         VALUES (?, ?, ?)`
+      ).run(hash, req.userId, description);
+    }
+    res.json({ description, hash, cached: false });
+  };
+
+  // With the built-in engine chosen, its own model describes the photo when
+  // it has the vision add-on — no Ollama needed. Otherwise (or for anyone on
+  // another provider) the Ollama vision model does it, as before.
+  const s = require('../services/settingsService');
+  const builtin = require('../services/builtinLlm');
+  const onBuiltin = s.get('llm_provider') === 'builtin';
+  if (onBuiltin && builtin.canDescribeImages()) {
+    try {
+      console.log(`[images] Analyzing image hash=${hash} with the built-in engine`);
+      return save((await builtin.describeImage(base64ForVision, DESCRIBE_PROMPT)).trim());
+    } catch (err) {
+      console.warn('[images] Built-in vision failed, trying Ollama:', err.message);
+    }
+  }
+
   // Call Ollama vision model
   const { ollamaUrl, visionModel } = getOllamaSettings();
   console.log(`[images] Analyzing image hash=${hash} model=${visionModel}`);
@@ -70,7 +97,7 @@ router.post('/analyze', async (req, res) => {
         messages: [
           {
             role: 'user',
-            content: 'Describe this image in detail. Include what you see, any text visible, the mood or tone, and any context that would help someone understand what this image is about. Be thorough but concise — aim for 2-4 sentences.',
+            content: DESCRIBE_PROMPT,
             images: [base64ForVision],
           },
         ],
@@ -89,18 +116,15 @@ router.post('/analyze', async (req, res) => {
 
     const data = await response.json();
     const description = (data.message?.content || '').trim();
-    console.log(`[images] Analysis result hash=${hash}: "${description.slice(0, 100)}..."`);
-
-    if (description) {
-      db.prepare(
-        `INSERT OR REPLACE INTO image_descriptions (image_hash, user_id, description)
-         VALUES (?, ?, ?)`
-      ).run(hash, req.userId, description);
-    }
-
-    res.json({ description, hash, cached: false });
+    console.log(`[images] Analysis result hash=${hash}: chars=${description.length}`);
+    save(description);
   } catch (err) {
     console.error('[images/analyze] Error:', err.message);
+    // On the built-in engine without its vision add-on, point at the fix
+    // rather than at Ollama.
+    if (onBuiltin) {
+      return res.status(503).json({ error: 'To describe photos, add image support to your model in Settings → Language Model.' });
+    }
     res.status(500).json({ error: `Image analysis failed: ${err.message}` });
   }
 });
