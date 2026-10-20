@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
+import { ModelDownloadRow, useBuiltinInfo, formatGB } from '../components/ModelDownloads';
 import { useLanguage, LANGUAGES } from '../i18n/LanguageContext';
 import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
@@ -687,116 +688,18 @@ function SubscriptionProviderPanel({ provider, cfg, set, save }) {
 // ── Built-in engine (bundled llama.cpp) ──────────────────────────────────────
 // Local AI that Liminal runs itself — nothing else to install. Uses .gguf
 // files in Liminal's models folder and the models already in Ollama.
-function formatGB(bytes) {
-  return bytes ? `${(bytes / 1073741824).toFixed(1)} GB` : '';
-}
-
-// One row per downloadable model: what it's for, its size, and Download /
-// progress + Cancel / Downloaded + Use + Delete.
-function ModelDownloadRow({ m, selected, onUse, onChanged }) {
-  const { t } = useLanguage();
-  const post = (url, body) => apiFetch(url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  }).then(onChanged).catch(onChanged);
-  const download = () => post('/api/settings/builtin/download', { id: m.id });
-  const cancel = () => post('/api/settings/builtin/download/cancel', { id: m.id });
-  const remove = () => {
-    if (!window.confirm(t('settings.builtinDeleteConfirm', { name: m.name }))) return;
-    apiFetch(`/api/settings/builtin/models/${encodeURIComponent(m.id)}`, { method: 'DELETE' }).then(onChanged).catch(onChanged);
-  };
-  const pct = m.total ? Math.min(100, Math.round((m.received / m.total) * 100)) : 0;
-  const busy = m.status === 'downloading' || m.status === 'verifying';
-
-  return (
-    <div style={{ padding: '12px 14px', background: 'var(--white)', borderRadius: '12px', border: m.recommended ? '1px solid var(--strong)' : 'var(--border-style)' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--strong)' }}>{m.name}</span>
-        <span style={s.sublabel}>{formatGB(m.size)}</span>
-        {m.recommended && (
-          <span style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.04em', color: 'var(--white)', background: 'var(--strong)', borderRadius: '8px', padding: '2px 8px' }}>
-            {t('settings.builtinRecommended')}
-          </span>
-        )}
-      </div>
-      <div style={{ ...s.sublabel, marginTop: '4px', lineHeight: 1.5 }}>
-        {m.note}{!m.fits && ` ${t('settings.builtinMayNotFit')}`}
-      </div>
-
-      {busy && (
-        <div style={{ marginTop: '10px' }}>
-          <div style={{ height: '4px', background: 'var(--near-white)', borderRadius: '2px', overflow: 'hidden' }}>
-            <div style={{ width: `${m.status === 'verifying' ? 100 : pct}%`, height: '100%', background: 'var(--strong)', transition: 'width 0.4s' }} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
-            <span style={s.sublabel}>
-              {m.status === 'verifying'
-                ? t('settings.builtinVerifying')
-                : t('settings.builtinProgress', { done: formatGB(m.received), total: formatGB(m.total), pct })}
-            </span>
-            {m.status === 'downloading' && <Btn onClick={cancel}>{t('common.cancel')}</Btn>}
-          </div>
-        </div>
-      )}
-
-      {!busy && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-          {m.status === 'installed' ? (
-            <>
-              {selected
-                ? <span style={{ ...s.sublabel, marginTop: 0 }}>{t('settings.builtinInUse')}</span>
-                : <Btn primary onClick={onUse}>{t('settings.builtinUse')}</Btn>}
-              <Btn onClick={remove}>{t('settings.builtinDelete')}</Btn>
-            </>
-          ) : m.status === 'paused' || m.status === 'error' ? (
-            <>
-              <Btn primary onClick={download}>{t('settings.builtinResume')}</Btn>
-              <Btn onClick={cancel}>{t('settings.builtinDiscard')}</Btn>
-              {m.status === 'error'
-                ? <span style={{ fontSize: '11px', color: '#c54' }}>{m.error}</span>
-                : <span style={s.sublabel}>{t('settings.builtinPaused', { done: formatGB(m.received) })}</span>}
-            </>
-          ) : (
-            <Btn primary={m.recommended} onClick={download}>{t('settings.builtinDownload')}</Btn>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function BuiltinEnginePanel({ cfg, set, save }) {
   const { t } = useLanguage();
-  const [info, setInfo] = useState(null); // { available, running, model, device, modelsDir, devices, models, catalog }
-  const aliveRef = useRef(true);
-  const load = useCallback(() => apiFetch('/api/settings/builtin')
-    .then((r) => r.json()).then((d) => { if (aliveRef.current) setInfo(d); }).catch(() => {}), []);
-  const downloading = !!info?.catalog?.some((m) => m.status === 'downloading' || m.status === 'verifying');
-
-  useEffect(() => {
-    aliveRef.current = true;
-    load();
-    // Keep progress and the "loaded on…" line current: every second while
-    // something downloads, otherwise every few seconds.
-    const id = setInterval(load, downloading ? 1000 : 4000);
-    return () => { aliveRef.current = false; clearInterval(id); };
-  }, [load, downloading]);
-
   // A download that just finished becomes the model in use if none is chosen
   // yet (or the chosen one is gone), so a new user is ready straight away.
-  const prevStatus = useRef({});
-  useEffect(() => {
-    if (!info?.catalog) return;
+  const [info, load] = useBuiltinInfo((modelId, latest) => {
     const current = cfg.builtin_model || '';
-    const currentExists = (info.models || []).some((m) => m.id === current);
-    for (const m of info.catalog) {
-      const was = prevStatus.current[m.id];
-      if (m.status === 'installed' && was && was !== 'installed' && (!current || !currentExists)) {
-        set('builtin_model', m.modelId);
-        save({ builtin_model: m.modelId });
-      }
-      prevStatus.current[m.id] = m.status;
+    const currentExists = (latest.models || []).some((m) => m.id === current);
+    if (!current || !currentExists) {
+      set('builtin_model', modelId);
+      save({ builtin_model: modelId });
     }
-  }, [info]);
+  });
 
   if (!info) return <div style={{ ...s.sublabel, marginBottom: '14px' }}>{t('settings.builtinChecking')}</div>;
   if (!info.available) {
@@ -807,6 +710,7 @@ function BuiltinEnginePanel({ cfg, set, save }) {
   const ollamaModels = models.filter((m) => m.source === 'ollama');
   const ownModels = models.filter((m) => m.source !== 'ollama');
   const current = cfg.builtin_model || '';
+  const currentAvailable = !!current && models.some((m) => m.id === current);
   const optionLabel = (m) => [m.label, m.detail, formatGB(m.size)].filter(Boolean).join(' · ');
   const chooseModel = (id) => { set('builtin_model', id); save({ builtin_model: id }); };
 
@@ -819,8 +723,10 @@ function BuiltinEnginePanel({ cfg, set, save }) {
             {t('settings.builtinNoModels')}
           </div>
         ) : (
-          <select style={s.select} value={current} onChange={(e) => chooseModel(e.target.value)}>
-            {!current && <option value="">{t('settings.selectModel')}</option>}
+          // A chosen model that isn't here (download cancelled, file removed)
+          // shows as "Select a model…" rather than silently as the first one.
+          <select style={s.select} value={currentAvailable ? current : ''} onChange={(e) => chooseModel(e.target.value)}>
+            {!currentAvailable && <option value="">{t('settings.selectModel')}</option>}
             {ownModels.length > 0 && (
               <optgroup label={t('settings.builtinOwnModels')}>
                 {ownModels.map((m) => <option key={m.id} value={m.id}>{optionLabel(m)}</option>)}

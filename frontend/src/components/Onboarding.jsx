@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import { ModelDownloadRow, useBuiltinInfo } from './ModelDownloads';
 import { useLanguage } from '../i18n/LanguageContext';
 import { todayLocal } from '../utils/dates';
 
@@ -479,7 +480,7 @@ export default function Onboarding({ username, onComplete }) {
             />
           )}
           {step === 6 && (
-            <OllamaStep
+            <AiModelStep
               onContinue={() => goTo(7)}
               onBack={() => goTo(5)}
               onSkipForNow={handleSkipForNow}
@@ -1133,7 +1134,90 @@ function ResponseStyleStep({ data, set, onContinue, onBack, onSkipForNow, onSkip
   );
 }
 
-// ── Step 5: Ollama Setup ────────────────────────────────────────────────────
+// ── Step 5: AI model ─────────────────────────────────────────────────────────
+// New users get Liminal's built-in engine: pick a model and it downloads in
+// the background while they finish setting up — nothing else to install.
+// Anyone who already uses Ollama can switch to the Ollama step. Where the
+// engine isn't part of this install (macOS for now), the Ollama step shows
+// as before.
+
+function AiModelStep(props) {
+  const { onContinue, onBack, onSkipForNow, onSkipCompletely, saving } = props;
+  const { t } = useLanguage();
+  const [mode, setMode] = useState('builtin');
+  const [selectedModel, setSelectedModel] = useState('');
+
+  useEffect(() => {
+    apiFetch('/api/settings').then((r) => r.json()).then((cfg) => setSelectedModel(cfg.builtin_model || '')).catch(() => {});
+  }, []);
+
+  // Choosing a model (or starting its download) makes the built-in engine
+  // the provider straight away, so it's set even if they finish setup
+  // before the download does.
+  const chooseModel = (modelId) => {
+    setSelectedModel(modelId);
+    apiFetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ llm_provider: 'builtin', builtin_model: modelId }),
+    }).catch(() => {});
+  };
+  const [info, load] = useBuiltinInfo();
+
+  if (mode === 'ollama' || (info && !info.available)) {
+    return <OllamaStep {...props} onUseBuiltin={info?.available ? () => setMode('builtin') : undefined} />;
+  }
+
+  const downloading = info?.catalog?.some((m) => m.status === 'downloading' || m.status === 'verifying');
+
+  return (
+    <>
+      <BackButton onClick={onBack} />
+      <div style={s.title}>{t('onboarding.aiTitle')}</div>
+      <div style={{ ...s.subtitle, whiteSpace: 'pre-line' }}>{t('onboarding.aiSubtitle')}</div>
+
+      {!info ? (
+        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '16px' }}>{t('onboarding.aiChecking')}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+          {info.catalog.map((m) => (
+            <ModelDownloadRow
+              key={m.id}
+              m={m}
+              selected={selectedModel === m.modelId}
+              onUse={() => chooseModel(m.modelId)}
+              onDownload={() => chooseModel(m.modelId)}
+              onChanged={load}
+            />
+          ))}
+        </div>
+      )}
+
+      {downloading && (
+        <div style={{ fontSize: '12px', color: 'var(--body)', marginBottom: '12px', lineHeight: 1.6 }}>
+          {t('onboarding.aiKeepGoing')}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setMode('ollama')}
+        style={{ fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', textDecoration: 'underline', marginBottom: '10px' }}
+      >
+        {t('onboarding.aiUseOllama')}
+      </button>
+
+      <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
+        {t('onboarding.aiSettingsHint')}
+      </div>
+
+      <button style={s.btn} onClick={onContinue}>{t('common.continue')}</button>
+      <SkipButtons onSkipForNow={onSkipForNow} onSkipCompletely={onSkipCompletely} saving={saving} />
+    </>
+  );
+}
+
+// ── Step 5 (alternative): Ollama Setup ──────────────────────────────────────
 
 const PERFORMANCE_TIERS = [
   // qwen3.5:2b is intentionally absent — it produces too many comprehension
@@ -1144,7 +1228,7 @@ const PERFORMANCE_TIERS = [
   { id: 'high', labelKey: 'onboarding.ollamaTier.high.label', descKey: 'onboarding.ollamaTier.high.desc', model: 'qwen3.5:27b', size: '17 GB'  },
 ];
 
-function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving }) {
+function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving, onUseBuiltin }) {
   const { t } = useLanguage();
   const [ollamaStatus, setOllamaStatus] = useState(null);
   const [installedModels, setInstalledModels] = useState(new Set());
@@ -1354,6 +1438,16 @@ function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving
             </div>
           )}
         </div>
+      )}
+
+      {onUseBuiltin && (
+        <button
+          type="button"
+          onClick={onUseBuiltin}
+          style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', textDecoration: 'underline', marginBottom: '10px' }}
+        >
+          {t('onboarding.aiUseBuiltin')}
+        </button>
       )}
 
       <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', marginBottom: '20px' }}>
