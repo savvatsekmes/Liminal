@@ -184,11 +184,6 @@ export const TOURS = {
       bodyKey: 'tutorials.notes.notesTypeRail.body',
     },
     {
-      targetId: 'notes-custom-tag',
-      titleKey: 'tutorials.notes.notesCustomTag.title',
-      bodyKey: 'tutorials.notes.notesCustomTag.body',
-    },
-    {
       targetId: 'notes-toolbar',
       titleKey: 'tutorials.notes.notesToolbar.title',
       bodyKey: 'tutorials.notes.notesToolbar.body',
