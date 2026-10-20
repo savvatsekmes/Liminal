@@ -82,6 +82,13 @@ export function ModelDownloadRow({ m, selected, onUse, onChanged, onDownload }) 
   };
   const pct = m.total ? Math.min(100, Math.round((m.received / m.total) * 100)) : 0;
   const busy = m.status === 'downloading' || m.status === 'verifying';
+  // The description in the user's language; the backend's English note for
+  // a model the translations don't know yet.
+  const noteFor = (model) => {
+    const key = `settings.builtinNote.${model.id}`;
+    const text = t(key);
+    return text && text !== key ? text : model.note;
+  };
 
   return (
     <div style={{ padding: '12px 14px', background: 'var(--white)', borderRadius: '12px', border: m.recommended ? '1px solid var(--strong)' : 'var(--border-style)', textAlign: 'left' }}>
@@ -95,7 +102,7 @@ export function ModelDownloadRow({ m, selected, onUse, onChanged, onDownload }) 
         )}
       </div>
       <div style={{ ...sublabel, marginTop: '4px', lineHeight: 1.5 }}>
-        {m.note}{!m.fits && ` ${t('settings.builtinMayNotFit')}`}
+        {noteFor(m)}{!m.fits && ` ${t('settings.builtinMayNotFit')}`}
       </div>
 
       {busy && (
