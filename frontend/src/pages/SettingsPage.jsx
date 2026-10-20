@@ -684,6 +684,87 @@ function SubscriptionProviderPanel({ provider, cfg, set, save }) {
   );
 }
 
+// ── Built-in engine (bundled llama.cpp) ──────────────────────────────────────
+// Local AI that Liminal runs itself — nothing else to install. Uses .gguf
+// files in Liminal's models folder and the models already in Ollama.
+function formatGB(bytes) {
+  return bytes ? `${(bytes / 1073741824).toFixed(1)} GB` : '';
+}
+
+function BuiltinEnginePanel({ cfg, set, save }) {
+  const { t } = useLanguage();
+  const [info, setInfo] = useState(null); // { available, running, model, device, modelsDir, devices, models }
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => apiFetch('/api/settings/builtin').then((r) => r.json()).then((d) => { if (alive) setInfo(d); }).catch(() => {});
+    load();
+    // Keep the "loaded on…" line current (the engine starts on first use).
+    const id = setInterval(load, 4000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  if (!info) return <div style={{ ...s.sublabel, marginBottom: '14px' }}>{t('settings.builtinChecking')}</div>;
+  if (!info.available) {
+    return <div style={{ ...s.sublabel, marginBottom: '14px', lineHeight: 1.6 }}>{t('settings.builtinMissing')}</div>;
+  }
+
+  const models = info.models || [];
+  const ollamaModels = models.filter((m) => m.source === 'ollama');
+  const ownModels = models.filter((m) => m.source !== 'ollama');
+  const current = cfg.builtin_model || '';
+  const optionLabel = (m) => [m.label, m.detail, formatGB(m.size)].filter(Boolean).join(' · ');
+  const chooseModel = (id) => { set('builtin_model', id); save({ builtin_model: id }); };
+
+  return (
+    <>
+      <div style={{ ...s.sublabel, marginBottom: '14px', lineHeight: 1.6 }}>{t('settings.builtinDesc')}</div>
+      <Field label={t('settings.activeModel')}>
+        {models.length === 0 ? (
+          <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--near-white)', lineHeight: 1.6 }}>
+            {t('settings.builtinNoModels', { folder: info.modelsDir })}
+          </div>
+        ) : (
+          <select style={s.select} value={current} onChange={(e) => chooseModel(e.target.value)}>
+            {!current && <option value="">{t('settings.selectModel')}</option>}
+            {ownModels.length > 0 && (
+              <optgroup label={t('settings.builtinOwnModels')}>
+                {ownModels.map((m) => <option key={m.id} value={m.id}>{optionLabel(m)}</option>)}
+              </optgroup>
+            )}
+            {ollamaModels.length > 0 && (
+              <optgroup label={t('settings.builtinOllamaModels')}>
+                {ollamaModels.map((m) => <option key={m.id} value={m.id}>{optionLabel(m)}</option>)}
+              </optgroup>
+            )}
+          </select>
+        )}
+        <div style={{ ...s.sublabel, marginTop: '6px', lineHeight: 1.5 }}>
+          {info.running
+            ? t('settings.builtinLoaded', { device: info.device || '' })
+            : t('settings.builtinNotLoaded')}
+        </div>
+      </Field>
+
+      {info.devices?.length > 0 && (
+        <Field label={t('settings.builtinGpu')}>
+          <select
+            style={s.select}
+            value={cfg.builtin_device || 'auto'}
+            onChange={(e) => { set('builtin_device', e.target.value); save({ builtin_device: e.target.value }); }}
+          >
+            <option value="auto">{t('settings.builtinGpuAuto')}</option>
+            {info.devices.map((d) => (
+              <option key={d.name} value={d.name}>{d.name} ({Math.round(d.totalMiB / 1024)} GB)</option>
+            ))}
+            <option value="cpu">{t('settings.builtinGpuCpu')}</option>
+          </select>
+        </Field>
+      )}
+    </>
+  );
+}
+
 // ── LLM Section ───────────────────────────────────────────────────────────────
 function LLMSection({ cfg, set, save, saving, showToast }) {
   const { t } = useLanguage();
@@ -759,7 +840,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
     <Section title={t('settings.tabLLM')}>
       <Field label={t('settings.llmProvider')}>
         <div style={s.segmented}>
-          {['claude', 'openai', 'ollama'].map((p, i, arr) => (
+          {['builtin', 'ollama', 'claude', 'openai'].map((p, i, arr) => (
             <button
               key={p}
               style={{
@@ -769,7 +850,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
               }}
               onClick={() => { set('llm_provider', p); save({ llm_provider: p }); }}
             >
-              {p === 'claude' ? 'Claude' : p === 'openai' ? 'OpenAI' : t('settings.ollamaLocal')}
+              {p === 'claude' ? 'Claude' : p === 'openai' ? 'OpenAI' : p === 'builtin' ? t('settings.builtinLocal') : t('settings.ollamaLocal')}
             </button>
           ))}
         </div>
@@ -903,6 +984,8 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
           </Field>
         </>
       )}
+
+      {provider === 'builtin' && <BuiltinEnginePanel cfg={cfg} set={set} save={save} />}
 
       {provider === 'ollama' && (
         <>

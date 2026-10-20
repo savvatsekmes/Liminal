@@ -58,12 +58,31 @@ router.put('/', (req, res) => {
   // Auth middleware has set the per-user context, so setMany writes every
   // key under this user's namespace automatically. No special-casing needed.
   s.setMany(updates);
+
+  // Switching away from the built-in engine frees its GPU memory now rather
+  // than after the idle timeout.
+  if (updates.llm_provider && updates.llm_provider !== 'builtin') {
+    require('../services/builtinLlm').stop();
+  }
   const result = s.getAll();
   result.has_anthropic_key = s.hasSecret('anthropic_api_key');
   result.has_openai_key    = s.hasSecret('openai_api_key');
   result.has_tavily_key    = s.hasSecret('tavily_api_key');
   result.personal_providers_available = llm.personalProvidersAvailable();
   res.json(result);
+});
+
+// ── GET /api/settings/builtin ────────────────────────────────────────────────
+// The built-in engine: whether it's in this install, its state, and the
+// models it can use (Liminal's models folder + models already in Ollama).
+router.get('/builtin', (req, res) => {
+  const builtin = require('../services/builtinLlm');
+  res.json({
+    ...builtin.status(),
+    models: builtin.available()
+      ? builtin.listModels().map(({ id, label, detail, source, size }) => ({ id, label, detail, source, size }))
+      : [],
+  });
 });
 
 // ── POST /api/settings/test-llm ───────────────────────────────────────────────

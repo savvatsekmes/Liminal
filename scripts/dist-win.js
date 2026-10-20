@@ -70,6 +70,14 @@ function build({ root = path.resolve(__dirname, '..'), runBuilder = runElectronB
       log('moved backend/personal out of win-unpacked for the build');
     }
 
+    // The built-in AI engine ships inside the app (it's what makes local AI
+    // work with nothing else installed). Fetch it with
+    // `node scripts/fetch-llama-server.js` and copy dist/llama_server to
+    // win-unpacked/resources/llama_server.
+    if (!fs.existsSync(path.join(L.unpacked, 'resources', 'llama_server', 'llama-server.exe'))) {
+      throw new Error('win-unpacked/resources/llama_server is missing the built-in engine (llama-server.exe).');
+    }
+
     // Nothing personal may remain anywhere in the tree we're about to wrap.
     const leftovers = scanDir(L.unpacked);
     if (leftovers.length) throw new Error(`Personal-only files still in win-unpacked:\n  ${leftovers.slice(0, 10).join('\n  ')}`);

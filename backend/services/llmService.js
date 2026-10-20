@@ -83,6 +83,7 @@ function getSettings() {
     ollamaUrl:        s.get('ollama_url') || 'http://localhost:11434',
     ollamaModel:      s.get('ollama_model') || 'llama3.1',
     ollamaThink:      s.get('ollama_think') === 'true',
+    builtinModel:     s.get('builtin_model') || '',
     claudeSubscriptionModel:  s.get('claude_subscription_model') || 'default',
     chatgptSubscriptionModel: s.get('chatgpt_subscription_model') || 'default',
   };
@@ -237,6 +238,21 @@ async function callOllama(systemPrompt, userMessage, options = {}) {
   throw new Error(`Ollama connection failed: ${lastErr?.message || 'unknown'}`);
 }
 
+// ── Built-in (bundled llama.cpp) ───────────────────────────────────────────
+// Local like Ollama, but Liminal runs the engine itself (builtinLlm.js).
+// Thinking follows the Ollama setting, off by default.
+function builtinOptions(options, cfg) {
+  return { maxTokens: options.maxTokens, think: options.think ?? cfg.ollamaThink ?? false };
+}
+
+async function callBuiltin(systemPrompt, userMessage, options = {}) {
+  const text = await require('./builtinLlm').chat(
+    [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],
+    builtinOptions(options, getSettings()),
+  );
+  return stripModelMeta(text);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 async function call(systemPrompt, userMessage, options = {}) {
@@ -252,6 +268,7 @@ async function call(systemPrompt, userMessage, options = {}) {
     case 'claude':  return callClaude(systemPrompt, userMessage, options);
     case 'openai':  return callOpenAI(systemPrompt, userMessage, options);
     case 'ollama':  return callOllama(systemPrompt, userMessage, options);
+    case 'builtin': return callBuiltin(systemPrompt, userMessage, options);
     default: throw new Error(`Unknown LLM provider: ${provider}`);
   }
 }
@@ -263,6 +280,14 @@ async function* stream(systemPrompt, userMessage, options = {}) {
   if (PERSONAL_PROVIDERS.has(provider)) {
     yield* personalFor(provider).stream(provider, systemPrompt, userMessage,
       { ...options, model: personalModel(provider, options, getSettings()) });
+    return;
+  }
+
+  if (provider === 'builtin') {
+    yield* require('./builtinLlm').streamChat(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],
+      builtinOptions(options, getSettings()),
+    );
     return;
   }
 
@@ -436,6 +461,14 @@ async function callWithHistory(systemPrompt, messages, options = {}) {
     return response.choices[0].message.content;
   }
 
+  if (provider === 'builtin') {
+    const text = await require('./builtinLlm').chat(
+      [{ role: 'system', content: systemPrompt }, ...messages.map((m) => ({ role: m.role, content: m.content }))],
+      builtinOptions(options, cfg),
+    );
+    return stripModelMeta(text);
+  }
+
   // Ollama
   const ollamaUrl = options.ollamaUrl || cfg.ollamaUrl;
   const model = options.model || cfg.ollamaModel;
@@ -533,7 +566,7 @@ async function callWithHistoryAndTools(systemPrompt, messages, options = {}) {
     return callOpenAIWithTools(systemPrompt, messages, cfg, options, tools, runTool);
   }
 
-  // Ollama: most local models call tools unreliably, so journal recall is
+  // Ollama and the built-in engine: most local models call tools unreliably, so journal recall is
   // injected into the system prompt instead (memoryService), and web search
   // keeps its keyword-triggered injection below.
   if (!webOn) {
