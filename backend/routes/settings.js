@@ -77,12 +77,51 @@ router.put('/', (req, res) => {
 // models it can use (Liminal's models folder + models already in Ollama).
 router.get('/builtin', (req, res) => {
   const builtin = require('../services/builtinLlm');
+  const status = builtin.status();
   res.json({
-    ...builtin.status(),
+    ...status,
     models: builtin.available()
       ? builtin.listModels().map(({ id, label, detail, source, size }) => ({ id, label, detail, source, size }))
       : [],
+    // Models it can download, with "recommended for this computer" and
+    // each one's download state.
+    catalog: status.available ? require('../services/modelCatalog').catalog(status.devices) : [],
   });
+});
+
+// Start (or resume) downloading a model from the catalog. Runs in the
+// background; GET /builtin reports progress.
+router.post('/builtin/download', (req, res) => {
+  try {
+    require('../services/modelCatalog').startDownload(String(req.body?.id || ''));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/builtin/download/cancel', (req, res) => {
+  require('../services/modelCatalog').cancelDownload(String(req.body?.id || ''));
+  res.json({ ok: true });
+});
+
+// Delete a downloaded model (Liminal's own models folder only). If it was
+// the selected model, the selection is cleared and the engine stopped.
+router.delete('/builtin/models/:id', (req, res) => {
+  try {
+    const catalogs = require('../services/modelCatalog');
+    const builtin = require('../services/builtinLlm');
+    const entry = catalogs.CATALOG.find((m) => m.id === req.params.id);
+    if (!entry) return res.status(400).json({ error: 'Unknown model.' });
+    const modelId = `file:${entry.file}`;
+    // Windows can't delete a file the engine has open — stop it first.
+    if (builtin.status().model === modelId) builtin.stop();
+    catalogs.deleteModel(req.params.id);
+    if (s.get('builtin_model') === modelId) s.set('builtin_model', '');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // ── POST /api/settings/test-llm ───────────────────────────────────────────────

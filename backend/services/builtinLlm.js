@@ -111,7 +111,9 @@ function listLocalModels() {
     .filter((f) => f.toLowerCase().endsWith('.gguf') && !/mmproj/i.test(f))
     .map((f) => {
       const file = path.join(MODELS_DIR, f);
-      return { id: `file:${f}`, label: f.replace(/\.gguf$/i, ''), detail: '', source: 'liminal', path: file, size: fs.statSync(file).size };
+      // Downloaded from the picker → its friendly name ("Gemma 4 12B").
+      const name = require('./modelCatalog').nameForFile(f); // lazy: modelCatalog requires this module
+      return { id: `file:${f}`, label: name || f.replace(/\.gguf$/i, ''), detail: '', source: 'liminal', path: file, size: fs.statSync(file).size };
     });
 }
 
