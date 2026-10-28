@@ -274,6 +274,19 @@ function Btn({ onClick, disabled, danger, primary, children, style: extra }) {
   );
 }
 
+// Re-reads the installed model list (e.g. after `ollama pull` in a terminal).
+// Shows "Scanning…" for at least a moment so the click visibly did something.
+function RescanButton({ onRescan }) {
+  const { t } = useLanguage();
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    await Promise.all([Promise.resolve(onRescan()).catch(() => {}), new Promise((r) => setTimeout(r, 400))]);
+    setBusy(false);
+  };
+  return <Btn onClick={run} disabled={busy}>{busy ? t('settings.rescanning') : t('settings.rescan')}</Btn>;
+}
+
 function StatusIndicator({ ok, message }) {
   if (!message) return null;
   return (
@@ -725,7 +738,8 @@ function BuiltinEnginePanel({ cfg, set, save }) {
         ) : (
           // A chosen model that isn't here (download cancelled, file removed)
           // shows as "Select a model…" rather than silently as the first one.
-          <select style={s.select} value={currentAvailable ? current : ''} onChange={(e) => chooseModel(e.target.value)}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <select style={{ ...s.select, flex: 1 }} value={currentAvailable ? current : ''} onChange={(e) => chooseModel(e.target.value)}>
             {!currentAvailable && <option value="">{t('settings.selectModel')}</option>}
             {ownModels.length > 0 && (
               <optgroup label={t('settings.builtinOwnModels')}>
@@ -738,6 +752,8 @@ function BuiltinEnginePanel({ cfg, set, save }) {
               </optgroup>
             )}
           </select>
+          <RescanButton onRescan={load} />
+          </div>
         )}
         <div style={{ ...s.sublabel, marginTop: '6px', lineHeight: 1.5 }}>
           {info.running
@@ -801,20 +817,22 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
     apiFetch('/api/settings/gpus').then(r => r.json()).then(setGpus).catch(() => {});
   }, []);
 
+  const loadOllamaModels = () => apiFetch('/api/ollama/models')
+    .then(r => r.json())
+    .then(data => {
+      setOllamaData(data);
+      // Auto-select the first installed model if nothing is saved yet
+      if (data.online && data.models?.length && !cfg.ollama_model) {
+        const first = data.models[0].name;
+        set('ollama_model', first);
+        save({ ollama_model: first });
+      }
+    })
+    .catch(() => setOllamaData({ online: false, models: [] }));
+
   useEffect(() => {
     if (provider !== 'ollama') return;
-    apiFetch('/api/ollama/models')
-      .then(r => r.json())
-      .then(data => {
-        setOllamaData(data);
-        // Auto-select the first installed model if nothing is saved yet
-        if (data.online && data.models?.length && !cfg.ollama_model) {
-          const first = data.models[0].name;
-          set('ollama_model', first);
-          save({ ollama_model: first });
-        }
-      })
-      .catch(() => setOllamaData({ online: false, models: [] }));
+    loadOllamaModels();
   }, [provider]);
 
   async function testConnection() {
@@ -1030,24 +1048,30 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
             {ollamaData && !ollamaData.online && (
               <OllamaInstallGuide onRecheck={() => {
                 setOllamaData(null);
-                apiFetch('/api/ollama/models').then(r => r.json()).then(setOllamaData).catch(() => setOllamaData({ online: false, models: [] }));
+                loadOllamaModels();
               }} />
             )}
             {ollamaData?.online && ollamaData.models?.length > 0 && (
-              <select
-                style={s.select}
-                value={cfg.ollama_model || ''}
-                onChange={e => { set('ollama_model', e.target.value); save({ ollama_model: e.target.value }); }}
-              >
-                {ollamaData.models.map(m => {
-                  const rec = RECOMMENDED_MODELS.find(r => r.name === m.name);
-                  return <option key={m.name} value={m.name}>{m.name}{rec ? ` — ${rec.desc}` : ''}</option>;
-                })}
-              </select>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select
+                  style={{ ...s.select, flex: 1 }}
+                  value={cfg.ollama_model || ''}
+                  onChange={e => { set('ollama_model', e.target.value); save({ ollama_model: e.target.value }); }}
+                >
+                  {ollamaData.models.map(m => {
+                    const rec = RECOMMENDED_MODELS.find(r => r.name === m.name);
+                    return <option key={m.name} value={m.name}>{m.name}{rec ? ` — ${rec.desc}` : ''}</option>;
+                  })}
+                </select>
+                <RescanButton onRescan={loadOllamaModels} />
+              </div>
             )}
             {ollamaData?.online && ollamaData.models?.length === 0 && (
-              <div style={{ fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--near-white)' }}>
-                {t('settings.noModelsInstalled')}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div style={{ flex: 1, fontSize: '12px', color: 'var(--muted)', padding: '8px 10px', border: 'var(--border-style)', borderRadius: '10px', background: 'var(--near-white)' }}>
+                  {t('settings.noModelsInstalled')}
+                </div>
+                <RescanButton onRescan={loadOllamaModels} />
               </div>
             )}
           </Field>
@@ -1099,15 +1123,7 @@ function LLMSection({ cfg, set, save, saving, showToast }) {
           <OllamaModelBrowser
             installedNames={new Set((ollamaData?.models || []).map(m => m.name))}
             ollamaOnline={ollamaData?.online ?? false}
-            onDownloaded={() => {
-              apiFetch('/api/ollama/models').then(r => r.json()).then(data => {
-                setOllamaData(data);
-                if (data.online && data.models?.length && !cfg.ollama_model) {
-                  set('ollama_model', data.models[0].name);
-                  save({ ollama_model: data.models[0].name });
-                }
-              });
-            }}
+            onDownloaded={loadOllamaModels}
           />
 
           {gpus?.cuda && (

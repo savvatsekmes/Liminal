@@ -505,6 +505,8 @@ export default {
   "settings.ollamaUrl": "Ollama URL",
   "settings.ollamaUrlHint": "Προεπιλογή: http://localhost:11434",
   "settings.activeModel": "Ενεργό μοντέλο",
+  "settings.rescan": "Επανέλεγχος",
+  "settings.rescanning": "Έλεγχος…",
   "settings.checkingOllama": "Έλεγχος Ollama…",
   "settings.ollamaOffline": "Το Ollama δεν τρέχει. Ξεκίνα το για να δεις τα εγκατεστημένα μοντέλα.",
   "settings.ollamaInstallTitle": "Εγκατάσταση Ollama",

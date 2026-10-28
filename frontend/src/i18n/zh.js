@@ -505,6 +505,8 @@ export default {
   "settings.ollamaUrl": "Ollama 地址",
   "settings.ollamaUrlHint": "默认：http://localhost:11434",
   "settings.activeModel": "当前模型",
+  "settings.rescan": "重新扫描",
+  "settings.rescanning": "扫描中…",
   "settings.checkingOllama": "正在检查 Ollama…",
   "settings.ollamaOffline": "Ollama 未运行。启动 Ollama 以查看已安装的模型。",
   "settings.ollamaInstallTitle": "安装 Ollama",

@@ -505,6 +505,8 @@ export default {
   "settings.ollamaUrl": "Ollama URL",
   "settings.ollamaUrlHint": "Varsayılan: http://localhost:11434",
   "settings.activeModel": "Aktif model",
+  "settings.rescan": "Yeniden tara",
+  "settings.rescanning": "Taranıyor…",
   "settings.checkingOllama": "Ollama kontrol ediliyor…",
   "settings.ollamaOffline": "Ollama çalışmıyor. Yüklü modelleri görmek için Ollama’yı başlat.",
   "settings.ollamaInstallTitle": "Ollama’yı Kur",

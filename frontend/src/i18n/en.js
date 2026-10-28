@@ -799,6 +799,8 @@ export default {
   "settings.ollamaUrl": "Ollama URL",
   "settings.ollamaUrlHint": "Default: http://localhost:11434",
   "settings.activeModel": "Active model",
+  "settings.rescan": "Rescan",
+  "settings.rescanning": "Scanning…",
   "settings.checkingOllama": "Checking Ollama…",
   "settings.ollamaOffline": "Ollama is not running. Start Ollama to see installed models.",
   "settings.ollamaInstallTitle": "Install Ollama",

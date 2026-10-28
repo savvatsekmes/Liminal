@@ -505,6 +505,8 @@ export default {
   "settings.ollamaUrl": "Ollama URL",
   "settings.ollamaUrlHint": "デフォルト: http://localhost:11434",
   "settings.activeModel": "アクティブモデル",
+  "settings.rescan": "再スキャン",
+  "settings.rescanning": "スキャン中…",
   "settings.checkingOllama": "Ollamaを確認中…",
   "settings.ollamaOffline": "Ollamaが動作していません。インストール済みのモデルを見るにはOllamaを起動してください。",
   "settings.ollamaInstallTitle": "Ollamaをインストール",
