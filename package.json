@@ -74,6 +74,10 @@
         {
           "from": "dist/yubikey_helper",
           "to": "yubikey_helper"
+        },
+        {
+          "from": "dist/llama_server",
+          "to": "llama_server"
         }
       ]
     },

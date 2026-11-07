@@ -9,7 +9,8 @@
 //
 // Windows: the Vulkan build — one binary for NVIDIA, AMD and Intel GPUs, no
 // CUDA version to match. Only llama-server and its libraries are kept.
-// macOS (Metal) isn't wired up yet.
+// macOS: the Metal build (Apple Silicon arm64) — same pinned llama.cpp build,
+// GPU acceleration via Metal is baked in (no CUDA/Vulkan variant to pick).
 
 const fs = require('fs');
 const os = require('os');
@@ -24,6 +25,21 @@ const ASSETS = {
     file: `llama-${BUILD}-bin-win-vulkan-x64.zip`,
     sha256: 'e59d478097631474361df58c5b5b81a31c5d91d81401ee20a4cbda0a0c4faaf0',
     keep: (f) => f === 'llama-server.exe' || f === 'llama-server-impl.dll' || (f.endsWith('.dll') && !f.endsWith('-impl.dll')) || f.startsWith('LICENSE'),
+  },
+  darwin: {
+    // Apple Silicon (arm64) Metal build of the same pinned llama.cpp build.
+    file: `llama-${BUILD}-bin-macos-arm64.tar.gz`,
+    sha256: '39468fedd93462b119b2bc84b2d441ee583a5bcfcf4fc4a59acbcc68854c2fe2',
+    // The tarball nests everything under `llama-${BUILD}/`; strip that leading
+    // directory so files land flat in outDir like the Windows zip does, where
+    // builtinLlm.js expects `<llama_server>/llama-server`.
+    strip: 1,
+    // Keep the server binary, every shared library, and the licence; drop the
+    // other standalone CLI tools (llama-cli, llama-bench, ggml-rpc-server, …).
+    // We keep ALL .dylib files — the ggml backends (incl. libggml-metal for GPU)
+    // and libmtmd (vision / photo description) are dlopen'd at runtime, so an
+    // allowlist risks dropping a dependency that otool -L wouldn't reveal.
+    keep: (f) => f === 'llama-server' || f.endsWith('.dylib') || f.startsWith('LICENSE'),
   },
 };
 const LICENSE_URL = `https://raw.githubusercontent.com/ggml-org/llama.cpp/${BUILD}/LICENSE`;
@@ -66,7 +82,8 @@ async function main() {
   // earlier on PATH (Git Bash) takes "C:" for a remote host.
   const winTar = process.env.SystemRoot && path.join(process.env.SystemRoot, 'System32', 'tar.exe');
   const tar = winTar && fs.existsSync(winTar) ? winTar : 'tar';
-  execFileSync(tar, ['-xf', zip, '-C', outDir], { stdio: 'inherit' });
+  const stripArgs = asset.strip ? [`--strip-components=${asset.strip}`] : [];
+  execFileSync(tar, ['-xf', zip, '-C', outDir, ...stripArgs], { stdio: 'inherit' });
   for (const f of fs.readdirSync(outDir)) {
     if (!asset.keep(f)) fs.rmSync(path.join(outDir, f), { recursive: true, force: true });
   }
