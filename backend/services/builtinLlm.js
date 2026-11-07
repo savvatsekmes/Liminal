@@ -21,8 +21,18 @@ const os = require('os');
 const net = require('net');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
-const fetch = require('node-fetch');
+const http = require('http');
+const nodeFetch = require('node-fetch');
 const { DATA_DIR } = require('../paths');
+
+// A fresh connection per request. Node 20's default agent keeps sockets alive,
+// and llama-server closes idle ones after ~5s. If the backend's event loop is
+// busy at that moment (an embedding pass, say), Node never sees the close and
+// writes the next request onto the dead socket → "socket hang up". That is
+// what silently dropped the captured-items pass after reflections. Localhost
+// connections cost nothing, so don't reuse them.
+const agent = new http.Agent({ keepAlive: false });
+const fetch = (url, opts = {}) => nodeFetch(url, { agent, ...opts });
 
 const BIN_NAME = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
 const MODELS_DIR = path.join(DATA_DIR, 'models');
