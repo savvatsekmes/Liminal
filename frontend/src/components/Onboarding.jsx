@@ -1225,7 +1225,7 @@ const PERFORMANCE_TIERS = [
   // well. 4b is the practical floor for usable reflection output.
   { id: 'low',  labelKey: 'onboarding.ollamaTier.low.label',  descKey: 'onboarding.ollamaTier.low.desc',  model: 'qwen3.5:4b',  size: '3.4 GB' },
   { id: 'mid',  labelKey: 'onboarding.ollamaTier.mid.label',  descKey: 'onboarding.ollamaTier.mid.desc',  model: 'qwen3.5:9b',  size: '6.6 GB' },
-  { id: 'high', labelKey: 'onboarding.ollamaTier.high.label', descKey: 'onboarding.ollamaTier.high.desc', model: 'qwen3.5:27b', size: '17 GB'  },
+  { id: 'high', labelKey: 'onboarding.ollamaTier.high.label', descKey: 'onboarding.ollamaTier.high.desc', model: 'qwen3.8:27b', size: '18 GB'  },
 ];
 
 function OllamaStep({ onContinue, onBack, onSkipForNow, onSkipCompletely, saving, onUseBuiltin }) {
